@@ -1,0 +1,7 @@
+# The same customer on the enterprise plan. Given after tenants.data.yaml,
+# so each key here replaces the same key there, whole.
+plan: enterprise
+addons:
+  monitoring: true
+backup:
+  retain_days: 90
