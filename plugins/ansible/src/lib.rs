@@ -15,6 +15,7 @@
 #![allow(clippy::result_large_err)]
 
 mod emit;
+mod import;
 mod runner;
 mod sort;
 mod transform;
@@ -28,6 +29,7 @@ use meridian_sdk::{
 };
 
 pub use emit::{INVENTORY_PATH, PLAYBOOK_PATH};
+pub use import::AnsibleImporter;
 pub use runner::AnsibleRunner;
 pub use transform::supported_resource_types;
 

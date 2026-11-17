@@ -47,7 +47,13 @@ impl Notes {
         resource: &str,
         msg: impl Into<String>,
     ) {
-        self.push(NoteLevel::Untranslated, origin, subject, resource, msg.into());
+        self.push(
+            NoteLevel::Untranslated,
+            origin,
+            subject,
+            resource,
+            msg.into(),
+        );
     }
 
     /// Something the document says differently from the source.

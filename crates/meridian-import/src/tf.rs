@@ -83,9 +83,8 @@ pub const OPENTOFU: Flavour = Flavour {
 impl Flavour {
     /// The formats an importer of this flavour declares.
     pub fn formats(&self) -> Vec<ImportFormat> {
-        let patterns = |endings: &[&str]| -> Vec<String> {
-            endings.iter().map(|e| format!("*{e}")).collect()
-        };
+        let patterns =
+            |endings: &[&str]| -> Vec<String> { endings.iter().map(|e| format!("*{e}")).collect() };
         vec![
             ImportFormat {
                 name: "hcl".to_owned(),
@@ -242,7 +241,10 @@ fn tops_from_json(file: &str, text: &str, tops: &mut Vec<Top>) -> Result<(), Imp
         return Err(ImportError::at(
             file,
             root.line,
-            format!("a configuration is a JSON object, and this is {}", root.describe()),
+            format!(
+                "a configuration is a JSON object, and this is {}",
+                root.describe()
+            ),
         ));
     };
     // A block's content is an object, or a list of them when the block repeats.
@@ -300,11 +302,20 @@ fn to_expression(value: &Value) -> String {
                     return e.clone();
                 }
             }
-            format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"").replace('\n', "\\n"))
+            format!(
+                "\"{}\"",
+                s.replace('\\', "\\\\")
+                    .replace('"', "\\\"")
+                    .replace('\n', "\\n")
+            )
         }
         Value::List(items) => format!(
             "[{}]",
-            items.iter().map(to_expression).collect::<Vec<_>>().join(", ")
+            items
+                .iter()
+                .map(to_expression)
+                .collect::<Vec<_>>()
+                .join(", ")
         ),
         Value::Map(map) => format!(
             "{{{}}}",
@@ -533,24 +544,36 @@ pub fn import(source: &ImportSource, flavour: &Flavour) -> Result<Imported, Impo
     for top in &tops {
         let labels: Vec<&str> = top.labels.iter().map(String::as_str).collect();
         match (top.kind.as_str(), labels.as_slice()) {
-            ("resource", [t, n]) => {
-                claims.push((Class::Managed, (*t).to_owned(), (*n).to_owned(), top.origin.clone()))
-            }
-            ("data", [t, n]) => {
-                claims.push((Class::Data, (*t).to_owned(), (*n).to_owned(), top.origin.clone()))
-            }
+            ("resource", [t, n]) => claims.push((
+                Class::Managed,
+                (*t).to_owned(),
+                (*n).to_owned(),
+                top.origin.clone(),
+            )),
+            ("data", [t, n]) => claims.push((
+                Class::Data,
+                (*t).to_owned(),
+                (*n).to_owned(),
+                top.origin.clone(),
+            )),
             ("ephemeral", [t, n]) if flavour.ephemeral => claims.push((
                 Class::Ephemeral,
                 (*t).to_owned(),
                 (*n).to_owned(),
                 top.origin.clone(),
             )),
-            ("module", [n]) => {
-                claims.push((Class::Module, String::new(), (*n).to_owned(), top.origin.clone()))
-            }
-            ("variable", [n]) => {
-                claims.push((Class::Variable, String::new(), (*n).to_owned(), top.origin.clone()))
-            }
+            ("module", [n]) => claims.push((
+                Class::Module,
+                String::new(),
+                (*n).to_owned(),
+                top.origin.clone(),
+            )),
+            ("variable", [n]) => claims.push((
+                Class::Variable,
+                String::new(),
+                (*n).to_owned(),
+                top.origin.clone(),
+            )),
             ("locals", []) => {
                 for key in top.body.keys() {
                     claims.push((Class::Local, String::new(), key.clone(), top.origin.clone()));
@@ -871,7 +894,11 @@ pub fn import(source: &ImportSource, flavour: &Flavour) -> Result<Imported, Impo
                     }
                 }
                 let Some(value) = top.body.get("value") else {
-                    lost(&mut notes, &subject, "the output has no value and was left out");
+                    lost(
+                        &mut notes,
+                        &subject,
+                        "the output has no value and was left out",
+                    );
                     continue;
                 };
                 let value = match addresses.rewrite(value) {
@@ -1064,14 +1091,21 @@ mod tests {
             split_names("data.aws_ami.ubuntu.id", 3),
             Some((vec!["data", "aws_ami", "ubuntu"], ".id"))
         );
-        assert_eq!(split_names("var.region", 2), Some((vec!["var", "region"], "")));
+        assert_eq!(
+            split_names("var.region", 2),
+            Some((vec!["var", "region"], ""))
+        );
         assert_eq!(split_names("var", 2), None);
     }
 
     #[test]
     fn an_address_is_replaced_only_where_it_stands_whole() {
         assert_eq!(
-            replace_address("concat(var.a, var.ab, xvar.a, var.a.b)", "var.a", "var.a_var"),
+            replace_address(
+                "concat(var.a, var.ab, xvar.a, var.a.b)",
+                "var.a",
+                "var.a_var"
+            ),
             "concat(var.a_var, var.ab, xvar.a, var.a_var.b)"
         );
     }

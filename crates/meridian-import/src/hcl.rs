@@ -346,12 +346,7 @@ impl Parser<'_> {
                         labels.push(text);
                     }
                     Some(c) if ident_start(c) => labels.push(self.ident().unwrap_or_default()),
-                    _ => {
-                        return self.err(
-                            at,
-                            format!("expected = or {{ after {name:?}"),
-                        )
-                    }
+                    _ => return self.err(at, format!("expected = or {{ after {name:?}")),
                 }
             }
             let inner = self.body(true)?;
@@ -485,7 +480,9 @@ impl Parser<'_> {
                     };
                     self.skip(false)?;
                     match self.peek() {
-                        Some('=') if self.peek_at(1) != Some('=') && self.peek_at(1) != Some('>') => {
+                        Some('=')
+                            if self.peek_at(1) != Some('=') && self.peek_at(1) != Some('>') =>
+                        {
                             self.i += 1
                         }
                         Some(':') => self.i += 1,
@@ -647,7 +644,10 @@ impl Parser<'_> {
             match c {
                 '"' => return Ok(i + 1),
                 '\\' => i += 1,
-                '$' | '%' if self.src.get(i + 1) == Some(&'{') && self.src.get(i.wrapping_sub(1)) != Some(&c) => {
+                '$' | '%'
+                    if self.src.get(i + 1) == Some(&'{')
+                        && self.src.get(i.wrapping_sub(1)) != Some(&c) =>
+                {
                     i = self.interpolation_end(i + 2)? - 1;
                 }
                 '\n' => break,
@@ -673,13 +673,19 @@ impl Parser<'_> {
             self.i += 1;
         }
         if self.peek() != Some('\n') {
-            return self.err(start, "a heredoc's text starts on the line after its opening word");
+            return self.err(
+                start,
+                "a heredoc's text starts on the line after its opening word",
+            );
         }
         self.i += 1;
         let mut lines: Vec<String> = Vec::new();
         loop {
             if self.peek().is_none() {
-                return self.err(start, format!("the heredoc opened with {word} is never closed"));
+                return self.err(
+                    start,
+                    format!("the heredoc opened with {word} is never closed"),
+                );
             }
             let line_start = self.i;
             self.skip_line();
@@ -767,9 +773,7 @@ impl Parser<'_> {
                     self.i = end;
                 }
                 '<' if self.peek_at(1) == Some('<')
-                    && self
-                        .peek_at(2)
-                        .is_some_and(|c| c == '-' || ident_start(c)) =>
+                    && self.peek_at(2).is_some_and(|c| c == '-' || ident_start(c)) =>
                 {
                     return self.err(
                         self.i,
@@ -922,7 +926,11 @@ mod tests {
                 "d":"%{ if var.x }yes%{ endif }"}"#
             )
         );
-        let body = parse("t.tf", "d = \"%{ if var.x }yes%{ endif }\"\ne = \"%%{no}\"\n").unwrap();
+        let body = parse(
+            "t.tf",
+            "d = \"%{ if var.x }yes%{ endif }\"\ne = \"%%{no}\"\n",
+        )
+        .unwrap();
         assert!(body.attributes[0].expr.has_directive());
         assert!(!body.attributes[1].expr.has_directive());
     }
@@ -1002,7 +1010,11 @@ mod tests {
             ("a =\n", 1),
         ] {
             let err = parse("bad.tf", text).unwrap_err();
-            assert_eq!((err.file.as_str(), err.line), ("bad.tf", line), "{text:?}: {err}");
+            assert_eq!(
+                (err.file.as_str(), err.line),
+                ("bad.tf", line),
+                "{text:?}: {err}"
+            );
         }
     }
 }

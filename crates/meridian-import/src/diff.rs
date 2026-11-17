@@ -200,7 +200,12 @@ mod tests {
         // Both sides present, each empty in its own way.
         assert!(diff(&value(r#"{"x": null}"#), &value(r#"{"x": {}}"#), lenient).is_empty());
         assert_eq!(
-            diff(&value(r#"{"x": null}"#), &value(r#"{"x": {}}"#), Rules::default()).len(),
+            diff(
+                &value(r#"{"x": null}"#),
+                &value(r#"{"x": {}}"#),
+                Rules::default()
+            )
+            .len(),
             1
         );
     }

@@ -92,7 +92,10 @@ fn pair(key: &str, value: Yaml) -> (String, Yaml) {
 }
 
 fn resource_node(r: &ImportedResource) -> Yaml {
-    let mut fields = vec![pair("id", Yaml::str(&r.id)), pair("type", Yaml::str(&r.r#type))];
+    let mut fields = vec![
+        pair("id", Yaml::str(&r.id)),
+        pair("type", Yaml::str(&r.r#type)),
+    ];
     if !r.state.is_empty() {
         fields.push(pair("state", Yaml::str(&r.state)));
     }
@@ -190,11 +193,7 @@ fn indented(text: &str, by: usize) -> String {
 
 /// Writes one document and counts its `TODO` markers. `notes` are the notes
 /// that belong to it.
-pub fn render(
-    document: &ImportedDocument,
-    notes: &[&ImportNote],
-    source: &str,
-) -> (String, usize) {
+pub fn render(document: &ImportedDocument, notes: &[&ImportNote], source: &str) -> (String, usize) {
     let ids: BTreeSet<&str> = document.resources.iter().map(|r| r.id.as_str()).collect();
     // A note about a resource the document does not hold still has to be
     // written somewhere, so it goes to the top.
