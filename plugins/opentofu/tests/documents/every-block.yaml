@@ -1,0 +1,139 @@
+# Every kind of block the target knows, in one document.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: every-block
+spec:
+  target: opentofu
+  resources:
+    - id: s3
+      type: backend
+      params:
+        bucket: meridian-state
+        key: every-block.tfstate
+        region: ${region}
+
+    - id: state_passphrase
+      type: variable
+      params:
+        type: string
+        sensitive: true
+
+    - id: region
+      type: variable
+      params:
+        type: string
+        default: eu-west-1
+        validation:
+          condition: ${startswith(region, "eu-")}
+          error_message: Only European regions are allowed.
+
+    - id: sealed
+      type: encryption
+      params:
+        key_provider:
+          pbkdf2:
+            passphrase:
+              passphrase: ${state_passphrase}
+          aws_kms:
+            regional:
+              kms_key_id: alias/meridian-state
+              region: ${region}
+              key_spec: AES_256
+        method:
+          aes_gcm:
+            current:
+              keys: ${key_provider.aws_kms.regional}
+            previous:
+              keys: ${key_provider.pbkdf2.passphrase}
+          unencrypted:
+            migrating: {}
+        state:
+          method: ${method.aes_gcm.current}
+          enforced: true
+          fallback:
+            method: ${method.aes_gcm.previous}
+        plan:
+          method: ${method.aes_gcm.current}
+          fallback:
+            method: ${method.unencrypted.migrating}
+        remote_state_data_sources:
+          default:
+            method: ${method.aes_gcm.current}
+
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: ${region}
+
+    - id: replica
+      type: provider
+      params:
+        name: aws
+        alias: replica
+        region: eu-central-1
+
+    - id: name_prefix
+      type: local
+      params:
+        value: ${lower("Web")}-${region}
+
+    - id: tags
+      type: local
+      params:
+        value:
+          Project: meridian
+          Region: ${region}
+
+    - id: zones
+      type: data.aws_availability_zones
+      params:
+        state: available
+
+    - id: db_password
+      type: ephemeral.aws_secretsmanager_secret_version
+      params:
+        secret_id: prod/db/password
+
+    - id: network
+      type: module
+      params:
+        source: terraform-aws-modules/vpc/aws
+        version: 5.1.0
+        name: ${name_prefix}
+        azs: ${slice(zones.names, 0, 2)}
+        tags: ${tags}
+
+    - id: db
+      type: aws_db_instance
+      params:
+        identifier: ${name_prefix}-db
+        engine: postgres
+        instance_class: db.t4g.micro
+        db_subnet_group_name: ${network.database_subnet_group_name}
+        password_wo: ${db_password.secret_string}
+        password_wo_version: 1
+        tags: ${merge(tags, {Role = "database"})}
+      dependsOn:
+        - resource: network
+
+    - id: db_copy
+      type: aws_db_instance
+      params:
+        identifier: ${name_prefix}-db-copy
+        provider: aws.replica
+        replicate_source_db: ${db.arn}
+        instance_class: db.t4g.micro
+      # Nothing in the params orders this after the network.
+      dependsOn:
+        - resource: network
+
+  outputs:
+    - name: db_endpoint
+      value: ${db.endpoint}
+    - name: db_url
+      value: postgres://${db.endpoint}/${name_prefix}
+    - name: first_zone
+      value: ${zones.names[0]}

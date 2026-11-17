@@ -1,8 +1,8 @@
 # The configuration management resource types
 
-The `ansible`, `puppet`, `chef` and `cloud-init` targets share six resource
-types. A resource written with them compiles for any of the four, within what
-each tool can do.
+The `ansible`, `puppet`, `chef`, `salt` and `cloud-init` targets share six
+resource types. A resource written with them compiles for any of the five,
+within what each tool can do.
 Anything outside these tables is refused, never dropped: a param a target does
 not take, a state it cannot express, an action it cannot perform.
 
@@ -16,7 +16,7 @@ Other targets do not use these types. Their resources are the tool's own; see
 
 | | |
 |---|---|
-| Params | `name` (required). cloud-init also takes `version`, to pin one |
+| Params | `name` (required). Salt also takes `version`, with `present` only. cloud-init also takes `version`, to pin one |
 | States | `present` (default), `absent`, `latest`. cloud-init: `present` only, because a first boot installs and cannot remove or track |
 | Can be notified | no |
 
@@ -33,10 +33,11 @@ Other targets do not use these types. Their resources are the tool's own; see
 |---|---|
 | Params | `name` (required), `enabled` (true or false: start at boot) |
 | States | `running` (default), `started` (the same), `stopped`. Ansible and cloud-init also take `restarted` and `reloaded` |
-| Can be notified | Ansible, Chef and cloud-init: `restart`, `reload`, `start`, `stop`. Puppet: `restart` (or `refresh`) only |
+| Can be notified | Ansible, Chef, Salt and cloud-init: `restart`, `reload`, `start`, `stop`. Puppet: `restart` (or `refresh`) only |
 
-Puppet and Chef describe a state a node is left in, and "restarted" is not one,
-so they refuse it as a state. To restart a service when something changes, use
+Puppet, Chef and Salt describe a state a node is left in, and "restarted" is not
+one, so they refuse it as a state. Salt also refuses `restart` and `reload`
+aimed at a service whose state is `stopped`. To restart a service when something changes, use
 `notifies`.
 
 cloud-init has no module for services. A service compiles to `systemctl`
@@ -61,7 +62,9 @@ must use systemd.
 | Can be notified | no |
 
 Write `mode` as a quoted string (`"0644"`), so it is not read as a number. A
-directory has no `content`.
+directory has no `content`. On Salt a `file` with no `content` creates the file
+if it is missing, a directory is created with its parents, and the attributes of
+an absent file are left out with a warning.
 
 On cloud-init a file in state `present` must have `content`, because cloud-init
 writes whole files, and the `directory` and `absent` states compile to commands
@@ -87,7 +90,8 @@ writes whole files, and the `directory` and `absent` states compile to commands
 
 `groups` are supplementary groups. On Chef, whose `user` resource has a primary
 group only, each one becomes a separate membership block that adds the user to
-the group and leaves its other members alone.
+the group and leaves its other members alone. On Salt the list is complete: the
+user is removed from any group not in it.
 
 ## `group`
 
@@ -104,7 +108,7 @@ converge on.
 
 | | |
 |---|---|
-| Params | `command` (required), `chdir`, `creates` (skip when this path exists), `shell` (true to run through a shell). Ansible and cloud-init also take `removes` |
+| Params | `command` (required), `chdir`, `creates` (skip when this path exists), `shell` (true to run through a shell). Ansible, Salt and cloud-init also take `removes` (run only when this path exists) |
 | States | none |
 | Can be notified | `run` |
 
@@ -113,6 +117,10 @@ plan for a document with a bare `exec` always shows a change. A notified `exec`
 runs in its place in the order, and once more when it is notified. On
 cloud-init every `exec` runs once, on the first boot, and stops the commands
 after it if it fails.
+
+Salt always runs a command through a shell. So that a document means the same
+on every target, Salt refuses a command that holds shell syntax unless the
+resource says `shell: true`; see [the Salt page](../targets/salt.md#exec).
 
 ```yaml
 - id: warm_cache
@@ -129,4 +137,4 @@ after it if it fails.
 |---|---|---|
 | `dependsOn` | order | every target ([how](../concepts/dependencies.md)) |
 | `notifies` | react to a change | where the tool can ([matrix](capability-matrix.md)) |
-| `runtimeWhen` | a condition checked on the node during the apply, written in the tool's own language | Ansible (a `when:` expression), Chef (the Ruby of an `only_if` guard). Puppet refuses it: a catalog is compiled before it reaches the node. cloud-init refuses it: it evaluates nothing per resource |
+| `runtimeWhen` | a condition checked on the node during the apply, written in the tool's own language | Ansible (a `when:` expression), Chef (the Ruby of an `only_if` guard), Salt (a Jinja expression over grains and pillar). Puppet refuses it: a catalog is compiled before it reaches the node. cloud-init refuses it: it evaluates nothing per resource |
