@@ -493,7 +493,10 @@ fn import_writes_a_document_that_compiles_and_reports_what_it_read() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out), "");
     assert!(
-        stderr(&out).contains("  old (Infrastructure, 2 resources) -> imported/old.yaml\n"),
+        // The path is shown as the system writes it.
+        stderr(&out)
+            .replace('\\', "/")
+            .contains("  old (Infrastructure, 2 resources) -> imported/old.yaml\n"),
         "{}",
         stderr(&out)
     );
