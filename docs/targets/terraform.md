@@ -9,7 +9,8 @@ with `terraform`. OpenTofu's `tofu` takes the same commands.
 
 | | |
 |---|---|
-| Resource types | Terraform's own: any `<provider>_<type>`, plus `data.<type>`, `module`, `provider` and `backend` |
+| Resource types | Terraform's own: any `<provider>_<type>`, plus `data.<type>`, `module`, `variable`, `local`, `provider` and `backend` |
+| Import | Yes: `*.tf` and `*.tf.json`. See [Importing](#importing) |
 | `dependsOn` | Yes, as `depends_on`, unless a reference already implies the order |
 | `notifies` | Synthetic, and blunt: the action `replace` only. See [Notifications](#notifications) |
 | `runtimeWhen` | No. Refused |
@@ -29,6 +30,25 @@ arguments, exactly as the provider documents them.
 | `module` | a `module` block |
 | `provider` | a `provider` block; `source` and `version` go to `required_providers` |
 | `backend` | the `backend` block, whose type is the resource's id |
+| `variable` | a `variable` block named by the resource's id. Its params are Terraform's: `type`, `default`, `description`, `sensitive`, `nullable`, `validation` |
+| `local` | an entry of `locals` named by the resource's id. Its one param is `value` |
+
+A variable gets its value from `TF_VAR_<id>` in the environment `meridian` runs in, as it
+would with `terraform` itself. `${region}` refers to a variable or a local value of that
+id and becomes `var.region` or `local.region`.
+
+```yaml
+    - id: region
+      type: variable
+      params:
+        type: string
+        default: eu-west-1
+
+    - id: name_prefix
+      type: local
+      params:
+        value: web-${region}
+```
 
 ## References
 
@@ -90,6 +110,56 @@ instance, for example:
   }
 }
 ```
+
+## Importing
+
+`meridian import --from terraform DIR` reads the `*.tf` and `*.tf.json` files of a
+directory, as Terraform does, and writes one Infrastructure document. `*.tfvars` files are
+values for one run and not configuration, so they are reported and not read.
+[Importing existing configuration](../operations/importing.md) is the guide; this is what the Terraform importer does.
+
+`--from` is needed because `*.tf` is also OpenTofu's. Whichever you name is the tool
+Meridian will run for the document.
+
+| In the configuration | In the document |
+|---|---|
+| `resource "aws_instance" "web"` | a resource of type `aws_instance` with the id `web` |
+| `data "aws_ami" "ubuntu"` | type `data.aws_ami` |
+| `module "vpc"` | type `module` |
+| `variable "region"` | type `variable`; its `type`, `default`, `description`, `sensitive`, `nullable` and `validation` are its params |
+| `locals { a = 1, b = 2 }` | one resource of type `local` for each value, with the param `value` |
+| `provider "aws"` | type `provider`. `source` and `version` come from `required_providers`. A provider with an `alias` gets the id `<name>_<alias>` |
+| `terraform { backend "s3" {} }` | type `backend`, with the id `s3` |
+| `output "address"` | an entry of `spec.outputs` |
+| `depends_on = [aws_vpc.main]` | `dependsOn`, unless a reference already implies the order |
+| `lifecycle { replace_triggered_by = [...] }` | `notifies` with the action `replace`, on the resource that triggers |
+| `aws_vpc.main.id`, `var.region`, `local.tags`, `module.vpc.id`, written as a value or inside a string | `${main.id}`, `${region}`, `${tags}`, `${vpc.id}`: a reference to the document's resource of that id |
+| The same addresses inside a larger expression, such as `merge(local.tags, {...})` or a conditional | kept as Terraform's own addresses inside `${...}`, which the compiled configuration carries unchanged. A renamed resource is renamed there too |
+| `count`, `for_each`, `dynamic` blocks, functions, `each.key`, `count.index` | kept as written. They are Terraform expressions and the compiled configuration carries them unchanged |
+
+A nested block is written as a mapping, and a block that may repeat as a list of
+mappings, which is how Terraform's JSON syntax spells them.
+
+What is reported:
+
+| In the configuration | What happens | Level |
+|---|---|---|
+| Two things with the same name, such as `aws_instance.web` and `aws_eip.web` | A document's ids are unique, so the second is renamed `web_aws_eip` and every reference follows. The note gives the `terraform state mv` command that tells an existing state about the new address; without it the resource is destroyed and created again | changed |
+| `moved`, `import`, `removed` and `check` blocks | Left out. The first three change what the state records and are done once with the tool; a check has no counterpart | not translated |
+| `terraform { required_version }` | Left out. Pin the binary Meridian runs instead | not translated |
+| `terraform { cloud {} }` | Left out. Meridian runs the tool itself | not translated |
+| An output's `description` and `sensitive` | Left out: a document's output is a name and a value. Without `sensitive` the value is shown in plans and logs unless what it reads is itself sensitive | not translated |
+| A template directive, `%{ if ... }` | The string is carried as written and marked: check it | not translated |
+| An override file, `override.tf` or `*_override.tf` | Read as an ordinary file, so a block it overrides appears twice. Merge it by hand | changed |
+| A provider required and never configured | A `provider` resource with only its source and version | note |
+| `.terraform.lock.hcl` | Not read. The tool writes a new lock file where Meridian runs it | note |
+
+The round-trip test imports [`web-vm/`](../../plugins/terraform/testdata/import/web-vm),
+compiles the document, and compares `main.tf.json` by meaning with
+[`web-vm.expected.tf.json`](../../plugins/terraform/testdata/import/web-vm.expected.tf.json),
+which is the same configuration written by hand in the JSON syntax. The imported document
+is [`web-vm.meridian.yaml`](../../plugins/terraform/testdata/import/web-vm.meridian.yaml)
+and the report is [`web-vm.notes`](../../plugins/terraform/testdata/import/web-vm.notes).
 
 ## Running
 

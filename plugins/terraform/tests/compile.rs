@@ -108,7 +108,7 @@ fn a_type_that_is_not_terraforms_is_refused() {
     assert_eq!(
         err.msg,
         "\"package\" is not a Terraform resource type. Use a provider's own type, such as \
-         aws_instance, or one of: provider, backend, module, data.<type>"
+         aws_instance, or one of: provider, backend, module, variable, local, data.<type>"
     );
 }
 

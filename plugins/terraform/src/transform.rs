@@ -44,6 +44,8 @@ fn classify(r: &Resource) -> Result<(Kind, String), CompileError> {
         }
         "backend" => (Kind::Backend, r.id.clone()),
         "module" => (Kind::Module, String::new()),
+        "variable" => (Kind::Variable, String::new()),
+        "local" => (Kind::Local, String::new()),
         _ => {
             if let Some(data_type) = t.strip_prefix("data.") {
                 if is_resource_type(data_type) {
@@ -57,7 +59,8 @@ fn classify(r: &Resource) -> Result<(Kind, String), CompileError> {
                 "unsupported-resource-type",
                 format!(
                     "{t:?} is not a Terraform resource type. Use a provider's own type, such as \
-                     aws_instance, or one of: provider, backend, module, data.<type>"
+                     aws_instance, or one of: provider, backend, module, variable, local, \
+                     data.<type>"
                 ),
             ));
         }
@@ -99,6 +102,8 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Config, CompileError> {
             Kind::Managed => Some(format!("{tf_type}.{}", r.id)),
             Kind::Data => Some(format!("data.{tf_type}.{}", r.id)),
             Kind::Module => Some(format!("module.{}", r.id)),
+            Kind::Variable => Some(format!("var.{}", r.id)),
+            Kind::Local => Some(format!("local.{}", r.id)),
             Kind::Provider | Kind::Backend => None,
         };
         addresses.0.insert(r.id.clone(), address);
