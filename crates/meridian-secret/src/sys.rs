@@ -234,6 +234,21 @@ mod imp {
     #[cfg(target_os = "linux")]
     const KEYCTL_READ: libc::c_long = 11;
     #[cfg(target_os = "linux")]
+    const THREAD_KEYRING: libc::c_long = -1;
+    #[cfg(target_os = "linux")]
+    const KEYCTL_SETPERM: libc::c_long = 5;
+    #[cfg(target_os = "linux")]
+    const KEYCTL_LINK: libc::c_long = 8;
+    #[cfg(target_os = "linux")]
+    const KEYCTL_UNLINK: libc::c_long = 9;
+    /// The permissions a stored key is given: everything to a possessor,
+    /// and view, read, write, search and setattr to the key's owner. A key
+    /// made with `add_key` alone is readable only by a possessor, and a
+    /// session that does not link the user keyring possesses nothing in it,
+    /// so a value stored by one command would be unreadable by the next.
+    #[cfg(target_os = "linux")]
+    const STORED_KEY_PERM: libc::c_long = 0x3f3f_0000;
+    #[cfg(target_os = "linux")]
     const KEY_TYPE: &std::ffi::CStr = c"user";
 
     /// Finds a key of type `user` by its description, in the session
@@ -301,6 +316,13 @@ mod imp {
 
     /// Puts a key of type `user` in the user keyring, replacing one of the
     /// same description.
+    ///
+    /// The key is made in this thread's own keyring first, so that this
+    /// process possesses it and may set its permissions, and is then linked
+    /// into the user keyring, where a link displaces any key of the same
+    /// description. Made in the user keyring directly, a process whose
+    /// session does not link that keyring would own the key and still not
+    /// be allowed to change it or read it back.
     #[cfg(target_os = "linux")]
     pub(crate) fn keyring_store(description: &std::ffi::CStr, value: &[u8]) -> std::io::Result<()> {
         // SAFETY: the strings are NUL-terminated, the payload is valid for
@@ -312,14 +334,26 @@ mod imp {
                 description.as_ptr(),
                 value.as_ptr(),
                 value.len(),
-                USER_KEYRING,
+                THREAD_KEYRING,
             )
         };
-        if id > 0 {
-            Ok(())
-        } else {
-            Err(std::io::Error::last_os_error())
+        if id <= 0 {
+            return Err(std::io::Error::last_os_error());
         }
+        // SAFETY: each call takes the id the kernel just returned and a
+        // keyring's special id, and changes nothing in this process's memory.
+        let set = unsafe { libc::syscall(libc::SYS_keyctl, KEYCTL_SETPERM, id, STORED_KEY_PERM) };
+        if set < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let linked = unsafe { libc::syscall(libc::SYS_keyctl, KEYCTL_LINK, id, USER_KEYRING) };
+        if linked < 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        // The thread keyring dies with the thread; the key is unlinked from
+        // it now so that it is in one place. Failing to is no failure.
+        unsafe { libc::syscall(libc::SYS_keyctl, KEYCTL_UNLINK, id, THREAD_KEYRING) };
+        Ok(())
     }
 
     /// Reads from standard input straight into `into`, with no buffer of

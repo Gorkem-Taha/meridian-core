@@ -75,8 +75,10 @@ pub fn from_keyring(description: &str) -> Result<SecretValue, FetchError> {
             if e.raw_os_error() == Some(libc::EACCES) {
                 FetchError::Failed(format!(
                     "the kernel keyring holds the key {description}, and this session may \
-                     not read it: its session keyring does not link the user keyring. Link \
-                     it with: keyctl link @u @s"
+                     not read it: the key is readable only by a possessor, and this \
+                     session's keyring does not link the user keyring. Let the owner read \
+                     it with: keyctl setperm $(keyctl search @u user {description}) \
+                     0x3f3f0000, or store it with meridian secret set"
                 ))
             } else {
                 about(e)
