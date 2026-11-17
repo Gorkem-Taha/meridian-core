@@ -80,6 +80,7 @@ plugins.
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Modules and versioning](plans/modules-and-versioning.md) | Proposed: shareable modules (sources, lockfile, integrity), how `apiVersion` is enforced, protocol negotiation |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
+| [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing
 
