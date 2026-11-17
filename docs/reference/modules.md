@@ -21,8 +21,10 @@ that nothing has changed since.
 
 - There is no central index and no hosted registry. A requirement says where
   the module comes from: your git server or your container registry.
-- It does not sign modules or verify signatures. A pin proves the content has
-  not changed since you pinned it, not who wrote it.
+- It does not sign modules or verify signatures yet. A pin proves the content
+  has not changed since you pinned it, not who wrote it. Signing is planned
+  with the same mechanism as signed plugins
+  ([issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68)).
 - `compile`, `plan` and `apply` never fetch. Only `meridian module install`,
   `update` and `push` use the network.
 - Installing a module runs nothing from it: no hooks, no scripts.
@@ -208,7 +210,9 @@ Logins are read from the Docker configuration file: `~/.docker/config.json`, or
 `config.json` in the directory `DOCKER_CONFIG` names. So `docker login
 registry.example.com` (or `podman login`, `oras login`) is how you give access.
 Only logins stored in the file's `auths` section are read; credential helpers
-are not run. Token and basic authentication are supported.
+are not run. Token and basic authentication are supported. Naming a declared
+credential for a registry, so that a login can come from a secret provider, is
+planned ([issue 69](https://github.com/ZanattaMichael/meridian-core/issues/69)).
 
 ## Version requirements
 

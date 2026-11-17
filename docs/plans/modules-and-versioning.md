@@ -211,8 +211,11 @@ where the content came from (a commit or a manifest digest) and is what is asked
 re-fetch, so a moved tag cannot substitute different content silently: it fails the
 integrity check instead.
 
-Signing is not in this design. It belongs with signed plugins and the SBOM in the release
-work, where one trust model can cover both.
+Signing is not built yet. Modules will be signed and verified with the same
+cosign/sigstore mechanism the release work adds for plugins, so there is one trust model
+and one set of trusted identities for both. Verification starts as optional: off until a
+project names whom it trusts. It waits for plugin signing to land, and is tracked in
+[issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
 
 ### 1.7 Where modules are kept
 
@@ -354,8 +357,15 @@ code and checked by a test, so it cannot drift:
 
 - **A public index.** Deliberately absent. If one is ever wanted, it is a hosted service
   and a decision for the owner.
-- **Signing.** With the release work, so plugins and modules share one trust model.
-- **Credential helpers for registries.** Only `auths` entries are read at first.
+- **Signing.** Decided: reuse the cosign/sigstore signing and verification that the
+  release work adds for plugins, optional at first. Waits for that to land;
+  [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
+- **Credentials for registries.** Only `auths` entries of the Docker configuration are read
+  at first. Decided: a module source will also be able to name a credential declared in
+  the language's model ([language expansion §12](language-expansion.md#12-credentials),
+  the `registry`, `usernamePassword` and `token` types), with the Docker configuration as
+  the ambient default. Secrets and credentials are a design and not yet code, so this
+  waits for them; [issue 69](https://github.com/ZanattaMichael/meridian-core/issues/69).
 - **Removed-field messages** ([release and versioning §6](release-and-versioning.md#6-deprecation-policy))
   need a table of removed fields per `apiVersion`. It has no entries until something is
   removed, so it lands with the first removal.
