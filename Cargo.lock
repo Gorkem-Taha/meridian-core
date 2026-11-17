@@ -882,6 +882,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-policy-opa"
+version = "0.1.0"
+dependencies = [
+ "meridian-ir",
+ "meridian-orchestrator",
+ "meridian-plugin-host",
+ "meridian-target-fake",
+ "meridian-value",
+]
+
+[[package]]
 name = "meridian-resolve"
 version = "0.1.0"
 dependencies = [
@@ -1029,6 +1040,8 @@ name = "meridian-target-opentofu"
 version = "0.1.0"
 dependencies = [
  "meridian-import",
+ "meridian-ir",
+ "meridian-orchestrator",
  "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",

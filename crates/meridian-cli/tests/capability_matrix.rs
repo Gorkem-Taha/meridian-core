@@ -28,6 +28,9 @@ compiled, with the reason. Each target's own page says how it does what it can.
   applies a resource.
 - **plan** asks the tool what an apply would change, without changing it.
 - **outputs** are values a later stage of a workflow can read.
+- **inputs** says the target hands its tool the values a document's
+  `spec.imports` brings from other documents, as the tool's own variables or
+  parameters.
 - **import** is what `meridian import` can read of the tool's existing
   configuration and turn into a document for the target. See
   [Importing existing configuration](../operations/importing.md).
@@ -59,7 +62,7 @@ fn row(emitter: &dyn Emitter, runner: &dyn Runner, importer: Option<&dyn Importe
         None => "no".to_owned(),
     };
     format!(
-        "| [{name}](../targets/{name}.md) | {category} | {types} | {notifies} | {runtime} | {plan} | {apply} | {outputs} | {import} |\n",
+        "| [{name}](../targets/{name}.md) | {category} | {types} | {notifies} | {runtime} | {plan} | {apply} | {outputs} | {inputs} | {import} |\n",
         name = emitter.name(),
         category = emitter.category(),
         types = types.join(", "),
@@ -67,6 +70,7 @@ fn row(emitter: &dyn Emitter, runner: &dyn Runner, importer: Option<&dyn Importe
         plan = yes(operations.plan),
         apply = yes(operations.apply),
         outputs = yes(operations.outputs),
+        inputs = yes(runner.accepts_inputs()),
     )
 }
 
@@ -165,7 +169,7 @@ fn matrix() -> String {
     ];
     rows.sort();
     format!(
-        "{INTRODUCTION}| Target | Category | Resource types | notifies | runtimeWhen | plan | apply | outputs | import |\n|---|---|---|---|---|---|---|---|---|\n{}",
+        "{INTRODUCTION}| Target | Category | Resource types | notifies | runtimeWhen | plan | apply | outputs | inputs | import |\n|---|---|---|---|---|---|---|---|---|---|\n{}",
         rows.concat()
     )
 }

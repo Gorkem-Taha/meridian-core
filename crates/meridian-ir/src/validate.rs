@@ -93,7 +93,262 @@ impl Bundle {
         for rs in self.documents.iter().filter_map(Document::as_resource_set) {
             self.validate_target_host(rs, &mut errs);
         }
+        for doc in &self.documents {
+            self.validate_imports(doc, &mut errs);
+        }
+        if errs.is_empty() {
+            // Only worth saying once every reference is known to resolve.
+            self.validate_no_cycle(&mut errs);
+        }
         errs.finish(())
+    }
+
+    /// Every document named `name`, of either kind.
+    pub fn named(&self, name: &str) -> Vec<&Document> {
+        self.documents.iter().filter(|d| d.name() == name).collect()
+    }
+
+    /// The document an import's `ref` names: an Infrastructure document for
+    /// an output, and for an artifact whichever document has the name.
+    pub fn import_source(&self, import: &Import) -> Option<&Document> {
+        if import.from == IMPORT_FROM_OUTPUT {
+            return self
+                .documents
+                .iter()
+                .find(|d| d.kind() == Kind::Infrastructure && d.name() == import.r#ref);
+        }
+        match self.named(&import.r#ref).as_slice() {
+            [only] => Some(only),
+            _ => None,
+        }
+    }
+
+    /// Checks a document's `spec.imports`: that each is well formed, and
+    /// that the document and the file or output it names exist.
+    fn validate_imports(&self, doc: &Document, errs: &mut ErrorList) {
+        let mut names: HashMap<&str, &Position> = HashMap::new();
+        for (i, import) in doc.imports().iter().enumerate() {
+            let path = format!("spec.imports[{i}]");
+            let mut fail = |field: &str, msg: String| {
+                errs.push(Error::new(
+                    import.pos.clone(),
+                    format!("{path}.{field}"),
+                    msg,
+                ))
+            };
+            if import.name.is_empty() {
+                fail("name", "missing required field".into());
+            } else if !is_variable_name(&import.name) {
+                fail(
+                    "name",
+                    format!(
+                        "{:?} cannot name an import: it becomes the name of the tool's variable, \
+                         so it must start with a letter or an underscore and hold only letters, \
+                         digits and underscores",
+                        import.name
+                    ),
+                );
+            } else if let Some(first) = names.get(import.name.as_str()) {
+                fail(
+                    "name",
+                    format!(
+                        "duplicate import name {:?} (first declared at {first})",
+                        import.name
+                    ),
+                );
+            } else {
+                names.insert(&import.name, &import.pos);
+            }
+
+            let (needs, other) = match import.from.as_str() {
+                "" => {
+                    fail("from", "missing required field".into());
+                    continue;
+                }
+                IMPORT_FROM_ARTIFACT => (("file", &import.file), ("output", &import.output)),
+                IMPORT_FROM_OUTPUT => (("output", &import.output), ("file", &import.file)),
+                unknown => {
+                    fail(
+                        "from",
+                        format!(
+                            "unknown source {unknown:?} (expected {IMPORT_FROM_ARTIFACT:?} or \
+                             {IMPORT_FROM_OUTPUT:?})"
+                        ),
+                    );
+                    continue;
+                }
+            };
+            if needs.1.is_empty() {
+                fail(
+                    needs.0,
+                    format!("missing required field for from: {}", import.from),
+                );
+            }
+            if !other.1.is_empty() {
+                fail(
+                    other.0,
+                    format!(
+                        "does not apply to from: {}, which takes `{}`",
+                        import.from, needs.0
+                    ),
+                );
+            }
+            if import.r#ref.is_empty() {
+                fail("ref", "missing required field".into());
+                continue;
+            }
+
+            let named = self.named(&import.r#ref);
+            if import.from == IMPORT_FROM_OUTPUT {
+                let Some(source) = self.infrastructure(&import.r#ref) else {
+                    fail(
+                        "ref",
+                        if named.is_empty() {
+                            format!(
+                                "no Infrastructure document named {:?} is loaded",
+                                import.r#ref
+                            )
+                        } else {
+                            format!(
+                                "{:?} is a ResourceSet, and only an Infrastructure document \
+                                 declares outputs",
+                                import.r#ref
+                            )
+                        },
+                    );
+                    continue;
+                };
+                if !import.output.is_empty() && source.output(&import.output).is_none() {
+                    fail(
+                        "output",
+                        format!(
+                            "Infrastructure {:?} declares no output {:?}",
+                            import.r#ref, import.output
+                        ),
+                    );
+                }
+                if doc.kind() == Kind::Infrastructure && doc.name() == import.r#ref {
+                    fail("ref", "a document cannot import from itself".into());
+                }
+                continue;
+            }
+            match named.as_slice() {
+                [] => fail(
+                    "ref",
+                    format!("no document named {:?} is loaded", import.r#ref),
+                ),
+                [source] => {
+                    if source.kind() == doc.kind() && source.name() == doc.name() {
+                        fail("ref", "a document cannot import from itself".into());
+                    }
+                }
+                _ => fail(
+                    "ref",
+                    format!(
+                        "both an Infrastructure and a ResourceSet document are named {:?}, so \
+                         which one's artifact is meant cannot be told; rename one of them",
+                        import.r#ref
+                    ),
+                ),
+            }
+        }
+    }
+
+    /// What `doc` cannot be applied before: the documents it imports from,
+    /// and the Infrastructure document its host comes from.
+    pub fn needs(&self, doc: &Document) -> Vec<&Document> {
+        let mut found: Vec<Option<&Document>> = Vec::new();
+        if let Document::ResourceSet(rs) = doc {
+            if let Some(th) = &rs.spec.target_host {
+                if th.from == TARGET_HOST_FROM_INFRASTRUCTURE {
+                    found.push(
+                        self.documents
+                            .iter()
+                            .find(|d| d.kind() == Kind::Infrastructure && d.name() == th.r#ref),
+                    );
+                }
+            }
+        }
+        for import in doc.imports() {
+            found.push(self.import_source(import));
+        }
+        let mut needs: Vec<&Document> = Vec::new();
+        for source in found.into_iter().flatten() {
+            let same = |d: &&Document| d.kind() == source.kind() && d.name() == source.name();
+            if !needs.iter().any(same) {
+                needs.push(source);
+            }
+        }
+        needs
+    }
+
+    /// Refuses documents that wait on each other, which no order of
+    /// applying can satisfy.
+    fn validate_no_cycle(&self, errs: &mut ErrorList) {
+        // 0 unvisited, 1 on the current path, 2 done.
+        let mut state = vec![0u8; self.documents.len()];
+        let index_of = |doc: &Document| {
+            self.documents
+                .iter()
+                .position(|d| d.kind() == doc.kind() && d.name() == doc.name())
+        };
+        fn visit<'a>(
+            bundle: &'a Bundle,
+            at: usize,
+            state: &mut [u8],
+            path: &mut Vec<usize>,
+            index_of: &dyn Fn(&Document) -> Option<usize>,
+        ) -> Option<Vec<usize>> {
+            state[at] = 1;
+            path.push(at);
+            for need in bundle.needs(&bundle.documents[at]) {
+                let Some(next) = index_of(need) else { continue };
+                match state[next] {
+                    1 => {
+                        let start = path.iter().position(|p| *p == next).unwrap_or(0);
+                        let mut cycle = path[start..].to_vec();
+                        cycle.push(next);
+                        return Some(cycle);
+                    }
+                    0 => {
+                        if let Some(cycle) = visit(bundle, next, state, path, index_of) {
+                            return Some(cycle);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            path.pop();
+            state[at] = 2;
+            None
+        }
+        for start in 0..self.documents.len() {
+            if state[start] != 0 {
+                continue;
+            }
+            let mut path = Vec::new();
+            if let Some(cycle) = visit(self, start, &mut state, &mut path, &index_of) {
+                let names: Vec<String> = cycle
+                    .iter()
+                    .map(|i| {
+                        let doc = &self.documents[*i];
+                        format!("{} {:?}", doc.kind(), doc.name())
+                    })
+                    .collect();
+                let first = &self.documents[cycle[0]];
+                errs.push(Error::new(
+                    first.position().clone(),
+                    "spec",
+                    format!(
+                        "these documents wait on each other, so none of them can be applied \
+                         first: {}. A document waits on the one its targetHost comes from and \
+                         on every one it imports from",
+                        names.join(" needs ")
+                    ),
+                ));
+                return;
+            }
+        }
     }
 
     /// Checks a ResourceSet's binding to the node it configures, including the
@@ -172,6 +427,16 @@ impl Bundle {
             )),
         }
     }
+}
+
+/// Whether `name` can be a tool's variable: a letter or an underscore, then
+/// letters, digits and underscores.
+fn is_variable_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 fn validate_document(doc: &Document, errs: &mut ErrorList) {

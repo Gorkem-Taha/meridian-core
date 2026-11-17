@@ -362,6 +362,10 @@ impl Runner for ArmRunner {
         Operations::ALL
     }
 
+    fn accepts_inputs(&self) -> bool {
+        true
+    }
+
     fn plan(
         &self,
         context: &RunContext,

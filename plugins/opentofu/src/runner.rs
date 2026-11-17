@@ -100,6 +100,10 @@ impl Runner for OpenTofuRunner {
         Operations::ALL
     }
 
+    fn accepts_inputs(&self) -> bool {
+        true
+    }
+
     fn plan(
         &self,
         context: &RunContext,
