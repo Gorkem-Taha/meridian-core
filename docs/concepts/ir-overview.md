@@ -22,6 +22,10 @@ spec:
 
 They are separate on purpose. See [the two-stage architecture](two-stage-architecture.md).
 
+This page is the overview. Every field, with its rules, is in
+[the language reference](../reference/dsl/index.md), and each segment's way of
+writing resources is on its own page there.
+
 ## Resources
 
 A resource is one thing the document wants to be true.

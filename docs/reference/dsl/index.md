@@ -1,0 +1,421 @@
+# The Meridian language
+
+This is the reference for everything a Meridian document can say: every field,
+what it must hold, and what happens when it does not. It describes what the
+`meridian` command accepts today. Where a field is read but not acted on yet,
+this page says so.
+
+The language has one core and four **flavours**. The core is the same for every
+tool: the document, its resources, how they are ordered, how they refer to each
+other. The flavour is what a resource's `type`, `state` and `params` mean, and
+that depends on which segment the target belongs to:
+
+| Segment | Flavour in one line | Reference |
+|---|---|---|
+| Configuration management | a small shared vocabulary (`package`, `file`, `service`, ...) that compiles for several tools | [configuration management](configuration-management.md) |
+| Infrastructure as code | the tool's own resource types, wired with references, producing outputs | [infrastructure as code](infrastructure-as-code.md) |
+| Containerization | the elements of a container project on one host | [containerization](containerization.md) |
+| Container orchestration | the cluster's own API objects | [container orchestration](container-orchestration.md) |
+
+A target's page under [`targets/`](../../targets/ansible.md) then says what that
+one tool makes of the flavour.
+
+## Contents
+
+- [Files](#files)
+- [The document](#the-document)
+- [`metadata`](#metadata)
+- [`spec` of an Infrastructure document](#spec-of-an-infrastructure-document)
+- [`spec` of a ResourceSet](#spec-of-a-resourceset)
+- [`targetHost`](#targethost)
+- [Resources](#resources)
+- [`dependsOn`](#dependson)
+- [`notifies`](#notifies)
+- [`when` and `runtimeWhen`](#when-and-runtimewhen)
+- [References](#references)
+- [`outputs`](#outputs)
+- [Workflows: several documents](#workflows-several-documents)
+- [Which check happens when](#which-check-happens-when)
+- [Fields that are read but not used yet](#fields-that-are-read-but-not-used-yet)
+
+## Files
+
+A file is YAML or JSON. Meridian decides which from the content, not from the
+file's extension.
+
+| | YAML | JSON |
+|---|---|---|
+| Several documents in one file | separated by `---` | a top-level array of objects |
+| A number where text belongs (`name: 123`) | read as the text `"123"` | an error: JSON is typed |
+| Anchors, aliases and `<<` merge keys | supported | not applicable |
+
+Rules that hold for both:
+
+- The file must be UTF-8. A byte order mark at the start is ignored.
+- An **unknown field is an error**, at every level except inside `params` and
+  `metadata.labels`. A misspelt `dependsOn` is reported with its line; it is
+  never silently ignored.
+- A field set twice in the same mapping is an error.
+- An empty file is an error (`no documents found`).
+
+How a plain YAML value is typed matters inside `params`, because the value is
+handed to the tool with its type:
+
+| You write | It is |
+|---|---|
+| `true`, `false` (also `True`, `TRUE`, ...) | a boolean |
+| `yes`, `no`, `on`, `off` | text. Only `true` and `false` are booleans |
+| `42`, `-7`, `1_000`, `0x1F`, `0o17`, `0b101` | an integer |
+| `0644` | the integer 420: a leading zero means octal. Quote a file mode: `"0644"` |
+| `1.5`, `1e3`, `.inf`, `.nan` | a floating point number |
+| `~`, `null`, or nothing | null |
+| `2026-11-17` | text. A date is not converted |
+| anything quoted | text |
+
+## The document
+
+```yaml
+apiVersion: meridian/v1
+kind: Infrastructure        # or ResourceSet
+metadata:
+  name: web
+spec:
+  ...
+```
+
+| Field | Required | Value |
+|---|---|---|
+| `apiVersion` | yes | `meridian/v1`. Anything else is refused before the rest of the document is read |
+| `kind` | yes | `Infrastructure` or `ResourceSet` |
+| `metadata` | yes | see [`metadata`](#metadata) |
+| `spec` | yes | depends on the kind |
+
+The two kinds answer different questions. An **Infrastructure** document says
+what should exist, and can promise [outputs](#outputs). A **ResourceSet** says
+how a machine that exists is configured, and names that machine with
+[`targetHost`](#targethost). Why they are separate is in
+[the two-stage architecture](../../concepts/two-stage-architecture.md).
+
+Which kind goes with which segment:
+
+| Segment | Kind |
+|---|---|
+| Configuration management | `ResourceSet` |
+| Infrastructure as code, containerization, container orchestration | `Infrastructure` |
+
+Meridian does not enforce this pairing today: the kind decides which fields
+`spec` may hold and when the document runs, and the target decides everything
+else. A configuration management target given an Infrastructure document fails
+because it has no host; an Infrastructure target given a ResourceSet compiles,
+but cannot declare outputs. Write the pairing in the table.
+
+## `metadata`
+
+| Field | Required | Value |
+|---|---|---|
+| `name` | yes | the document's name. It must be unique among the documents of the same kind given to one command. Other documents refer to it (`targetHost.ref`), compiled files are written under it, and state is kept under it |
+| `labels` | no | a mapping of text to text. Read and checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+
+Some targets build a name in their own files from `metadata.name`, and are
+stricter about it than Meridian is. Puppet and Chef, for example, need
+lower-case letters, digits and underscores, because the name becomes a class or
+cookbook name. A name a target cannot use is refused when the document is
+compiled, not rewritten.
+
+## `spec` of an Infrastructure document
+
+| Field | Required | Value |
+|---|---|---|
+| `target` | yes | the name of the plugin that compiles and runs the document, such as `terraform`. `meridian plugins` lists what is installed |
+| `targetVersion` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet) |
+| `resources` | yes | a list of at least one [resource](#resources) |
+| `outputs` | no | a list of [outputs](#outputs) |
+
+`targetHost` is not a field of an Infrastructure document.
+
+## `spec` of a ResourceSet
+
+| Field | Required | Value |
+|---|---|---|
+| `target` | yes | the plugin, such as `ansible` |
+| `targetVersion` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet) |
+| `targetHost` | yes, to compile | the machine. See [`targetHost`](#targethost) |
+| `resources` | yes | a list of at least one [resource](#resources) |
+
+`outputs` is not a field of a ResourceSet.
+
+## `targetHost`
+
+Two forms. A machine that is already there:
+
+```yaml
+targetHost:
+  from: inline
+  host: web01.example.com
+```
+
+A machine an Infrastructure document creates:
+
+```yaml
+targetHost:
+  from: infrastructure
+  ref: machine          # that document's metadata.name
+  output: address       # one of its outputs
+```
+
+| Field | Value |
+|---|---|
+| `from` | `inline` or `infrastructure`. Required |
+| `host` | required with `from: inline`: a host name or address, as the tool would be given it |
+| `ref` | required with `from: infrastructure`: the name of an Infrastructure document given to the same command |
+| `output` | required with `from: infrastructure`: the name of an output that document declares |
+
+With `from: infrastructure`, the document and the output must exist, and
+`meridian validate` checks that. The value is only known once the Infrastructure
+document has been applied; until then the ResourceSet is reported as
+**deferred** and is not compiled against a guess.
+
+`meridian validate` accepts a ResourceSet with no `targetHost`, but it cannot be
+compiled: `document "web" declares no targetHost`.
+
+## Resources
+
+```yaml
+- id: nginx_conf
+  type: file
+  state: present
+  params:
+    path: /etc/nginx/nginx.conf
+    content: "worker_processes 4;\n"
+  dependsOn:
+    - resource: nginx_pkg
+  notifies:
+    - resource: nginx_svc
+      action: restart
+  runtimeWhen: "ansible_facts['os_family'] == 'Debian'"
+```
+
+| Field | Required | Value |
+|---|---|---|
+| `id` | yes | the resource's name inside the document. Unique in the document. `dependsOn`, `notifies` and `${...}` use it, and plans and errors report it |
+| `type` | yes | what kind of thing. Its meaning belongs to the [flavour](#the-meridian-language) |
+| `state` | no | what "as it should be" means for this type, such as `present` or `absent`. The values, and whether there are any, belong to the flavour |
+| `params` | no | a mapping: the type's settings. Free-form as far as the core is concerned; the target checks it |
+| `dependsOn` | no | a list. See [`dependsOn`](#dependson) |
+| `notifies` | no | a list. See [`notifies`](#notifies) |
+| `when` | no | text. Not available yet. See [`when` and `runtimeWhen`](#when-and-runtimewhen) |
+| `runtimeWhen` | no | text, in the tool's own language. Only on targets that can check a condition while applying |
+
+Many tools use the `id` as a name in their own files, so they limit what it may
+hold. Letters, digits and underscores, starting with a letter, work on every
+target. A target that needs a different spelling in its own file (a
+CloudFormation logical id, a Kubernetes object name) derives it, and still
+reports the id you wrote.
+
+The order resources are written in matters only as a tiebreak: resources with no
+dependency between them keep the order of the document.
+
+## `dependsOn`
+
+```yaml
+dependsOn:
+  - resource: nginx_pkg
+```
+
+"Do not touch this resource until that one is done." It is about order and
+nothing else.
+
+| Field | Required | Value |
+|---|---|---|
+| `resource` | yes | the `id` of another resource in the same document |
+| `ifMissing` | no | `error` (the default) or `skip`. Checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+
+Rules:
+
+- The resource must exist in the document. `resource "a" depends on unknown
+  resource "b"`.
+- A resource cannot depend on itself.
+- The dependencies of a document must not form a cycle. A cycle is reported with
+  the resources in it: `dependency cycle among 2 resources: a -> b -> a`.
+- A dependency cannot point into another document. Documents are ordered by
+  [kind](#workflows-several-documents), and connected only by outputs.
+
+What a dependency becomes in the tool's file differs by tool (a keyword, or
+simply the order of the file) and is described in
+[dependencies and notifications](../../concepts/dependencies.md).
+
+## `notifies`
+
+```yaml
+notifies:
+  - resource: nginx_svc
+    action: restart
+```
+
+"When this resource really changes, do that to the other one." On a run where
+nothing changed, nothing happens. A notify also orders the notifier first.
+
+| Field | Required | Value |
+|---|---|---|
+| `resource` | yes | the `id` of another resource in the same document |
+| `action` | yes | what to do to it. The words a target accepts depend on the tool and on the type of the notified resource |
+| `on` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet); a notify always fires on a change |
+| `ifMissing` | no | `error` (the default) or `skip`. Checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+
+Rules:
+
+- The resource must exist in the document, and cannot be the notifier itself.
+- A target accepts only the actions its tool can really perform. `reload` aimed
+  at a service is refused on Puppet, which can only restart on refresh; it is
+  not turned into a restart.
+- A target with no way to react to a change refuses every notify.
+
+The actions by segment are on each flavour's page, and the
+[capability matrix](../capability-matrix.md) says which targets take a notify at
+all.
+
+## `when` and `runtimeWhen`
+
+They are two different times.
+
+**`runtimeWhen`** is a condition the tool checks on the machine while it
+applies, so it is written in the tool's own language and Meridian passes it
+through as written. Only some configuration management targets have such a
+moment; every other target refuses a resource that carries one. See
+[configuration management](configuration-management.md#runtimewhen).
+
+**`when`** is meant to be decided by Meridian before anything is compiled, from
+facts gathered about the node, so that a resource is either in the compiled
+output or not. That stage is not wired into the command yet. A document that
+uses `when` passes `validate` and is refused by `compile`, `plan` and `apply`:
+
+```
+resource "a" still carries an unevaluated `when` expression
+```
+
+## References
+
+Inside a text value in `params`, and in an output's `value`, `${...}` refers to
+something only the tool can know.
+
+```yaml
+params:
+  vpc_security_group_ids: ["${web_sg.id}"]
+```
+
+| You write | Meaning |
+|---|---|
+| `${id}` | the resource with that id, in the tool's own way of naming it |
+| `${id.field}`, `${id.list[0].field}` | a value read from it: a path of `.field` and `[index]` steps |
+| text around it, `http://${web.ip}:8080` | the value placed inside the text |
+| `$${` | a literal `${` |
+| anything that is not a path, such as `${upper(x.name)}` | the tool's own expression language, on the targets that have one |
+
+Rules:
+
+- The first name of a path must be the `id` of a resource in the same document.
+  A reference to a resource that is not there is a compile error with the line.
+- A `${` that is never closed is an error. Braces inside an expression balance,
+  so `${merge({a = 1}, x)}` is one expression.
+- What can be read from a resource is the tool's decision: a Terraform
+  attribute, a CloudFormation `GetAtt` attribute, the name of a Kubernetes
+  object. Some targets allow less inside `params` than in an output, because a
+  param is fixed when the document is compiled and an output is read after the
+  apply.
+- A reference usually implies an order. Where the tool derives the order from
+  the reference itself, the target does not write the dependency a second time.
+- A reference never crosses documents. To carry a value from one document to
+  the next, declare an [output](#outputs).
+
+The configuration management targets that use the shared resource types
+(`ansible`, `puppet`, `chef`) do not read references at all: there is nothing to
+read from a package or a file until the node has been converged. On those
+targets `${...}` in a param is ordinary text and is written to the tool's file
+exactly as you wrote it, `$${` included.
+
+## `outputs`
+
+Only in an Infrastructure document.
+
+```yaml
+outputs:
+  - name: address
+    value: ${web.public_ip}
+```
+
+| Field | Required | Value |
+|---|---|---|
+| `name` | yes | unique among the document's outputs |
+| `value` | no, but give one | text holding one or more references. The core does not check that it is there; an output without a value has nothing to report |
+
+An output is a value the tool reports after the document is applied. It is
+shown, kept in the state directory, and handed to the stage that asked for it. A
+value the tool marks as sensitive is shown as `(sensitive)`. On an apply, an
+output the tool has no value for is an error, not an empty value.
+
+Today an output can be consumed in one place: as the `targetHost` of a
+ResourceSet. A second Infrastructure document cannot read it yet.
+
+Configuration management documents are ResourceSets, which have no `outputs`
+field, so those targets produce none. The
+[capability matrix](../capability-matrix.md) has the column for every target.
+
+## Workflows: several documents
+
+The documents given to one `meridian` command are one workflow, whether they are
+in one file or in several.
+
+```
+meridian apply machine.yaml web.yaml
+```
+
+- Every Infrastructure document runs before any ResourceSet, whatever order the
+  files are given in. Within a kind, documents run in the order given.
+- Two documents of the same kind cannot share a name. An Infrastructure document
+  and a ResourceSet can.
+- A ResourceSet waiting for an output is deferred until that output exists.
+- When a stage fails, the stages after it do not run. Nothing is rolled back.
+
+A worked example is [a two-stage workflow](../../quickstart/first-two-stage.md),
+and [`examples/workflow/`](../../../examples/workflow) holds its files.
+
+## Which check happens when
+
+| Check | `validate` | `compile`, `plan`, `apply` |
+|---|---|---|
+| The file is well formed; no unknown or repeated field | yes | yes |
+| `apiVersion`, `kind`, `metadata.name`, `spec.target` are there | yes | yes |
+| At least one resource; every resource has an `id` and a `type`; ids are unique | yes | yes |
+| `dependsOn` and `notifies` name a resource of the document, and not their own | yes | yes |
+| Document names are unique within a kind; output names are unique | yes | yes |
+| `targetHost` is complete, and names a real document and output | yes | yes |
+| A plugin for `target` is installed | no | yes |
+| A ResourceSet has a `targetHost` | no | yes |
+| The dependencies form no cycle | no | yes |
+| The target takes the `type`, the `state`, every param, the notify's action, `runtimeWhen` | no | yes |
+| Every `${...}` points at something | no | yes |
+
+`validate` loads no plugin, so it knows the shape of the language and nothing
+about what a tool can express. A document that validates can still be refused by
+its target. That refusal is the point of the
+[capability model](../../concepts/capability-model.md): a document either does
+what it says or does not compile.
+
+Every error names the file, the line and column, and the field:
+
+```
+web.yaml:12:19: spec.resources[0].dependsOn[0].resource: resource "a" depends on unknown resource "s2"
+```
+
+## Fields that are read but not used yet
+
+These are part of the language, so a document may carry them and their shape is
+checked. Nothing acts on them today, and a document must not rely on them.
+
+| Field | What is checked | What it is for |
+|---|---|---|
+| `metadata.labels` | a mapping of text to text | selecting and grouping documents |
+| `spec.targetVersion` | text | choosing between versions of a tool |
+| `resources[].when` | text; then refused at compile | a condition decided before compiling, from gathered facts |
+| `dependsOn[].ifMissing`, `notifies[].ifMissing` | `error` or `skip` | what to do with an edge whose other end `when` removed |
+| `notifies[].on` | text | which kind of change fires the notify |
