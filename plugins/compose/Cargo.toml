@@ -1,0 +1,18 @@
+[package]
+name = "meridian-target-compose"
+description = "The Meridian plugin for Docker Compose: compiles a document to a Compose file and brings the project up with docker compose"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-host = { path = "../../crates/meridian-plugin-host" }
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

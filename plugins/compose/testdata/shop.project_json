@@ -1,0 +1,12 @@
+{
+  "directory": "",
+  "name": "shop-prod",
+  "outputs": {
+    "data_volume": "shop-prod_db_data",
+    "web_port": "${web.port.80}",
+    "web_url": "http://${web.address.80}/"
+  },
+  "profiles": [],
+  "wait": true,
+  "wait_timeout": 120
+}

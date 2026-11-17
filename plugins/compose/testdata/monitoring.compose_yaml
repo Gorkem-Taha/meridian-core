@@ -1,0 +1,51 @@
+# Compiled by Meridian from the document monitoring. Do not edit.
+name: monitoring
+services:
+  exporter:
+    command:
+      - --path.rootfs=/host
+    image: prom/node-exporter:v1.9.1
+    pid: host
+    restart: unless-stopped
+    volumes:
+      - /:/host:ro,rslave
+  prometheus:
+    configs:
+      - source: prometheus_config
+        target: /etc/prometheus/prometheus.yml
+    depends_on:
+      exporter:
+        condition: service_started
+    healthcheck:
+      interval: 10s
+      test:
+        - CMD
+        - wget
+        - -q
+        - --spider
+        - http://localhost:9090/-/healthy
+    image: prom/prometheus:v3.5.0
+    ports:
+      - 9090:9090
+    restart: unless-stopped
+    volumes:
+      - metrics:/prometheus
+  grafana:
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD}
+    image: grafana/grafana:12.1.0
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+volumes:
+  metrics: {}
+configs:
+  prometheus_config:
+    content: |
+      scrape_configs:
+        - job_name: node
+          static_configs:
+            - targets: ["exporter:9100"]
