@@ -866,10 +866,10 @@ fn model() -> impl Strategy<Value = Model> {
         any::<bool>().prop_map(Value::Bool),
         (-50i64..50).prop_map(Value::Int),
         (-50i64..50).prop_map(|n| Value::Float(n as f64 + 0.5)),
-        // A condition is refused when its text opens an interpolation it
-        // never closes, even inside quotes, so the model does not write one.
+        // Text that opens an interpolation is refused in a condition, which
+        // `tests/interpolation.rs` covers; here it would only be noise.
         prop_oneof!["[a-z]{0,5}", "[ -~]{0,8}"]
-            .prop_filter("text that opens an interpolation", |text| {
+            .prop_filter("opens an interpolation", |text| {
                 !text.contains(INTERPOLATION)
             })
             .prop_map(Value::String),

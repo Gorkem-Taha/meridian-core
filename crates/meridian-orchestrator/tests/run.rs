@@ -1,7 +1,5 @@
 //! A whole workflow, run through real plugin processes.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

@@ -829,9 +829,15 @@ mod tests {
 
     #[test]
     fn a_file_is_named_by_its_path_and_found_again() {
-        let uri = Url::parse("file:///work/web.yaml").unwrap();
-        assert_eq!(name_of(&uri), "/work/web.yaml");
-        assert_eq!(uri_of("/work/web.yaml"), Some(uri));
+        // A Windows path has a drive, and a file URI without one is no path.
+        let (text, path) = if cfg!(windows) {
+            ("file:///C:/work/web.yaml", "C:\\work\\web.yaml")
+        } else {
+            ("file:///work/web.yaml", "/work/web.yaml")
+        };
+        let uri = Url::parse(text).unwrap();
+        assert_eq!(name_of(&uri), path);
+        assert_eq!(uri_of(path), Some(uri));
         let untitled = Url::parse("untitled:Untitled-1").unwrap();
         assert_eq!(uri_of(&name_of(&untitled)), Some(untitled));
     }
