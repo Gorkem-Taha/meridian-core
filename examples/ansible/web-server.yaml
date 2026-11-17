@@ -1,0 +1,47 @@
+# A web server configured with Ansible.
+#
+# The resources are the abstract types every configuration management target
+# takes (package, file, service, user, group, exec). Change `target` to
+# puppet or chef and the same document compiles for that tool, apart from the
+# reload below, which Puppet cannot express and refuses.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: nginx_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/site.conf
+        content: |
+          server {
+            listen 80;
+            root /srv/www;
+          }
+        owner: root
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      # Runs only when the file really changed, once, at the end of the play.
+      notifies:
+        - resource: nginx_svc
+          action: reload
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg

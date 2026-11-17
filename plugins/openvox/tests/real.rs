@@ -105,11 +105,11 @@ fn everything_the_plugin_compiles_is_a_manifest_openvox_parses() {
         ("restart_chain", fixture("restart_chain", "openvox")),
         (
             "example_web",
-            graph_from_file("docs/examples/openvox/web.yaml", "openvox"),
+            graph_from_file("examples/openvox/web.yaml", "openvox"),
         ),
         (
             "example_local",
-            graph_from_file("docs/examples/openvox/local.yaml", "openvox"),
+            graph_from_file("examples/openvox/local.yaml", "openvox"),
         ),
     ];
     for (name, graph) in graphs {

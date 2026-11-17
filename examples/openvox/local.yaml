@@ -1,9 +1,9 @@
 # Something to try on your own machine without root: two files and a command
 # under /tmp, applied by `puppet apply` because the host is localhost.
 #
-#   meridian plan  docs/examples/openvox/local.yaml
-#   meridian apply docs/examples/openvox/local.yaml
-#   meridian plan  docs/examples/openvox/local.yaml    # now reports nothing to do
+#   meridian plan  examples/openvox/local.yaml
+#   meridian apply examples/openvox/local.yaml
+#   meridian plan  examples/openvox/local.yaml    # now reports nothing to do
 apiVersion: meridian/v1
 kind: ResourceSet
 metadata:

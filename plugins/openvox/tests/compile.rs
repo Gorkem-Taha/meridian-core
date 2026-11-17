@@ -37,7 +37,7 @@ fn emit(graph: &ResourceGraph) -> Result<Emitted, CompileError> {
 }
 
 fn example(name: &str) -> ResourceGraph {
-    graph_from_file(&format!("docs/examples/openvox/{name}.yaml"), NAME)
+    graph_from_file(&format!("examples/openvox/{name}.yaml"), NAME)
 }
 
 fn compile(resources: &str) -> Result<Emitted, CompileError> {

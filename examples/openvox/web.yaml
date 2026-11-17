@@ -1,8 +1,8 @@
 # A small web application on one node, applied with OpenVox.
 #
-#   meridian compile docs/examples/openvox/web.yaml --out build
-#   meridian plan    docs/examples/openvox/web.yaml
-#   meridian apply   docs/examples/openvox/web.yaml
+#   meridian compile examples/openvox/web.yaml --out build
+#   meridian plan    examples/openvox/web.yaml
+#   meridian apply   examples/openvox/web.yaml
 #
 # The host is another machine, so the manifest is applied over SSH with
 # OpenBolt. Change it to localhost to apply on the machine Meridian runs on.
