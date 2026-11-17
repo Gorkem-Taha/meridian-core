@@ -1226,13 +1226,18 @@ spec:
 ```
 
 A later layer that sets a final key is an error, so an organisation-level
-value cannot be changed by a node file. This is the rule DscPipelineRunner
-applies to variables and secrets, stated in the language.
+value cannot be changed by a node file. This is the rule the owner asked for,
+with DscPipelineRunner's layered files as the model: there a more specific
+file's variables are merged over the baseline's and win, so the refusal itself
+is new in Meridian.
 
 `final` is the mechanism. Which names must be final, who may declare what at
 which level, and other policies over layering are compile rules, designed in
-their own plan; they are expressed in terms of this section's scopes and of
-[what merges where](#74-what-merges-where).
+their own plan and their own crate (`meridian-rules`, with a `rules.yaml` that
+is never a layer and never merged); they are expressed in terms of this
+section's scopes and of [what merges where](#74-what-merges-where). A `final`
+written here and a `final` rule written there are the same check and give the
+same message.
 
 ### 9.6 Requirements
 
@@ -1831,9 +1836,13 @@ recorded, so the record, the terminal and every sink always agree.
 | `drift.detected`, `drift.none` | a drift check found a difference, or none |
 | `secret.fetched`, `secret.failed` | the name and the provider, never the value |
 | `notification.sent`, `notification.failed` | a sink was told, or could not be |
+| `policy.passed`, `policy.warned`, `policy.denied` | a pre-apply policy check |
+| `rollback.started`, `rollback.succeeded`, `rollback.failed`, `rollback.unavailable` | a rollback of a failed step |
+| `lock.acquired`, `lock.released` | the run's lock |
 
 Every event has `run`, `seq` (strictly increasing), `time`, `type` and the
-identifiers that apply. `detail` has a fixed shape per type. Values that could
+identifiers that apply. `detail` has a fixed shape per type, and a reason in it
+is one of a fixed list of words, never text a tool printed. Values that could
 hold a secret are not in an event at all; they are not masked after the fact.
 
 ### 14.2 The run record
@@ -1843,7 +1852,7 @@ Each run has a directory under the state directory:
 | File | Holds |
 |---|---|
 | `runs/<id>/run.json` | the workflow, the command, who ran it, the selection, the hash of every document and data file, and the final status |
-| `runs/<id>/events.jsonl` | every event, appended as it happens |
+| `runs/<id>/events.jsonl` | every event, in order. Written whole at each step boundary, not appended, because remote backends cannot append |
 | `runs/<id>/plan/<instance>.json` | what each instance planned: resource ids and actions, and the decisions of every condition |
 | `state.json` | the latest status of every instance, derived from the events; what `--resume` and deferred stages read |
 | `lock` | held while a run that changes things is in progress |
@@ -1855,7 +1864,10 @@ Each run has a directory under the state directory:
   with the id of the first, or waits with `--lock-timeout`.
 - The state directory can live somewhere shared. **Decision L.** State
   backends are plugins (`local` built in; `s3`, `azure-blob`, `gcs`, `http`
-  as plugins), so a team's runs, locks and history are in one place.
+  as plugins), so a team's runs, locks and history are in one place. A backend
+  is a program named `meridian-backend-<name>`, run once per operation (get,
+  put, delete, list, lock, unlock). The implementation, with drift, rollback
+  and policy checks, is specified in the run-safety plan.
 - Records older than `--keep-runs` (by default the last 50) are pruned.
 
 Commands over the record:
@@ -1892,7 +1904,9 @@ drift: 2 of 14 instances differ
   network (terraform)         1 resource   web_sg        ingress rule added outside Meridian
 ```
 
-It emits `drift.detected` or `drift.none` per instance, exits non-zero when
+A resource that differs because the *document* changed since its last apply is
+reported as pending, not drifted; the two are told apart by the hash of the
+compiled content. It emits `drift.detected` or `drift.none` per instance, exits non-zero when
 anything drifted, and is meant to be run on a schedule by whatever already
 schedules things (CI, cron). A workflow can react:
 
@@ -1974,7 +1988,7 @@ takes from each, and what it leaves.
 |---|---|---|---|---|
 | **Puppet Hiera** | data in layers chosen by facts; classes look their parameters up by name | `first`, `unique`, `hash`, `deep`, chosen per key with `lookup_options`; knockout prefix | layers chosen per node; per-key strategies; automatic parameter lookup ([7.5](#75-configurations-driven-by-data)); `explain` | strategies set inside the data itself; lookups scattered through code |
 | **DSC Datum** | Hiera for DSC: a resolution order of paths, roles composed onto nodes, the node's data lists its configurations | `MostSpecific`, `hash`, `deep`, with tuple keys for lists of mappings and knockout | data decides which configurations a node gets; `mergeByKey`; roles as a layer | PowerShell at run time; a separate lookup function in every configuration |
-| **DscPipelineRunner** | layered pipeline files with variables and secrets | lower-level files cannot overwrite variables or secrets | `final` ([9.5](#95-overriding-and-final)), enforced at compile | |
+| **DscPipelineRunner** | layered pipeline files with variables and secrets, and a policy file that is never merged | variables deep-merge and the most specific file wins | layered files as the shape; a policy kept apart from the data it governs ([compile rules](#95-overriding-and-final)) | no way to stop a more specific file overriding a baseline variable or secret: `final` adds that, enforced at compile |
 | **Kustomize** | a base and overlays that patch it; no templates | strategic merge patch (lists merged on a key), JSON patch | overlays on documents, matched on `id` ([7.6](#76-layering-documents)); explicit removal | no parameters at all, which pushes real variation into patch sprawl |
 | **Helm values** | one values tree per chart, overridden by files and `--set`; Go templates | mappings deep-merged, lists replaced, `null` deletes | later-file-wins, `--set`, `nulls: remove`; values separated from templates | text templating of YAML, where a wrong indent is a runtime error; no types |
 | **Jsonnet** | a language that generates JSON; objects inherit with `+` and late-bound `self`/`super` | explicit: `+:` to merge a field, plain `:` to replace | functions that return structure ([8.5](#85-functions-that-build-resources)); merging stated at the point of merge | a general programming language: unbounded evaluation, and config only programmers can read |
