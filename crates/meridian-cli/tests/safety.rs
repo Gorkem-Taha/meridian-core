@@ -643,3 +643,145 @@ fn rollback_puts_the_last_apply_back() {
     );
     let _ = second;
 }
+
+/// A policy engine that speaks the protocol: it denies with each line of
+/// its policy file that starts `deny `, warns with each that starts `warn `.
+const ENGINE: &str = r#"#!/bin/sh
+cat > /dev/null
+deny=""
+warn=""
+while read -r verb message; do
+  case "$verb" in
+    deny) deny="$deny${deny:+,}\"$message\"" ;;
+    warn) warn="$warn${warn:+,}\"$message\"" ;;
+  esac
+done < "$1"
+printf '{"deny":[%s],"warn":[%s]}\n' "$deny" "$warn"
+"#;
+
+/// `meridian`, with a policy engine named `lines` on its plugin path.
+fn meridian_with_engine(dir: &Path, args: &[&str]) -> Output {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("engines");
+    fs::create_dir_all(&bin).unwrap();
+    let engine = bin.join("meridian-policy-lines");
+    fs::write(&engine, ENGINE).unwrap();
+    fs::set_permissions(&engine, fs::Permissions::from_mode(0o755)).unwrap();
+    Command::new(env!("CARGO_BIN_EXE_meridian"))
+        .args(args)
+        .current_dir(dir)
+        .env(
+            "MERIDIAN_PLUGIN_DIR",
+            format!("{}:{}", plugin_dirs(), bin.display()),
+        )
+        .env("MERIDIAN_POLICY_ENGINE", "lines")
+        .env_remove("MERIDIAN_STATE_DIR")
+        .env_remove("MERIDIAN_BACKEND")
+        .output()
+        .expect("meridian runs")
+}
+
+#[test]
+fn a_policy_is_asked_before_an_apply_and_a_denial_applies_nothing() {
+    let dir = scratch("policy", "welcome");
+    fs::write(dir.join("rules"), "warn check the change window\n").unwrap();
+
+    let plan = meridian_with_engine(&dir, &["plan", "site.yaml", "--policy", "rules"]);
+    assert!(plan.status.success(), "{}", stderr(&plan));
+    let text = stdout(&plan);
+    assert!(
+        text.contains("  policy warning: check the change window\n  policy: allowed\n"),
+        "{text}"
+    );
+
+    fs::write(
+        dir.join("rules"),
+        "deny no changes on a Friday\ndeny the network is frozen\n",
+    )
+    .unwrap();
+    let denied = meridian_with_engine(&dir, &["apply", "site.yaml", "--policy", "rules"]);
+    assert_eq!(denied.status.code(), Some(1));
+    let text = stdout(&denied);
+    assert!(
+        text.contains(
+            "  FAILED: the policy does not allow this change:\n      - no changes on a Friday\n      \
+             - the network is frozen\n"
+        ),
+        "{text}"
+    );
+    assert!(
+        text.contains("  not run, because Infrastructure \"network\" failed\n"),
+        "{text}"
+    );
+    let run = last_run(&dir);
+    // The tool's preview, which the policy was asked about, is on standard
+    // error with the rest of what the tool says.
+    assert!(
+        stderr(&denied).ends_with(&format!(
+            "run {run} was stopped by its policy before anything was applied\n"
+        )),
+        "{}",
+        stderr(&denied)
+    );
+    assert!(!dir
+        .join(".meridian/infrastructure/network/fake/current")
+        .exists());
+
+    // The record keeps that a policy said no, and not what it said.
+    let events = meridian_with_engine(&dir, &["events", "--type", "policy.*"]);
+    let text = stdout(&events);
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(text.contains("\"type\":\"policy.denied\""), "{text}");
+    assert!(text.contains("\"denials\":2"), "{text}");
+    assert!(!text.contains("Friday"), "{text}");
+    let status = meridian_with_engine(&dir, &["status"]);
+    assert!(
+        stdout(&status)
+            .contains("  network (Infrastructure, target fake): failed (policy-denied)\n"),
+        "{}",
+        stdout(&status)
+    );
+    assert!(
+        stdout(&status).contains("--policy rules"),
+        "{}",
+        stdout(&status)
+    );
+
+    // With the policy satisfied, the same command applies.
+    fs::write(dir.join("rules"), "").unwrap();
+    let applied = meridian_with_engine(&dir, &["apply", "site.yaml", "--policy", "rules"]);
+    assert!(applied.status.success(), "{}", stderr(&applied));
+    assert!(stdout(&applied).contains("  policy: allowed\n"));
+}
+
+#[test]
+fn a_policy_that_cannot_be_used_is_refused_before_the_run_starts() {
+    let dir = scratch("policy-refused", "welcome");
+    fs::write(dir.join("rules"), "").unwrap();
+
+    let no_engine = meridian(&dir, &["apply", "site.yaml", "--policy", "rules"]);
+    assert_eq!(no_engine.status.code(), Some(1));
+    assert!(
+        stderr(&no_engine).starts_with(
+            "error: no policy engine \"opa\": there is no program named meridian-policy-opa in "
+        ),
+        "{}",
+        stderr(&no_engine)
+    );
+
+    let no_file = meridian_with_engine(&dir, &["plan", "site.yaml", "--policy", "absent.rego"]);
+    assert_eq!(no_file.status.code(), Some(1));
+    assert_eq!(
+        stderr(&no_file),
+        "error: the policy absent.rego does not exist\n"
+    );
+
+    let drift = meridian_with_engine(&dir, &["drift", "site.yaml", "--policy", "rules"]);
+    assert_eq!(drift.status.code(), Some(1));
+    assert_eq!(
+        stderr(&drift),
+        "error: --policy is checked by plan and apply, and drift asks no policy; remove it\n"
+    );
+    // Nothing ran, so nothing was recorded.
+    assert!(!dir.join(".meridian/runs").exists());
+}

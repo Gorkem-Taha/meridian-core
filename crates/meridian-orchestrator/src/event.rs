@@ -33,6 +33,8 @@ pub const ROLLBACK_STARTED: &str = "rollback.started";
 pub const ROLLBACK_SUCCEEDED: &str = "rollback.succeeded";
 pub const ROLLBACK_FAILED: &str = "rollback.failed";
 pub const ROLLBACK_UNAVAILABLE: &str = "rollback.unavailable";
+pub const POLICY_PASSED: &str = "policy.passed";
+pub const POLICY_DENIED: &str = "policy.denied";
 pub const LOCK_ACQUIRED: &str = "lock.acquired";
 pub const LOCK_RELEASED: &str = "lock.released";
 

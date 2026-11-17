@@ -45,11 +45,12 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
-| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, putting one back, finding drift, sharing state |
+| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, putting one back, finding drift, asking a policy first, sharing state |
 
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [Policy checks](reference/policy.md) | asking a policy before a change is made: the options, the input a policy sees, Rego with Open Policy Agent, and how to write an engine |
 | [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
