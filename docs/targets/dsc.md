@@ -81,6 +81,10 @@ function language, evaluated just before the resource.
 runtimeWhen: "equals (nodeName) 'web'"
 ```
 
+A `runner` resource is settings, not something DSC applies, so a `runtimeWhen`
+on it is refused (`unsupported-runtime-condition`). Put the condition on the
+resources it should guard.
+
 ## Example
 
 [`examples/dsc/web-server.yaml`](../../examples/dsc/web-server.yaml) compiles to a

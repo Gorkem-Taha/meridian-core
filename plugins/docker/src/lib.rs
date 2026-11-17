@@ -189,12 +189,15 @@ impl Emitter for Docker {
     }
 
     fn supported_resource_types(&self) -> Vec<String> {
-        Section::ALL
+        let mut types: Vec<String> = Section::ALL
             .iter()
             .map(|s| s.type_name())
             .chain(["project"])
             .map(str::to_owned)
-            .collect()
+            .collect();
+        // Sorted, as the SDK asks of every target.
+        types.sort();
+        types
     }
 
     fn capabilities(&self) -> Capabilities {

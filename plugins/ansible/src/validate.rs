@@ -114,3 +114,125 @@ fn check_name(task: &Task, what: &str) -> Result<(), CompileError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use meridian_sdk::{Position, Value};
+
+    fn task(id: &str, name: &str) -> Task {
+        Task {
+            name: name.to_owned(),
+            module: "ansible.builtin.package".to_owned(),
+            args: [("name".to_owned(), Value::String("nginx".to_owned()))].into(),
+            resource_id: id.to_owned(),
+            pos: Position {
+                line: 7,
+                ..Position::default()
+            },
+            ..Task::default()
+        }
+    }
+
+    fn play() -> Playbook {
+        Playbook {
+            name: "web".to_owned(),
+            hosts: "web01".to_owned(),
+            tasks: vec![Task {
+                notify: vec!["restart nginx".to_owned()],
+                ..task("pkg", "install nginx")
+            }],
+            handlers: vec![task("svc", "restart nginx")],
+        }
+    }
+
+    /// Every rule of this stage, each broken by one change to a play that
+    /// is otherwise accepted, with the resource the refusal must name.
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Playbook);
+        let table: &[(&str, &str, Break)] = &[
+            ("missing-host", "", |p| p.hosts.clear()),
+            ("empty-name", "pkg", |p| p.tasks[0].name = "  ".to_owned()),
+            ("multiline-name", "pkg", |p| {
+                p.tasks[0].name = "install\nnginx".to_owned();
+            }),
+            ("multiline-name", "pkg", |p| {
+                p.tasks[0].name = "install\rnginx".to_owned();
+            }),
+            ("duplicate-task-name", "again", |p| {
+                p.tasks.push(task("again", "install nginx"));
+            }),
+            ("empty-name", "svc", |p| p.handlers[0].name.clear()),
+            ("multiline-name", "svc", |p| {
+                p.handlers[0].name = "restart\nnginx".to_owned();
+            }),
+            ("duplicate-handler-name", "twin", |p| {
+                p.handlers.push(task("twin", "restart nginx"));
+            }),
+            ("conditional-handler", "svc", |p| {
+                p.handlers[0].when = "ansible_os_family == 'Debian'".to_owned();
+            }),
+            ("missing-handler", "pkg", |p| {
+                p.tasks[0].notify.push("reload nginx".to_owned());
+            }),
+            ("missing-handler", "pkg", |p| p.handlers.clear()),
+            ("missing-module", "pkg", |p| p.tasks[0].module.clear()),
+            ("empty-module-args", "pkg", |p| p.tasks[0].args.clear()),
+        ];
+
+        assert_eq!(validate(&play()), Ok(()));
+        for (rule, resource, break_it) in table {
+            let mut broken = play();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule);
+            assert_eq!(err.resource, *resource, "{rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 7, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Playbook);
+        let table: &[(&str, Change)] = &[
+            ("a task and a handler may share a name", |p| {
+                p.tasks.push(task("other", "restart nginx"));
+            }),
+            ("a task may carry a condition", |p| {
+                p.tasks[0].when = "ansible_os_family == 'Debian'".to_owned();
+            }),
+            ("a handler nothing notifies", |p| {
+                p.handlers.push(task("spare", "reload nginx"));
+            }),
+            ("a play with no handlers and no notifications", |p| {
+                p.handlers.clear();
+                p.tasks[0].notify.clear();
+            }),
+            ("a play with no tasks at all", |p| p.tasks.clear()),
+        ];
+        for (what, change) in table {
+            let mut p = play();
+            change(&mut p);
+            assert_eq!(validate(&p), Ok(()), "{what}");
+        }
+    }
+
+    #[test]
+    fn the_first_broken_rule_is_the_one_reported() {
+        let mut p = play();
+        p.hosts.clear();
+        p.tasks[0].module.clear();
+        assert_eq!(validate(&p).unwrap_err().rule, "missing-host");
+
+        // Names are checked for every task before any task's module is.
+        let mut p = play();
+        p.tasks[0].module.clear();
+        p.tasks.push(task("late", ""));
+        assert_eq!(validate(&p).unwrap_err().rule, "empty-name");
+    }
+}

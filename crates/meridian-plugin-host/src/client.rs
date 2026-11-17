@@ -8,8 +8,8 @@ use meridian_sdk::pb::emitter_client::EmitterClient;
 use meridian_sdk::pb::runner_client::RunnerClient;
 use meridian_sdk::pb::{self, DescribeRequest};
 use meridian_sdk::{
-    wire, Applied, Artifact, Data, Emitted, LogLine, Output, Plan, ResourceGraph, RunContext,
-    HANDSHAKE_MAGIC, PROTOCOL_VERSION,
+    version, wire, Applied, Artifact, Data, Emitted, LogLine, Output, Plan, ResourceGraph,
+    RunContext, HANDSHAKE_MAGIC, VERSION,
 };
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
@@ -86,13 +86,15 @@ impl Client {
             Ok(handshake) => handshake,
             Err(cause) => return Err(process.fail(path, "handshake failed", cause)),
         };
-        if handshake.protocol_version != PROTOCOL_VERSION {
-            let cause = format!(
-                "the plugin speaks protocol version {} and this host implements {PROTOCOL_VERSION}; \
-                 rebuild the plugin against a matching SDK",
-                handshake.protocol_version
-            );
+        // Both checks come before any call, so a plugin this host cannot
+        // drive fails here, by version, and not somewhere inside a request.
+        if let Err(cause) =
+            version::accept(handshake.protocol_version, &version::supported_protocols())
+        {
             return Err(process.fail(path, "protocol mismatch", cause));
+        }
+        if let Err(cause) = version::sdk_compatible(&handshake.sdk_version, VERSION) {
+            return Err(process.fail(path, "SDK mismatch", cause));
         }
 
         let runtime = match tokio::runtime::Builder::new_multi_thread()
@@ -144,13 +146,23 @@ impl Client {
             Ok(pair) => pair,
             Err((msg, cause)) => return Err(process.fail(path, msg, cause)),
         };
+        if reply.protocol_version != handshake.protocol_version {
+            let cause = format!(
+                "the plugin announced protocol version {} and then described itself as \
+                 speaking {}",
+                handshake.protocol_version, reply.protocol_version
+            );
+            return Err(process.fail(path, "protocol mismatch", cause));
+        }
         if reply.name.is_empty() {
             let cause = "the plugin reported no target name".to_owned();
             return Err(process.fail(path, "the plugin did not describe itself", cause));
         }
 
         let info = Info {
-            protocol_version: reply.protocol_version,
+            // What was agreed in the handshake, which is what both sides
+            // now speak.
+            protocol_version: handshake.protocol_version,
             sdk_version: reply.sdk_version,
             name: reply.name,
             resource_types: reply.resource_types,
@@ -515,6 +527,12 @@ impl Process {
         if let Some(env) = &options.env {
             command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
         }
+        // The offer the plugin picks its protocol version from. Set after
+        // any replacement environment, so a caller cannot drop it by accident.
+        command.env(
+            version::PROTOCOLS_ENV,
+            version::offer(&version::supported_protocols()),
+        );
         let mut child = spawn_when_ready(&mut command).map_err(|e| Error {
             path: path.to_owned(),
             msg: "could not start the plugin".to_owned(),

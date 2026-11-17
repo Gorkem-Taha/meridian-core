@@ -1,0 +1,66 @@
+name: coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: test coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --component llvm-tools --no-self-update && rustup default stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      # One instrumented run of the whole suite. The report steps below read
+      # what it recorded and run nothing again.
+      - name: Run the tests with coverage
+        run: cargo llvm-cov --workspace --locked --no-report
+
+      - name: Write the summary
+        run: |
+          {
+            echo '## Test coverage'
+            echo
+            echo '```'
+            cargo llvm-cov report --summary-only | tail -n 1
+            echo '```'
+            echo
+            echo '<details><summary>Every file</summary>'
+            echo
+            echo '```'
+            cargo llvm-cov report --summary-only
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write the lcov report
+        run: cargo llvm-cov report --lcov --output-path lcov.info
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: lcov.info
+          retention-days: 14
+
+      # The floor sits a little under what main measures, so it catches a
+      # pull request that adds a body of untested code without failing on
+      # noise. Raise it as coverage rises.
+      - name: Hold the floor
+        run: cargo llvm-cov report --fail-under-lines 88
