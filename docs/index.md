@@ -39,6 +39,10 @@ byte. The reasons, the layout and the order of work are in
 | [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
 | [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
 
+| Bringing in what you have | |
+|---|---|
+| [Importing existing configuration](operations/importing.md) | `meridian import`: Terraform, OpenTofu, Ansible, Compose, Kubernetes and DSC configuration into documents, with everything that could not be carried over marked |
+
 | Concepts | |
 |---|---|
 | [Documents, resources and targets](concepts/ir-overview.md) | the two kinds of document, and the two families of resource types |

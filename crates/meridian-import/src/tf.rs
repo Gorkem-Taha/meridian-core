@@ -460,6 +460,23 @@ pub fn import(source: &ImportSource, flavour: &Flavour) -> Result<Imported, Impo
     let mut read = 0;
     for (file, text) in &source.files {
         let base = file.rsplit('/').next().unwrap_or(file);
+        // OpenTofu reads `main.tofu` instead of a `main.tf` beside it.
+        let replaced_by = [(".tf.json", ".tofu.json"), (".tf", ".tofu")]
+            .iter()
+            .filter(|(_, theirs)| flavour.hcl.contains(theirs) || flavour.json.contains(theirs))
+            .find_map(|(ours, theirs)| {
+                let other = format!("{}{theirs}", file.strip_suffix(ours)?);
+                source.files.contains_key(&other).then_some(other)
+            });
+        if let Some(other) = replaced_by {
+            notes.info(
+                file,
+                "file",
+                "",
+                format!("not read: {} reads {other} instead of it", flavour.tool),
+            );
+            continue;
+        }
         if flavour.json.iter().any(|e| base.ends_with(e)) {
             tops_from_json(file, text, &mut tops)?;
         } else if flavour.hcl.iter().any(|e| base.ends_with(e)) {

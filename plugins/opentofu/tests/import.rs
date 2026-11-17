@@ -128,3 +128,28 @@ fn the_formats_cover_both_extensions_opentofu_reads() {
     }
     assert!(!claims("values.tfvars"));
 }
+
+#[test]
+fn a_tofu_file_is_read_instead_of_the_tf_file_beside_it() {
+    let source = import_text(
+        "x",
+        &[
+            ("main.tf", "resource \"null_resource\" \"old\" {}\n"),
+            ("main.tofu", "resource \"null_resource\" \"new\" {}\n"),
+            ("other.tf", "resource \"null_resource\" \"kept\" {}\n"),
+        ],
+    );
+    let imported = OpenTofuImporter.import(&source).unwrap();
+    let ids: Vec<&str> = imported.documents[0]
+        .resources
+        .iter()
+        .map(|r| r.id.as_str())
+        .collect();
+    assert_eq!(ids, ["new", "kept"]);
+    assert_eq!(imported.needing_attention(), 0);
+    assert!(
+        imported.notes[0].msg.contains("reads main.tofu instead"),
+        "{}",
+        imported.notes[0].msg
+    );
+}
