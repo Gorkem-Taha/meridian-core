@@ -61,9 +61,10 @@ What an expression can read depends on where it is written.
 | `data.<key>` | the values given with [`--data` and `--set`](conditions.md#giving-the-data) | every `when` and every [interpolation](interpolation.md) |
 | `var.<name>` | a [variable](interpolation.md#variables) the document declares | every `when` and every interpolation |
 | `cond.<name>` | a [named condition](interpolation.md#named-conditions) the document declares: `true` or `false` | every `when` and every interpolation |
+| `secret.<name>` | a [secret](secrets.md) the document declares. The expression holds a reference to it, never the value | a `when`, a named condition, a variable, and an interpolation in `params`; [refused](secrets.md#where-a-secret-cannot-be-used) where a value is shown or stored |
 | `facts.<path>` | facts about the machine | nowhere yet: refused, with a reason |
 
-More names (`param`, `endpoint`, `secret`, `outputs`) arrive with
+More names (`param`, `endpoint`, `outputs`) arrive with
 the [language expansion](../../plans/language-expansion.md#22-names-an-expression-can-read).
 A name the place does not offer is refused when the document is validated:
 

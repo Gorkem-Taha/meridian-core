@@ -8,10 +8,10 @@ in [the language plan](../plans/language-expansion.md#115-holding-a-secret-in-me
 Everything here lives in one crate, `meridian-secret`. No other crate holds
 the bytes of a secret.
 
-> **Where this stands.** The crate is built and tested. The language does not
-> read secrets through it yet: `spec.secrets`, the secret handle in
-> expressions, the operating-system stores and `meridian secret` come next, and
-> this page will grow with them.
+> **Where this stands.** A document can declare secrets and read them: see
+> [the secrets reference](../reference/dsl/secrets.md). A secret can decide a
+> `when` today. Handing one to a tool, the operating system's stores as
+> providers and the `meridian secret` command come next.
 
 ## The promise, and its limit
 
@@ -73,6 +73,26 @@ undumpable (`prctl(PR_SET_DUMPABLE, 0)`), which also stops another process of
 the same user from attaching a debugger or reading `/proc/<pid>/mem`. It
 returns what it achieved, and `hardening()` reads the same facts back from the
 system.
+
+## Everywhere else: a reference, not the value
+
+The rest of Meridian never holds a secret's bytes. A value that is a secret
+(`Value::Secret`) holds a number: which secret of the run is meant. The bytes
+are in the run's `SecretTable`, in this crate.
+
+- The reference prints, compares and encodes as `(sensitive)`. A plan, a log
+  line, an error, a debug dump and the run's state are all made from values,
+  so none of them can show a secret: the bytes were never in what they are
+  made from. This is stronger than masking output afterwards, which fails the
+  first time someone forgets.
+- An expression that joins a secret to text or encodes it asks the table to
+  do it. The work is done on protected memory and the answer is another
+  reference.
+- A secret that has not been fetched (`validate` and `compile` never fetch
+  one) is in the table as its name. What is made from it is a description,
+  such as `password=(secret db_password)`.
+- The table for a stage is wiped when the stage ends. A reference that
+  outlives it names nothing.
 
 ## Fetching
 
@@ -139,5 +159,11 @@ In `crates/meridian-secret/tests`:
 | `mask.rs` | every form is masked, in text and in bytes |
 | `expose_is_rare.rs` | `expose` and `unsafe` appear only where expected |
 
-Tests that a secret reaches no plan output, event, log or run record of a whole
-`meridian` run arrive with `spec.secrets`, when a run can first hold one.
+Across the other crates:
+
+| File | What it proves |
+|---|---|
+| `meridian-secret/tests/table.rs` | secrets are joined, encoded and compared without leaving protected memory; one that is not fetched is described and never guessed; a wiped one is gone |
+| `meridian-expr/tests/secrets.rs` | an expression holds a reference; joins and placements stay secret; a comparison is a plain answer; every other function and operator refuses; no error holds a value |
+| `meridian-ir/tests/secrets.rs` | every rule of a declaration; every place a secret is refused; a resolved document, its debug form and its encoding hold only `(sensitive)`; the secrets are wiped when their holder is dropped |
+| `meridian-cli/tests/secrets.rs` | through the real command: the value is in nothing `plan` and `apply` print and in no file of the state directory or of `compile --out`; a failed fetch repeats neither the value, a command's output nor its arguments; a secret read from the environment is not inherited by a program started afterwards |
