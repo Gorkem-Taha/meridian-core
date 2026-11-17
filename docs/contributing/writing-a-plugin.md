@@ -250,6 +250,10 @@ would reject, two resources claiming one thing, a required pairing. The aim is
 that a document the tool would refuse is refused here instead, before anything
 runs, with the author's line number.
 
+Each rule has a row in the table at the end of the file, which breaks it once
+and checks the refusal; see
+[a table for every validation rule](testing.md#a-table-for-every-validation-rule).
+
 ### emit.rs
 
 Serialises the model to files, and does nothing else. It cannot fail, because
