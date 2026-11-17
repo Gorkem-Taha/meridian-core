@@ -15,6 +15,7 @@ clap = { version = "4", features = ["derive", "env"] }
 meridian-ir = { path = "../meridian-ir" }
 meridian-orchestrator = { path = "../meridian-orchestrator" }
 meridian-plugin-host = { path = "../meridian-plugin-host" }
+meridian-report = { path = "../meridian-report" }
 meridian-sdk = { path = "../meridian-sdk" }
 
 [dev-dependencies]

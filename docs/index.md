@@ -51,6 +51,7 @@ byte. The reasons, the layout and the order of work are in
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
 | [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |
+| [Reports and sinks](reference/reporting.md) | report files in JSON, JUnit, Markdown and HTML, sending a run's events elsewhere as they happen, and how to write a sink |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
@@ -81,6 +82,7 @@ plugins.
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
 | [Run safety](plans/run-safety.md) | State and locking, resume, rollback, drift, policy checks, values handed between stages |
+| [Reporting](plans/reporting.md) | Streaming, report files, sinks, and the report server |
 | [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing

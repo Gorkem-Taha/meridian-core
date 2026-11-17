@@ -604,6 +604,7 @@ dependencies = [
  "meridian-orchestrator",
  "meridian-plugin-host",
  "meridian-plugin-testkit",
+ "meridian-report",
  "meridian-sdk",
  "meridian-target-ansible",
  "meridian-target-arm",
@@ -683,6 +684,14 @@ dependencies = [
  "meridian-ast",
  "meridian-ir",
  "meridian-plugin-host",
+ "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-report"
+version = "0.1.0"
+dependencies = [
+ "meridian-orchestrator",
  "meridian-sdk",
 ]
 
