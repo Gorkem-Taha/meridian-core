@@ -1,0 +1,73 @@
+// Compiled by Meridian from the document web-vm. Do not edit.
+
+resource web_ip 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
+  name: 'web-ip'
+  location: resourceGroup().location
+  properties: {
+    dnsSettings: {
+      domainNameLabel: 'web-${uniqueString(resourceGroup().id)}'
+    }
+    publicIPAllocationMethod: 'Static'
+  }
+  sku: {
+    name: 'Standard'
+  }
+}
+
+resource vnet 'Microsoft.Network/virtualNetworks@2023-09-01' = {
+  name: 'web-vnet'
+  location: resourceGroup().location
+  properties: {
+    addressSpace: {
+      addressPrefixes: [
+        '10.0.0.0/16'
+      ]
+    }
+    subnets: [
+      {
+        name: 'web'
+        properties: {
+          addressPrefix: '10.0.1.0/24'
+        }
+      }
+    ]
+  }
+}
+
+resource nic 'Microsoft.Network/networkInterfaces@2023-09-01' = {
+  name: 'web-nic'
+  location: resourceGroup().location
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'primary'
+        properties: {
+          privateIPAllocationMethod: 'Dynamic'
+          publicIPAddress: {
+            id: web_ip.id
+          }
+          subnet: {
+            id: vnet.properties.subnets[0].id
+          }
+        }
+      }
+    ]
+  }
+  tags: {
+    'cost-center': 'web'
+  }
+}
+
+resource lock 'Microsoft.Authorization/locks@2020-05-01' = {
+  name: 'keep-web-ip'
+  properties: {
+    level: 'CanNotDelete'
+  }
+  scope: web_ip
+  dependsOn: [
+    nic
+  ]
+}
+
+output web_vm_ip string = string(web_ip.properties.ipAddress)
+output web_url string = 'http://${web_ip.properties.dnsSettings.fqdn}/'

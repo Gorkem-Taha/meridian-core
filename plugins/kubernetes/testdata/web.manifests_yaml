@@ -1,0 +1,54 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  nginx.conf: |
+    server {
+      listen 8080;
+      root /usr/share/nginx/html;
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      annotations:
+        meridian.dev/restart-on-web-config: 3e7aa8895791e35c
+      labels:
+        app: web
+    spec:
+      containers:
+        - image: nginx:1.27
+          name: nginx
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - mountPath: /etc/nginx/conf.d
+              name: config
+      volumes:
+        - configMap:
+            name: web-config
+          name: config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+spec:
+  ports:
+    - port: 80
+      targetPort: 8080
+  selector:
+    app: web
+  type: LoadBalancer
