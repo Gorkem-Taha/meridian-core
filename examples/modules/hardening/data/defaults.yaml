@@ -1,0 +1,2 @@
+# The module's defaults. A data file given after this one replaces a key.
+ssh_permit_root: false
