@@ -317,11 +317,12 @@ fn a_signed_module_is_checked_on_install_and_on_every_run() {
     let repo = root.join("motd.git");
     let keys = root.join("keys");
     fs::create_dir_all(&keys).unwrap();
-    let (secret, public) = (keys.join("acme.key"), keys.join("acme.pub"));
-    let (secret, public) = (secret.to_str().unwrap(), public.to_str().unwrap());
+    // Paths to the two key files, not the keys.
+    let (signer, public) = (keys.join("acme.key"), keys.join("acme.pub"));
+    let (signer, public) = (signer.to_str().unwrap(), public.to_str().unwrap());
     ok(
         &root,
-        &["signing", "keygen", "--secret", secret, "--public", public],
+        &["signing", "keygen", "--secret", signer, "--public", public],
     );
     ok(
         &root,
@@ -361,7 +362,7 @@ fn a_signed_module_is_checked_on_install_and_on_every_run() {
         &repo.join("meridian.yaml"),
         "apiVersion: meridian/v1\nkind: Module\nmetadata:\n  name: acme/motd\n  version: 1.2.0\n",
     );
-    let out = ok(&repo, &["module", "sign", "--key", secret]);
+    let out = ok(&repo, &["module", "sign", "--key", signer]);
     assert!(out.starts_with("signed acme/motd 1.2.0 with key "), "{out}");
     assert!(out.ends_with("  wrote:     meridian.sig\n"), "{out}");
     let key_id = out
@@ -444,7 +445,7 @@ fn a_signed_module_is_checked_on_install_and_on_every_run() {
     // A file changed after signing is caught by the pin, as before; a
     // signature swapped for another is caught by the signature.
     let stored = site.join(".meridian/modules/acme/motd/1.2.0");
-    ok(&root.join("local"), &["module", "sign", "--key", secret]);
+    ok(&root.join("local"), &["module", "sign", "--key", signer]);
     fs::copy(root.join("local/meridian.sig"), stored.join("meridian.sig")).unwrap();
     let (out, _) = fails(&site, &with(&["module", "verify"]));
     assert!(
