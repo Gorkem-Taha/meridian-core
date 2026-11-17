@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use meridian_value::Value;
+use meridian_secret::{Piece, SecretTable, Transform};
+use meridian_value::{SecretRef, Value};
 
 use crate::funcs;
 use crate::parse::{Binary, Node, Unary};
@@ -282,6 +283,30 @@ pub(crate) fn same(a: &Value, b: &Value) -> bool {
     }
 }
 
+/// Whether a secret is anywhere in the value.
+pub(crate) fn holds_secret(value: &Value) -> bool {
+    match value {
+        Value::Secret(_) => true,
+        Value::List(items) => items.iter().any(holds_secret),
+        Value::Map(entries) => entries.values().any(holds_secret),
+        _ => false,
+    }
+}
+
+enum PieceOwned {
+    Text(String),
+    Secret(SecretRef),
+}
+
+impl PieceOwned {
+    fn piece(&self) -> Piece<'_> {
+        match self {
+            PieceOwned::Text(text) => Piece::Text(text),
+            PieceOwned::Secret(secret) => Piece::Secret(*secret),
+        }
+    }
+}
+
 fn overflow(op: &str) -> Failure {
     Failure::Other(format!(
         "the result of {op} is too large for a whole number"
@@ -470,6 +495,9 @@ impl<'a> Evaluator<'a> {
                 op.symbol()
             ))
         };
+        if matches!(a, Value::Secret(_)) || matches!(b, Value::Secret(_)) {
+            return self.binary_with_secret(op, &a, &b);
+        }
         Ok(match op {
             Binary::Equal => Value::Bool(same(&a, &b)),
             Binary::NotEqual => Value::Bool(!same(&a, &b)),
@@ -577,6 +605,76 @@ impl<'a> Evaluator<'a> {
         })
     }
 
+    fn secrets(&self) -> Outcome<&SecretTable> {
+        self.scope.secrets.as_deref().ok_or_else(|| {
+            Failure::Other("a secret cannot be read here: this place holds no secrets".to_owned())
+        })
+    }
+
+    /// An operator with a secret on either side. A secret can be compared,
+    /// which gives a plain yes or no, and joined to text or another secret,
+    /// which gives a secret. Nothing else is done to one.
+    fn binary_with_secret(&self, op: Binary, a: &Value, b: &Value) -> Outcome<Value> {
+        let table = self.secrets()?;
+        let failed = |e: meridian_secret::TableError| Failure::Other(e.to_string());
+        match op {
+            Binary::Equal | Binary::NotEqual => {
+                let equal = match (a, b) {
+                    (Value::Secret(x), Value::Secret(y)) => table.same(*x, *y).map_err(failed)?,
+                    (Value::Secret(x), Value::String(text))
+                    | (Value::String(text), Value::Secret(x)) => {
+                        table.same_as_text(*x, text).map_err(failed)?
+                    }
+                    // A secret is text; it is never a number, a list or null.
+                    _ => false,
+                };
+                Ok(Value::Bool(equal == (op == Binary::Equal)))
+            }
+            Binary::Add => {
+                let piece = |value: &'_ Value| match value {
+                    Value::Secret(secret) => Some(PieceOwned::Secret(*secret)),
+                    Value::String(text) => Some(PieceOwned::Text(text.clone())),
+                    _ => None,
+                };
+                let (Some(x), Some(y)) = (piece(a), piece(b)) else {
+                    return Err(Failure::Other(format!(
+                        "cannot add {} and {} with +; a secret is joined to text or to another \
+                         secret",
+                        a.describe(),
+                        b.describe()
+                    )));
+                };
+                let joined = table.join(&[x.piece(), y.piece()]).map_err(failed)?;
+                Ok(Value::Secret(joined))
+            }
+            _ => Err(Failure::Other(format!(
+                "{} cannot be used on a secret; a secret can be compared with == or !=, joined \
+                 to text with +, and given to {}",
+                op.symbol(),
+                Transform::FUNCTIONS.join(", ")
+            ))),
+        }
+    }
+
+    /// A function given a secret. Only the few that work on protected
+    /// memory take one; the rest would have to copy it out.
+    fn call_with_secret(&self, name: &str, values: &[Value]) -> Outcome<Value> {
+        let table = self.secrets()?;
+        match (Transform::of_function(name), values) {
+            (Some(transform), [Value::Secret(secret)]) => table
+                .transform(*secret, transform)
+                .map(Value::Secret)
+                .map_err(|e| Failure::Other(e.to_string())),
+            // The value is handed back as it is, or the run stops.
+            _ if name == "required" => Ok(funcs::call(name, values, self.scope)?),
+            _ => Err(Failure::Other(format!(
+                "{name}(...) cannot be given a secret; the functions that can are {}, and a \
+                 secret can be joined to text with + or placed inside text",
+                Transform::FUNCTIONS.join(", ")
+            ))),
+        }
+    }
+
     fn call(&mut self, name: &str, args: &[Node]) -> Outcome<Value> {
         funcs::check_arity(name, args.len())?;
         if !LAZY.contains(&name) {
@@ -584,6 +682,9 @@ impl<'a> Evaluator<'a> {
                 .iter()
                 .map(|arg| self.value(arg))
                 .collect::<Outcome<Vec<Value>>>()?;
+            if values.iter().any(holds_secret) {
+                return self.call_with_secret(name, &values);
+            }
             return Ok(funcs::call(name, &values, self.scope)?);
         }
         match name {

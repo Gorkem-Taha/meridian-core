@@ -744,7 +744,7 @@ fn every_interpolation_is_checked_by_validate_without_any_data() {
         &["spec.resources[0].params.path", "never closed"],
     );
     refused(&one("x-${{ }}"), &["empty interpolation"]);
-    refused(&one("${{ secret.db }}"), &["unknown name \"secret\""]);
+    refused(&one("${{ endpoint.db }}"), &["unknown name \"endpoint\""]);
     refused(&one("${{ var.nope }}"), &["var.nope is not declared"]);
     refused(&one("${{ upper() }}"), &["upper"]);
     refused(&one("${{ facts.os }}"), &["facts are not available"]);

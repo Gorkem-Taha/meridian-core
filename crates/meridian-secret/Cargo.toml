@@ -1,0 +1,24 @@
+[package]
+name = "meridian-secret"
+description = "Meridian secrets: a value that cannot print itself, is wiped when dropped and is kept out of swap and core dumps, and the channels that hand it to a tool"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+base64 = "0.22"
+meridian-value = { path = "../meridian-value" }
+zeroize = "1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# This crate is the one place in the workspace that may use `unsafe`: locking
+# and guarding pages cannot be done without it. It is confined to `sys.rs`,
+# which says so at its top; everything else in the crate denies it.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
