@@ -45,7 +45,7 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
-| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, sharing state |
+| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, putting one back, finding drift, sharing state |
 
 | Reference | |
 |---|---|

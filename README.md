@@ -67,8 +67,10 @@ or `MERIDIAN_PLUGIN_DIR`. Each tool's working files and Meridian's own run-state
 
 A `plan` or `apply` holds a lock on that state, so two runs cannot collide, and every run is
 recorded: `meridian status` shows the last one step by step, and `meridian apply --resume`
-continues an apply that failed from the stage that failed. The record can be kept in a shared
-place with `--backend`. See [running safely](docs/concepts/run-safety.md).
+continues an apply that failed from the stage that failed. `--on-failure rollback` and
+`meridian rollback` put back what an apply changed, and `meridian drift` says whether what was
+applied is still what is there. The record can be kept in a shared place with `--backend`. See
+[running safely](docs/concepts/run-safety.md).
 
 A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
 `targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever

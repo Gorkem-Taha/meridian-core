@@ -100,6 +100,10 @@ pub struct StepRecord {
     pub changes: u64,
     /// For a failed step, the fixed word that says what kind of failure.
     pub reason: String,
+    /// The artifact hash of the step's last successful apply before this
+    /// run, which is what a rollback of this run goes back to. Empty when
+    /// there was none, or when the run did not apply.
+    pub previous: String,
 }
 
 /// One run.
@@ -167,6 +171,7 @@ impl RunRecord {
                         ("artifact", text(&step.artifact)),
                         ("changes", Value::Uint(step.changes)),
                         ("reason", text(&step.reason)),
+                        ("previous", text(&step.previous)),
                     ]
                     .into_iter()
                     .map(|(key, value)| (key.to_owned(), value))
@@ -219,6 +224,7 @@ impl RunRecord {
                         _ => 0,
                     },
                     reason: text_of(step, "reason"),
+                    previous: text_of(step, "previous"),
                 });
             }
         }
@@ -345,6 +351,7 @@ mod tests {
                 artifact: "sha256:abc".to_owned(),
                 changes: 2,
                 reason: "tool-failed".to_owned(),
+                previous: "sha256:old".to_owned(),
             }],
         }
     }

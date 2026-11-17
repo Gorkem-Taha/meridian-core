@@ -15,8 +15,9 @@ use std::time::Duration;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
-    lock, record, run_selected, selected, Backend, Event, ExecBackend, LocalBackend, Mode,
-    Observer, Options, Outcome, Resume, RunRecord, Selector, StageId, StageReport, MASK,
+    lock, record, run_selected, selected, Backend, Drift, Event, ExecBackend, LocalBackend, Mode,
+    Observer, OnFailure, Options, Outcome, Resume, RollbackOutcome, RollbackReport, RunRecord,
+    Selector, StageId, StageReport, MASK,
 };
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
@@ -62,6 +63,26 @@ enum Command {
         /// left alone. With no value, the last apply; or a run id
         #[arg(long, value_name = "RUN", num_args = 0..=1, default_missing_value = "last")]
         resume: Option<String>,
+        /// What to do when a stage fails: stop, leaving what was applied in
+        /// place, or rollback, putting every stage this run changed back to
+        /// what was applied before
+        #[arg(long, value_name = "ACTION", default_value = "stop")]
+        on_failure: FailureAction,
+    },
+    /// Check whether what was applied is still what is there, changing
+    /// nothing; exits 2 when something has drifted
+    Drift {
+        #[command(flatten)]
+        workflow: Workflow,
+    },
+    /// Put back what the last apply changed: each stage it applied is
+    /// applied again from what was applied before it, last stage first
+    Rollback {
+        #[command(flatten)]
+        workflow: Workflow,
+        /// The apply to put back; the last one when not given
+        #[arg(long, value_name = "RUN")]
+        run: Option<String>,
     },
     /// Show the current or last run, step by step, and who holds the lock
     Status {
@@ -141,6 +162,15 @@ struct State {
     backend_config: Vec<String>,
 }
 
+/// What an apply does when a stage fails.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FailureAction {
+    /// Stop, and leave what was applied in place
+    Stop,
+    /// Stop, then put back every stage this run changed
+    Rollback,
+}
+
 /// How the events of a run are written to standard output.
 #[derive(Clone, Copy, ValueEnum)]
 enum EventFormat {
@@ -184,13 +214,37 @@ fn main() -> ExitCode {
         Command::Validate { files } => load(&files).map(|bundle| {
             println!("{} valid", count(bundle.documents.len(), "document"));
         }),
-        Command::Compile { workflow, out } => {
-            orchestrate(&workflow, Mode::Compile, out.as_deref(), None)
-        }
-        Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None, None),
-        Command::Apply { workflow, resume } => {
-            orchestrate(&workflow, Mode::Apply, None, resume.as_deref())
-        }
+        Command::Compile { workflow, out } => orchestrate(
+            &workflow,
+            Mode::Compile,
+            &How {
+                out: out.as_deref(),
+                ..How::default()
+            },
+        ),
+        Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, &How::default()),
+        Command::Apply {
+            workflow,
+            resume,
+            on_failure,
+        } => orchestrate(
+            &workflow,
+            Mode::Apply,
+            &How {
+                resume: resume.as_deref(),
+                rollback_on_failure: on_failure == FailureAction::Rollback,
+                ..How::default()
+            },
+        ),
+        Command::Drift { workflow } => orchestrate(&workflow, Mode::Drift, &How::default()),
+        Command::Rollback { workflow, run } => orchestrate(
+            &workflow,
+            Mode::Rollback,
+            &How {
+                rollback_of: run.as_deref(),
+                ..How::default()
+            },
+        ),
         Command::Status { state } => status(&state),
         Command::Runs { state } => runs(&state),
         Command::Events { run, types, state } => events(&state, run.as_deref(), &types),
@@ -200,6 +254,7 @@ fn main() -> ExitCode {
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(Failure::Reported) => ExitCode::FAILURE,
+        Err(Failure::Drifted) => ExitCode::from(2),
         Err(Failure::Message(msg)) => {
             eprintln!("error: {msg}");
             ExitCode::FAILURE
@@ -212,6 +267,8 @@ enum Failure {
     Message(String),
     /// Already printed, stage by stage.
     Reported,
+    /// A drift check ran, and found drift. Already printed.
+    Drifted,
 }
 
 fn count(n: usize, noun: &str) -> String {
@@ -367,12 +424,21 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
         .map_err(|e| Failure::Message(e.to_string()))
 }
 
-fn orchestrate(
-    workflow: &Workflow,
-    mode: Mode,
-    out: Option<&Path>,
-    resume: Option<&str>,
-) -> Result<(), Failure> {
+/// What a command adds to the workflow it runs.
+#[derive(Default)]
+struct How<'a> {
+    /// `compile --out`
+    out: Option<&'a Path>,
+    /// `apply --resume`
+    resume: Option<&'a str>,
+    /// `apply --on-failure rollback`
+    rollback_on_failure: bool,
+    /// `rollback --run`
+    rollback_of: Option<&'a str>,
+}
+
+fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Failure> {
+    let (out, resume) = (how.out, how.resume);
     let bundle = load(&workflow.files)?;
     let mut selector = Selector::all();
     for text in &workflow.selector {
@@ -395,12 +461,17 @@ fn orchestrate(
     if resume.is_some() {
         command.push("--resume".to_owned());
     }
+    if how.rollback_on_failure {
+        command.push("--on-failure rollback".to_owned());
+    }
     let options = Options {
         data,
         // Compiling keeps no record, so it needs no backend to be there.
         backend: match mode {
             Mode::Compile => None,
-            Mode::Plan | Mode::Apply => Some(backend(&workflow.state)?),
+            Mode::Plan | Mode::Apply | Mode::Drift | Mode::Rollback => {
+                Some(backend(&workflow.state)?)
+            }
         },
         lock_timeout: workflow.lock_timeout,
         resume: resume.map(|run| match run {
@@ -409,6 +480,15 @@ fn orchestrate(
         }),
         command: command.join(" "),
         keep_runs: workflow.keep_runs,
+        on_failure: if how.rollback_on_failure {
+            OnFailure::Rollback
+        } else {
+            OnFailure::Stop
+        },
+        rollback_of: match how.rollback_of {
+            None => Resume::Last,
+            Some(id) => Resume::Run(id.to_owned()),
+        },
         ..Options::new(&workflow.state.state_dir)
     };
     let registry = registry(&workflow.state.plugins)?;
@@ -428,17 +508,36 @@ fn orchestrate(
     if let Some(refusal) = &report.refused {
         return Err(Failure::Message(refusal.to_string()));
     }
-    if report.succeeded() {
-        return Ok(());
-    }
-    if mode == Mode::Apply {
-        eprintln!(
-            "run {} failed. Once the cause is fixed, `meridian apply --resume` with the same \
-             documents continues from the stage that failed",
-            report.run_id
+    if mode == Mode::Drift {
+        let drifted = report
+            .stages
+            .iter()
+            .filter(|s| matches!(s.outcome, Outcome::Drift(Drift::Drifted(_))))
+            .count();
+        let line = format!(
+            "drift: {drifted} of {} drifted",
+            count(report.stages.len(), "stage")
         );
+        if workflow.events.is_some() {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
     }
-    Err(Failure::Reported)
+    if !report.succeeded() {
+        if mode == Mode::Apply && report.rollbacks.is_empty() {
+            eprintln!(
+                "run {} failed. Once the cause is fixed, `meridian apply --resume` with the \
+                 same documents continues from the stage that failed",
+                report.run_id
+            );
+        }
+        return Err(Failure::Reported);
+    }
+    if report.drifted() {
+        return Err(Failure::Drifted);
+    }
+    Ok(())
 }
 
 /// Shows the current or last run, and whether the state is locked.
@@ -619,6 +718,69 @@ impl Observer for Printer<'_> {
             let _ = writeln!(std::io::stdout().lock(), "{}", event.to_json());
         }
     }
+
+    fn rollback_finished(&mut self, report: &RollbackReport) {
+        if self.events {
+            let _ = print_rollback(&mut std::io::stderr().lock(), report);
+        } else {
+            let _ = print_rollback(&mut std::io::stdout().lock(), report);
+        }
+    }
+}
+
+/// The first characters of an artifact hash, enough to tell two apart.
+fn short(hash: &str) -> &str {
+    let hex = hash.strip_prefix("sha256:").unwrap_or(hash);
+    &hex[..hex.len().min(12)]
+}
+
+fn print_rollback(out: &mut dyn Write, report: &RollbackReport) -> std::io::Result<()> {
+    let on = if report.host.is_empty() {
+        String::new()
+    } else {
+        format!(" on {}", report.host)
+    };
+    writeln!(
+        out,
+        "rolling back {} ({}, target {}{on})",
+        report.id.name,
+        report.id.kind.as_str(),
+        report.target
+    )?;
+    match &report.outcome {
+        RollbackOutcome::RolledBack { to, changes } => {
+            for change in changes {
+                writeln!(out, "  {}", change_line(change))?;
+            }
+            writeln!(
+                out,
+                "  rolled back to what was applied before (artifact {}), {}",
+                short(to),
+                count(changes.len(), "change")
+            )
+        }
+        RollbackOutcome::Unchanged => writeln!(
+            out,
+            "  nothing to put back: the run applied what was already applied"
+        ),
+        RollbackOutcome::Unavailable(why) => writeln!(out, "  NOT ROLLED BACK: {why}"),
+        RollbackOutcome::Failed(why) => {
+            let mut lines = why.lines();
+            writeln!(
+                out,
+                "  ROLLBACK FAILED: {}",
+                lines.next().unwrap_or_default()
+            )?;
+            for line in lines {
+                writeln!(out, "    {line}")?;
+            }
+            Ok(())
+        }
+        RollbackOutcome::NotAttempted { because_of } => writeln!(
+            out,
+            "  not attempted, because rolling back {because_of} failed"
+        ),
+    }
 }
 
 impl Printer<'_> {
@@ -699,6 +861,48 @@ impl Printer<'_> {
                 out,
                 "  deferred: needs the output {output:?} of {waiting_on}, which has not been applied yet"
             )?,
+            Outcome::Drift(drift) => match drift {
+                Drift::NeverApplied => writeln!(out, "  never applied, so nothing to compare")?,
+                Drift::InSync => writeln!(out, "  in sync with what was applied")?,
+                Drift::Unknown => writeln!(
+                    out,
+                    "  unknown: this tool cannot preview, so it cannot say whether anything \
+                     drifted"
+                )?,
+                Drift::Drifted(changes) => {
+                    for change in changes {
+                        writeln!(out, "  {}", change_line(change))?;
+                    }
+                    writeln!(
+                        out,
+                        "  DRIFTED: {} from what was applied",
+                        count(changes.len(), "difference")
+                    )?;
+                }
+                Drift::Pending {
+                    changes,
+                    last_apply_failed,
+                } => {
+                    for change in changes {
+                        writeln!(out, "  {}", change_line(change))?;
+                    }
+                    let why = if *last_apply_failed {
+                        "the last apply failed part way"
+                    } else {
+                        "the document has changed since the last apply"
+                    };
+                    writeln!(
+                        out,
+                        "  pending: {why}, so {} waiting to be applied and cannot be told \
+                         from drift",
+                        match changes.len() {
+                            0 => "nothing is".to_owned(),
+                            1 => "1 change is".to_owned(),
+                            n => format!("{n} changes are"),
+                        }
+                    )?;
+                }
+            },
             Outcome::Skipped { applied_in } => writeln!(
                 out,
                 "  already applied by run {applied_in}, and unchanged since; left alone"

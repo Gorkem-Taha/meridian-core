@@ -25,14 +25,20 @@
 //! - every change of state is an [event](event), and the events and a
 //!   summary are kept as the run's [record](record) in a [backend];
 //! - an apply that failed can be [resumed](Resume), skipping the stages that
-//!   were already applied from the same artifact.
+//!   were already applied from the same artifact;
+//! - an apply that failed can instead put back what it changed
+//!   ([`OnFailure::Rollback`]), and [`Mode::Rollback`] does the same for the
+//!   last apply on request;
+//! - [`Mode::Drift`] asks whether the world still matches what was applied.
 //!
 //! None of it holds a secret value: see `docs/reference/state.md`.
 
 pub mod backend;
 pub mod event;
+pub mod history;
 pub mod lock;
 pub mod record;
+mod rollback;
 mod select;
 mod state;
 pub mod time;
@@ -54,6 +60,7 @@ pub use backend::{Backend, ExecBackend, LocalBackend, MemoryBackend};
 pub use event::Event;
 pub use lock::{LockError, LockInfo};
 pub use record::{RunRecord, RunStatus, StepRecord, StepStatus};
+pub use rollback::{RollbackOutcome, RollbackReport};
 pub use select::Selector;
 pub use state::{artifact_hash, stage_key, RunState, StageRecord, STATE_KEY};
 
@@ -66,6 +73,13 @@ pub enum Mode {
     Plan,
     /// Compile, then make it so.
     Apply,
+    /// Compile, then ask each tool whether what was last applied is still
+    /// what is there. Nothing is changed.
+    Drift,
+    /// Put back what an apply changed: every stage it applied is applied
+    /// again from the artifact of its last successful apply before that run,
+    /// last stage first. Which apply is [`Options::rollback_of`].
+    Rollback,
 }
 
 impl Mode {
@@ -75,6 +89,8 @@ impl Mode {
             Mode::Compile => "compile",
             Mode::Plan => "plan",
             Mode::Apply => "apply",
+            Mode::Drift => "drift",
+            Mode::Rollback => "rollback",
         }
     }
 }
@@ -129,10 +145,40 @@ pub enum Outcome {
     /// A resumed run found the stage already applied, from the same
     /// artifact, by the run named. Nothing was done to it.
     Skipped { applied_in: String },
+    /// What a drift check found.
+    Drift(Drift),
     /// The stage failed, and the run stopped here.
     Failed(String),
     /// An earlier stage failed, so this one was not attempted.
     NotRun { because_of: StageId },
+}
+
+/// Whether a stage still matches what was last applied to it.
+///
+/// Drift is a difference nobody asked for: the document compiles to exactly
+/// what was applied, and the tool says the world is no longer that. A
+/// difference that follows from an edited document is not drift, it is a
+/// change waiting to be applied, and the two are kept apart.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Drift {
+    /// The stage has never been applied, so there is nothing to compare.
+    NeverApplied,
+    /// The tool reports nothing to change.
+    InSync,
+    /// The tool would change these to restore what was applied.
+    Drifted(Vec<Change>),
+    /// The document no longer compiles to what was last applied, or the
+    /// last apply failed part way. The differences are changes waiting to be
+    /// applied, and cannot be told from drift.
+    Pending {
+        changes: Vec<Change>,
+        /// Whether the last apply failed, as opposed to the document having
+        /// changed since it.
+        last_apply_failed: bool,
+    },
+    /// The tool cannot preview, so it cannot say. This is never read as in
+    /// sync.
+    Unknown,
 }
 
 /// What one stage did.
@@ -155,6 +201,10 @@ pub struct StageReport {
     /// What a failed apply had already done before it failed, as far as the
     /// tool reported it.
     pub done_before_failing: Vec<Change>,
+    /// For a stage an apply reached its tool with: the artifact hash of the
+    /// stage's last successful apply before this run, which is what a
+    /// rollback goes back to. Empty when there was none.
+    pub previous_good: String,
 }
 
 /// No plugin provides the document's target.
@@ -179,13 +229,15 @@ pub enum Refusal {
     State(String),
     /// There is nothing to resume, or what was named cannot be resumed.
     Resume(String),
+    /// There is nothing to roll back.
+    Rollback(String),
 }
 
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Refusal::Locked(holder) => LockError::Held(holder.clone()).fmt(f),
-            Refusal::State(why) | Refusal::Resume(why) => f.write_str(why),
+            Refusal::State(why) | Refusal::Resume(why) | Refusal::Rollback(why) => f.write_str(why),
         }
     }
 }
@@ -201,17 +253,31 @@ pub struct RunReport {
     /// Things that went wrong beside the stages, such as the record not
     /// being written. They do not fail the run: the tools did their work.
     pub warnings: Vec<String>,
+    /// What was put back, in the order it was attempted: the last stage
+    /// first. Empty unless the run rolled back.
+    pub rollbacks: Vec<RollbackReport>,
 }
 
 impl RunReport {
     /// Whether every stage did what was asked of it. A deferred stage counts:
-    /// nothing went wrong.
+    /// nothing went wrong. So does a stage that drifted: the check did its
+    /// job, and [`RunReport::drifted`] says what it found. A rollback that
+    /// could not put a stage back does not.
     pub fn succeeded(&self) -> bool {
         self.refused.is_none()
             && !self
                 .stages
                 .iter()
                 .any(|s| matches!(s.outcome, Outcome::Failed(_) | Outcome::NotRun { .. }))
+            && self.rollbacks.iter().all(|r| r.outcome.is_settled())
+    }
+
+    /// Whether a drift check found any stage that no longer matches what was
+    /// applied to it.
+    pub fn drifted(&self) -> bool {
+        self.stages
+            .iter()
+            .any(|s| matches!(s.outcome, Outcome::Drift(Drift::Drifted(_))))
     }
 }
 
@@ -226,6 +292,8 @@ pub trait Observer {
     /// Something changed state. Every event of the run arrives here, in
     /// order, as it is recorded.
     fn event(&mut self, _event: &Event) {}
+    /// A stage was put back, or could not be.
+    fn rollback_finished(&mut self, _report: &RollbackReport) {}
 }
 
 /// An observer that ignores everything.
@@ -257,6 +325,22 @@ pub struct Options {
     /// How many runs' records are kept; older ones are removed when a run
     /// ends.
     pub keep_runs: usize,
+    /// What an apply does when a stage fails.
+    pub on_failure: OnFailure,
+    /// Which apply [`Mode::Rollback`] puts back.
+    pub rollback_of: Resume,
+}
+
+/// What an apply does when a stage fails.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OnFailure {
+    /// Stop. The stages after the failed one are not run, and what was
+    /// applied stays applied. `--resume` continues from here.
+    #[default]
+    Stop,
+    /// Stop, then put back every stage this run reached a tool with: the
+    /// failed one first, then the others, last first.
+    Rollback,
 }
 
 /// How many runs' records are kept unless a caller says otherwise.
@@ -273,6 +357,8 @@ impl Options {
             resume: None,
             command: String::new(),
             keep_runs: DEFAULT_KEEP_RUNS,
+            on_failure: OnFailure::Stop,
+            rollback_of: Resume::Last,
         }
     }
 
@@ -285,7 +371,7 @@ impl Options {
     }
 }
 
-/// Which run an apply continues.
+/// Which run an apply continues, or a rollback puts back.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Resume {
     /// The last apply.
@@ -370,7 +456,7 @@ pub fn run_selected(
     };
     let resume = match (&options.resume, mode) {
         (None, _) => None,
-        (Some(_), Mode::Compile | Mode::Plan) => {
+        (Some(_), Mode::Compile | Mode::Plan | Mode::Drift | Mode::Rollback) => {
             report.refused = Some(Refusal::Resume("only an apply can be resumed".to_owned()));
             return report;
         }
@@ -381,6 +467,18 @@ pub fn run_selected(
                 return report;
             }
         },
+    };
+
+    let rolling_back = if mode == Mode::Rollback {
+        match rollback::find(backend.as_ref(), &options.rollback_of) {
+            Ok(record) => Some(record),
+            Err(why) => {
+                report.refused = Some(Refusal::Rollback(why));
+                return report;
+            }
+        }
+    } else {
+        None
     };
 
     let mut journal = Journal {
@@ -418,6 +516,10 @@ pub fn run_selected(
             ("mode", Value::from(mode.as_str())),
             ("command", Value::from(journal.record.command.as_str())),
             ("resumes", Value::from(journal.record.resumes.as_str())),
+            (
+                "rollsBack",
+                Value::from(rolling_back.as_ref().map_or("", |r| r.id.as_str())),
+            ),
         ],
     );
     journal.flush();
@@ -434,10 +536,17 @@ pub fn run_selected(
         run_id: run_id.clone(),
         resume,
         warnings: Vec::new(),
+        touched: Vec::new(),
     };
     let mut failed: Option<StageId> = None;
 
-    for stage in stages(bundle, selector) {
+    // A rollback runs no stage of its own: it puts back another run's.
+    let to_run = if mode == Mode::Rollback {
+        Vec::new()
+    } else {
+        stages(bundle, selector)
+    };
+    for stage in to_run {
         let id = stage.id();
         let target = stage.target().to_owned();
         if let Some(because_of) = &failed {
@@ -452,6 +561,7 @@ pub fn run_selected(
                 },
                 reason: String::new(),
                 done_before_failing: Vec::new(),
+                previous_good: String::new(),
             };
             journal.finished(observer, &skipped);
             observer.stage_finished(&skipped);
@@ -467,6 +577,17 @@ pub fn run_selected(
         journal.finished(observer, &stage_report);
         observer.stage_finished(&stage_report);
         report.stages.push(stage_report);
+    }
+
+    if let Some(record) = &rolling_back {
+        let items = rollback::items_of(&mut run, record);
+        report.rollbacks = rollback::execute(&mut run, &mut journal, observer, items);
+    } else if failed.is_some() && mode == Mode::Apply && options.on_failure == OnFailure::Rollback {
+        let items = std::mem::take(&mut run.touched)
+            .into_iter()
+            .map(rollback::Item::Ready)
+            .collect();
+        report.rollbacks = rollback::execute(&mut run, &mut journal, observer, items);
     }
 
     let failures = report
@@ -491,6 +612,16 @@ pub fn run_selected(
         vec![
             ("steps", Value::Int(report.stages.len() as i64)),
             ("failed", Value::Int(failures as i64)),
+            (
+                "rolledBack",
+                Value::Int(
+                    report
+                        .rollbacks
+                        .iter()
+                        .filter(|r| matches!(r.outcome, RollbackOutcome::RolledBack { .. }))
+                        .count() as i64,
+                ),
+            ),
         ],
     );
     if persist {
@@ -666,6 +797,7 @@ impl Journal {
             artifact: String::new(),
             changes: 0,
             reason: String::new(),
+            previous: String::new(),
         });
         self.flush();
     }
@@ -685,6 +817,7 @@ impl Journal {
             artifact: artifact.clone(),
             changes: 0,
             reason: String::new(),
+            previous: report.previous_good.clone(),
         };
         let resource = |change: &Change| {
             vec![
@@ -732,6 +865,41 @@ impl Journal {
                     );
                 }
                 step.changes = changes.len() as u64;
+                self.emit(
+                    observer,
+                    event::STEP_SUCCEEDED,
+                    at,
+                    vec![hash, ("changes", Value::Int(step.changes as i64))],
+                );
+            }
+            Outcome::Drift(drift) => {
+                let (kind, reason, changes): (&str, &str, &[Change]) = match drift {
+                    Drift::InSync => (event::DRIFT_NONE, "", &[]),
+                    Drift::Drifted(changes) => (event::DRIFT_DETECTED, "", changes),
+                    Drift::NeverApplied => (event::DRIFT_UNKNOWN, "never-applied", &[]),
+                    Drift::Unknown => (event::DRIFT_UNKNOWN, "no-preview", &[]),
+                    Drift::Pending {
+                        changes,
+                        last_apply_failed,
+                    } => (
+                        event::DRIFT_UNKNOWN,
+                        if *last_apply_failed {
+                            "last-apply-failed"
+                        } else {
+                            "document-changed"
+                        },
+                        changes,
+                    ),
+                };
+                for change in changes {
+                    self.emit(observer, event::RESOURCE_PLANNED, at, resource(change));
+                }
+                step.changes = changes.len() as u64;
+                let mut detail = vec![hash.clone(), ("changes", Value::Int(step.changes as i64))];
+                if !reason.is_empty() {
+                    detail.push(("reason", Value::from(reason)));
+                }
+                self.emit(observer, kind, at, detail);
                 self.emit(
                     observer,
                     event::STEP_SUCCEEDED,
@@ -937,6 +1105,9 @@ struct Run<'a> {
     /// The run this one continues, when it was asked to.
     resume: Option<Resumed>,
     warnings: Vec<String>,
+    /// Every stage this run has handed to a tool to apply, in order, with
+    /// what is needed to put it back.
+    touched: Vec<rollback::Touched>,
 }
 
 /// Why a stage stopped before reaching the tool.
@@ -957,6 +1128,7 @@ impl Run<'_> {
             outcome: Outcome::Compiled,
             reason: String::new(),
             done_before_failing: Vec::new(),
+            previous_good: String::new(),
         };
         let fail = |mut report: StageReport, reason: &str, why: String| {
             report.outcome = Outcome::Failed(why);
@@ -1070,6 +1242,19 @@ impl Run<'_> {
             // cannot say what applying it would change.
             return report;
         }
+        let hash = artifact_hash(&emitted.artifact);
+        // What was last applied here, if anything was.
+        let last = self.state.get(&id).cloned();
+        if self.mode == Mode::Drift {
+            if last.is_none() {
+                report.outcome = Outcome::Drift(Drift::NeverApplied);
+                return report;
+            }
+            if !operations.plan {
+                report.outcome = Outcome::Drift(Drift::Unknown);
+                return report;
+            }
+        }
         if self.mode == Mode::Apply && !operations.apply {
             return fail(
                 report,
@@ -1089,7 +1274,6 @@ impl Run<'_> {
 
         // A resumed run leaves alone what the run it continues already
         // applied, as long as the document still compiles to the same thing.
-        let hash = artifact_hash(&emitted.artifact);
         if let Some(applied_in) = self.already_applied(&id, &hash, operations.outputs) {
             report.outcome = Outcome::Skipped { applied_in };
             return report;
@@ -1105,11 +1289,39 @@ impl Run<'_> {
                 Ok(plan) => report.outcome = Outcome::Planned(plan),
                 Err(e) => return fail(report, reason_of(&e), self.describe(e)),
             },
+            Mode::Drift => match target.plan(&context, &emitted.artifact, &mut log) {
+                Ok(plan) => {
+                    let last = last.unwrap_or_default();
+                    let same = last.applied && last.artifact_hash == hash;
+                    report.outcome = Outcome::Drift(if plan.unknown {
+                        Drift::Unknown
+                    } else if !same {
+                        Drift::Pending {
+                            changes: plan.changes,
+                            last_apply_failed: !last.applied,
+                        }
+                    } else if plan.changes.is_empty() {
+                        Drift::InSync
+                    } else {
+                        Drift::Drifted(plan.changes)
+                    });
+                }
+                Err(e) => return fail(report, reason_of(&e), self.describe(e)),
+            },
             Mode::Apply => {
+                report.previous_good = last.map(|l| l.last_good).unwrap_or_default();
+                self.touched.push(rollback::Touched {
+                    id: id.clone(),
+                    target: stage.target().to_owned(),
+                    context: context.clone(),
+                    previous: report.previous_good.clone(),
+                    attempted: hash.clone(),
+                });
                 let outcome = target.apply(&context, &emitted.artifact, &mut log);
                 match outcome {
                     Ok(applied) => {
                         self.record(&id, stage.target(), &hash, true);
+                        self.snapshot(&id, &emitted.artifact, &report.previous_good);
                         self.learn(&id, &applied.outputs);
                         report.outcome = Outcome::Applied {
                             changes: applied.changes,
@@ -1125,9 +1337,27 @@ impl Run<'_> {
                     }
                 }
             }
-            Mode::Compile => {}
+            Mode::Compile | Mode::Rollback => {}
         }
         report
+    }
+
+    /// Keeps the artifact a stage was just applied from, and lets go of the
+    /// ones a rollback could no longer want: all but this one and the last
+    /// good one before it.
+    fn snapshot(&mut self, id: &StageId, artifact: &Artifact, previous: &str) {
+        let hash = artifact_hash(artifact);
+        if hash == previous {
+            return;
+        }
+        let kept = history::save(&self.options.state_dir, id, artifact)
+            .and_then(|()| history::prune(&self.options.state_dir, id, &[&hash, previous]));
+        if let Err(why) = kept {
+            self.warnings.push(format!(
+                "the artifact of {id} could not be kept, so this apply cannot be rolled back \
+                 to later: {why}"
+            ));
+        }
     }
 
     /// The host a ResourceSet configures, and the values it receives from the

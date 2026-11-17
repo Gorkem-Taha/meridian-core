@@ -88,7 +88,7 @@ The envelope is the language expansion's: `run`, `seq` (strictly increasing),
 | `step.deferred` | it needs a value that does not exist yet | `waitingOn`, `output` |
 | `resource.planned`, `resource.changed` | one line of a plan or an apply | `resource`, `action` |
 | `output.produced` | an output exists | `name`, `sensitive`; never the value |
-| `drift.detected`, `drift.none` | `meridian drift` compared a stage | `changes`, `pending` |
+| `drift.detected`, `drift.none`, `drift.unknown` | `meridian drift` compared a stage; `unknown` when it could not call it either way | `changes`; for `unknown` a `reason` (`never-applied`, `no-preview`, `document-changed`, `last-apply-failed`) |
 | `policy.passed`, `policy.warned`, `policy.denied` | a policy engine answered for a stage | `engine`, `messages` |
 | `rollback.started`, `rollback.succeeded`, `rollback.failed`, `rollback.unavailable` | a stage is put back | `to` (artifact hash), `reason` |
 | `lock.acquired`, `lock.released` | the lock changes hands | `id` |
@@ -379,7 +379,7 @@ same thing.
 |---|---|---|
 | `events.jsonl` is appended as it happens | written whole at each step boundary | a remote backend has no append; the content is the same |
 | state backends are plugins | programs named `meridian-backend-<name>`, one run per verb | [section 3](#3-where-state-lives-backends) |
-| `meridian drift` reports what differs from the documents | also separates `drifted` from `pending` using the last applied artifact hash | a changed document is not drift |
+| `meridian drift` reports what differs from the documents | also separates `drifted` from `pending` using the last applied artifact hash, with a `drift.unknown` event for what is neither drifted nor in sync | a changed document is not drift |
 | no events for policy, rollback or the lock | `policy.*`, `rollback.*`, `lock.*` added | new state changes need events |
 | `output.produced` carries the value when it is not sensitive | never the value | a tool does not always know which of its values are secret |
 | `step.failed` carries the tool's reason | a fixed word | a tool can quote a value in an error |

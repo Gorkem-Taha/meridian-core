@@ -4,7 +4,9 @@
 meridian validate <files>...
 meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
 meridian plan     <files>... [-l SELECTOR] [--data FILE]
-meridian apply    <files>... [-l SELECTOR] [--data FILE] [--resume [RUN]]
+meridian apply    <files>... [-l SELECTOR] [--data FILE] [--resume [RUN]] [--on-failure stop|rollback]
+meridian drift    <files>... [-l SELECTOR] [--data FILE]
+meridian rollback <files>... [--run RUN]
 meridian status
 meridian runs
 meridian events   [RUN] [--type TYPE]
@@ -101,6 +103,44 @@ that still compile to the same artifact, are left alone; the rest are applied.
 [Picking up where a run stopped](../concepts/run-safety.md#picking-up-where-a-run-stopped)
 has the rules.
 
+With `--on-failure rollback`, a failed apply instead
+[puts back](../concepts/run-safety.md#putting-a-run-back) every stage it
+changed, the failed one first and then the ones before it, by applying what
+each was last applied from successfully. The command still exits `1`: the
+apply failed.
+
+### `drift`
+
+Checks whether what was applied is still what is there, and changes nothing.
+Each document is compiled and its tool asked for a preview, and each stage is
+reported as `in sync`, `DRIFTED`, `pending` (the document changed since the
+last apply, so the differences are changes waiting to be applied), `unknown`
+(the tool cannot preview) or `never applied`.
+[Finding drift](../concepts/run-safety.md#finding-drift) has the rules.
+
+```
+web (ResourceSet, target ansible on 203.0.113.10)
+  ~ update sshd_config
+  DRIFTED: 1 difference from what was applied
+drift: 1 of 2 stages drifted
+```
+
+It exits `2` when a stage drifted, so a scheduled job can tell drift from a
+clean check (`0`) and from a check that could not be made (`1`).
+
+### `rollback`
+
+Puts back what the last apply changed: each stage that apply handed to a tool
+is applied again from the artifact of its last successful apply before it,
+last stage first. `--run RUN` names another apply. Give it the files the
+apply was given.
+
+A stage that cannot be put back is reported as `NOT ROLLED BACK` with the
+reason, and the command exits `1`.
+[Putting a run back](../concepts/run-safety.md#putting-a-run-back) lists the
+cases, among them a stage that was applied for the first time, which has
+nothing to go back to.
+
 ### `status`
 
 Shows the current or last run: what was asked, who ran it, how each step
@@ -173,10 +213,12 @@ versions decide which `targetVersion` a document may ask it for.
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and with the local backend Meridian's own record |
 | `--backend NAME` | `MERIDIAN_BACKEND` | `local` | where Meridian's own record (the lock, the run-state, the runs) is kept: `local`, or a [backend program](state.md#writing-a-backend) |
 | `--backend-config KEY=VALUE` | | | a setting for the backend; may be repeated |
-| `--lock-timeout DURATION` | | `0s` | `plan`, `apply`: how long to wait for another run to release the lock, as in `30s`, `5m`, `1h`. By default a locked state is refused at once |
+| `--lock-timeout DURATION` | | `0s` | `plan`, `apply`, `drift`, `rollback`: how long to wait for another run to release the lock, as in `30s`, `5m`, `1h`. By default a locked state is refused at once |
 | `--resume [RUN]` | | | `apply` only: continue the last apply, or the run named |
-| `--events json` | | | `compile`, `plan`, `apply`: write every [event](state.md#events) to standard output as it happens, one JSON object per line. The report for people moves to standard error |
-| `--keep-runs N` | | `50` | `plan`, `apply`: how many runs' records to keep |
+| `--on-failure ACTION` | | `stop` | `apply` only: `stop` leaves what was applied in place; `rollback` puts back every stage the run changed |
+| `--run RUN` | | the last apply | `rollback` only: the apply to put back |
+| `--events json` | | | `compile`, `plan`, `apply`, `drift`, `rollback`: write every [event](state.md#events) to standard output as it happens, one JSON object per line. The report for people moves to standard error |
+| `--keep-runs N` | | `50` | `plan`, `apply`, `drift`, `rollback`: how many runs' records to keep |
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
 | `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
@@ -204,9 +246,10 @@ an error; nothing is guessed.
 ## Exit status
 
 `0` when everything asked for succeeded. `1` when a document was invalid, did
-not compile, a tool failed, or the run was refused because the state is
-locked or there was nothing to resume. `2` for a mistake in the command line
-itself.
+not compile, a tool failed, a stage could not be rolled back, or the run was
+refused because the state is locked or there was nothing to resume or roll
+back. `2` for a mistake in the command line itself, and from `drift` when a
+stage has drifted.
 
 ## Plugins and their tools
 

@@ -10,6 +10,7 @@ flowchart TB
     subgraph SD["--state-dir (always on this machine)"]
         W1["infrastructure/&lt;document&gt;/&lt;target&gt;/<br/>the tool's working directory"]
         W2["resourceset/&lt;document&gt;/&lt;target&gt;/<br/>the tool's working directory"]
+        H["history/&lt;kind&gt;/&lt;document&gt;/&lt;hash&gt;.json<br/>snapshots for rollback"]
     end
     subgraph BE["the backend (--backend; local means the state directory too)"]
         L["lock"]
@@ -21,7 +22,7 @@ flowchart TB
 
 | Key | Holds | Written |
 |---|---|---|
-| `lock` | who holds the state, and for what | when a `plan` or `apply` starts; removed when it ends |
+| `lock` | who holds the state, and for what | when a `plan`, `apply`, `drift` or `rollback` starts; removed when it ends |
 | `state.json` | the last apply of every stage | after every apply, successful or not |
 | `runs/<id>/run.json` | one run's summary | when the run starts, and at every step boundary |
 | `runs/<id>/events.jsonl` | one run's events, in order | with `run.json` |
@@ -33,9 +34,27 @@ With the local backend, files are written beside the target and renamed over
 it, so a crash never leaves half a file, and are readable only by their owner
 (mode `0600`).
 
-**No secret value is kept, in any form.** The record holds names, ids, hashes
-of artifacts, counts and times. It does not hold a param, an output's value, a
-data file, or anything a tool printed.
+**No secret value is kept in the record, in any form.** The record holds
+names, ids, hashes of artifacts, counts and times. It does not hold a param,
+an output's value, a data file, or anything a tool printed.
+
+## `history/`
+
+A [rollback](../concepts/run-safety.md#putting-a-run-back) applies the
+artifact of a stage's last successful apply, so that artifact is kept:
+`history/<kind>/<document>/<hash>.json`, a JSON object of the artifact's
+files by path. Two are kept per stage, the one just applied and the last good
+one before it.
+
+Unlike the record, a snapshot holds content: an artifact contains whatever
+its document contains. It is therefore kept **only in the state directory, on
+the machine that applied**, readable only by its owner, beside the working
+directory where the plugin has already written the same files. It is never
+sent to a backend. A machine without the snapshot cannot roll that stage
+back, and says so.
+
+A snapshot is loaded by its hash and checked against it. One that has been
+changed is refused.
 
 ## `lock`
 
@@ -105,9 +124,11 @@ and compare.
   "resumes": "",
   "steps": [
     {"kind": "Infrastructure", "name": "network", "target": "terraform", "endpoint": "",
-     "status": "succeeded", "artifact": "sha256:9f2c...", "changes": 4, "reason": ""},
+     "status": "succeeded", "artifact": "sha256:9f2c...", "changes": 4, "reason": "",
+     "previous": "sha256:1b7e..."},
     {"kind": "ResourceSet", "name": "web", "target": "ansible", "endpoint": "203.0.113.10",
-     "status": "failed", "artifact": "sha256:41d0...", "changes": 2, "reason": "tool-failed"}
+     "status": "failed", "artifact": "sha256:41d0...", "changes": 2, "reason": "tool-failed",
+     "previous": "sha256:77aa..."}
   ]
 }
 ```
@@ -115,21 +136,26 @@ and compare.
 | Field | Value |
 |---|---|
 | `id` | the run's id: the second it started, and four characters that order and separate runs within that second |
-| `mode` | `plan` or `apply` |
+| `mode` | `plan`, `apply`, `drift` or `rollback` |
 | `status` | `running`, `succeeded` or `failed`. A run that was killed stays `running` |
 | `resumes` | the run this one continued, when it was started with `--resume` |
 | `selector` | the `-l` selection, when there was one |
+
+A step's `previous` is the artifact hash of its last successful apply before
+this run: what a rollback of the run goes back to. It is empty when there was
+none.
 
 A step's `status`:
 
 | Status | Meaning |
 |---|---|
 | `running` | the step had started when the record was last written |
-| `succeeded` | it did what was asked: planned, or applied |
+| `succeeded` | it did what was asked: planned, applied, or checked for drift |
 | `failed` | it failed; `reason` says what kind of failure |
 | `skipped` | a resumed run found it already applied from the same artifact |
 | `deferred` | it waits on an output that does not exist yet |
 | `not-run` | an earlier step failed, so it was not attempted |
+| `rolled-back` | it was applied again from the artifact of its last successful apply; `artifact` is that artifact's hash |
 
 A step's `reason`, when it failed:
 
@@ -170,16 +196,23 @@ not change when workflows, fan-out and retries arrive.
 | Type | When | `detail` |
 |---|---|---|
 | `lock.acquired` | the run holds the lock | `id` |
-| `run.started` | the run begins | `mode`, `command`, `resumes` |
+| `run.started` | the run begins | `mode`, `command`, `resumes`, `rollsBack` (the run a `rollback` puts back) |
 | `step.started` | a step begins | `kind` |
-| `resource.planned` | one line of a plan | `kind`, `resource`, `action` |
-| `resource.changed` | one thing an apply changed, including what a failed apply had done before it failed | `kind`, `resource`, `action` |
+| `resource.planned` | one line of a plan, or of a drift check | `kind`, `resource`, `action` |
+| `resource.changed` | one thing an apply or a rollback changed, including what a failed apply had done before it failed | `kind`, `resource`, `action` |
 | `output.produced` | an apply produced an output | `kind`, `name`, `sensitive`. Never the value |
 | `step.succeeded` | the step did what was asked | `kind`, `artifact`, `changes`; a plan also has `unknown` |
 | `step.failed` | the step failed | `kind`, `reason`, `artifact`, `changes` |
 | `step.skipped` | the step was not run | `kind`, `reason`: `already-applied` (with `artifact`, `appliedIn`) or `earlier-step-failed` (with `becauseOf`) |
 | `step.deferred` | the step waits on an output | `kind`, `waitingOn`, `output` |
-| `run.succeeded`, `run.failed` | the run ends | `steps`, `failed` |
+| `drift.none` | a drift check found the step in sync | `kind`, `artifact`, `changes` (0) |
+| `drift.detected` | a drift check found the step drifted | `kind`, `artifact`, `changes` |
+| `drift.unknown` | a drift check could not call it either way | `kind`, `artifact`, `changes`, `reason`: `never-applied`, `no-preview`, `document-changed` or `last-apply-failed` |
+| `rollback.started` | a step is about to be put back | `kind`, `to` (the artifact hash) |
+| `rollback.succeeded` | it was put back | `kind`, `to`, `changes` |
+| `rollback.failed` | putting it back failed; the rollback stops | `kind`, `to`, `reason` |
+| `rollback.unavailable` | it could not be put back, and was left | `kind`, `reason`: `first-apply`, `no-snapshot`, `applied-since`, `document-missing`, `host-unknown`, `no-plugin`, `state-failed` or `earlier-rollback-failed` |
+| `run.succeeded`, `run.failed` | the run ends | `steps`, `failed`, `rolledBack` |
 | `lock.released` | the run is about to release the lock | `id` |
 
 `action` is `create`, `update`, `delete` or `replace`. `resource` is the id
@@ -219,7 +252,7 @@ events up to the last boundary.
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | the working directories, and with `local` the record too |
 
 Every command that reads or writes the record takes these: `plan`, `apply`,
-`status`, `runs`, `events` and `unlock`.
+`drift`, `rollback`, `status`, `runs`, `events` and `unlock`.
 
 ## Writing a backend
 

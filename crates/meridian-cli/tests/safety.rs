@@ -457,3 +457,189 @@ fn a_backend_that_is_missing_or_misconfigured_is_refused_before_anything_runs() 
         stderr(&usage)
     );
 }
+
+fn motd_on_disk(dir: &Path) -> String {
+    fs::read_to_string(dir.join(".meridian/resourceset/web/fake/current/files/motd")).unwrap()
+}
+
+#[test]
+fn drift_exits_2_only_for_a_difference_nobody_asked_for() {
+    let dir = scratch("drift", "welcome");
+
+    let never = meridian(&dir, &["drift", "site.yaml"]);
+    assert_eq!(never.status.code(), Some(0), "{}", stderr(&never));
+    assert_eq!(
+        stdout(&never),
+        "network (Infrastructure, target fake)\n\
+         \x20 never applied, so nothing to compare\n\
+         web (ResourceSet, target fake)\n\
+         \x20 deferred: needs the output \"address\" of Infrastructure \"network\", which has not been applied yet\n\
+         drift: 0 of 2 stages drifted\n"
+    );
+
+    assert!(meridian(&dir, &["apply", "site.yaml"]).status.success());
+    let in_sync = meridian(&dir, &["drift", "site.yaml"]);
+    assert_eq!(in_sync.status.code(), Some(0));
+    assert_eq!(
+        stdout(&in_sync),
+        "network (Infrastructure, target fake)\n\
+         \x20 in sync with what was applied\n\
+         web (ResourceSet, target fake on 10.0.0.5)\n\
+         \x20 in sync with what was applied\n\
+         drift: 0 of 2 stages drifted\n"
+    );
+
+    // Someone changes the machine behind Meridian's back. The fake tool's
+    // idea of the world is its state file.
+    let tool_state = dir.join(".meridian/resourceset/web/fake/state.json");
+    let text = fs::read_to_string(&tool_state).unwrap();
+    fs::write(&tool_state, text.replace("welcome", "edited by hand")).unwrap();
+    let drifted = meridian(&dir, &["drift", "site.yaml"]);
+    assert_eq!(drifted.status.code(), Some(2), "{}", stderr(&drifted));
+    assert_eq!(
+        stdout(&drifted),
+        "network (Infrastructure, target fake)\n\
+         \x20 in sync with what was applied\n\
+         web (ResourceSet, target fake on 10.0.0.5)\n\
+         \x20 ~ update files/motd: 7 bytes\n\
+         \x20 DRIFTED: 1 difference from what was applied\n\
+         drift: 1 of 2 stages drifted\n"
+    );
+    assert_eq!(
+        motd_on_disk(&dir),
+        "welcome",
+        "a drift check changed something"
+    );
+    let status = stdout(&meridian(&dir, &["status"]));
+    assert!(status.contains(": drift, succeeded\n"), "{status}");
+
+    // Applying puts it right. Then an edited document is not drift: it is a
+    // change waiting to be applied.
+    assert!(meridian(&dir, &["apply", "site.yaml"]).status.success());
+    write(&dir, "a new message");
+    let pending = meridian(&dir, &["drift", "site.yaml"]);
+    assert_eq!(pending.status.code(), Some(0));
+    assert!(
+        stdout(&pending).contains(
+            "  ~ update files/motd: 13 bytes\n\
+             \x20 pending: the document has changed since the last apply, so 1 change is \
+             waiting to be applied and cannot be told from drift\n\
+             drift: 0 of 2 stages drifted\n"
+        ),
+        "{}",
+        stdout(&pending)
+    );
+}
+
+#[test]
+fn a_failed_apply_can_put_back_what_it_changed() {
+    let dir = scratch("on-failure", "one");
+    assert!(meridian(&dir, &["apply", "site.yaml"]).status.success());
+
+    write(&dir, "FAIL two");
+    let failed = meridian(&dir, &["apply", "site.yaml", "--on-failure", "rollback"]);
+    assert_eq!(failed.status.code(), Some(1));
+    let text = stdout(&failed);
+    let Some(at) = text.find("rolling back") else {
+        panic!("{text}");
+    };
+    let rolled = &text[at..];
+    assert!(
+        rolled.starts_with(
+            "rolling back web (ResourceSet, target fake on 10.0.0.5)\n\
+             \x20 rolled back to what was applied before (artifact "
+        ),
+        "{rolled}"
+    );
+    assert!(
+        rolled.ends_with(
+            "), 0 changes\n\
+             rolling back network (Infrastructure, target fake)\n\
+             \x20 nothing to put back: the run applied what was already applied\n"
+        ),
+        "{rolled}"
+    );
+    // It was put back, so there is nothing to resume, and it does not say
+    // there is.
+    assert!(!stderr(&failed).contains("--resume"), "{}", stderr(&failed));
+    assert_eq!(motd_on_disk(&dir), "one");
+
+    let status = stdout(&meridian(&dir, &["status"]));
+    assert!(
+        status.contains("  command:  meridian apply site.yaml --on-failure rollback\n"),
+        "{status}"
+    );
+    assert!(
+        status.contains("  web (ResourceSet, target fake on 10.0.0.5): rolled-back\n"),
+        "{status}"
+    );
+
+    let usage = meridian(&dir, &["apply", "site.yaml", "--on-failure", "panic"]);
+    assert_eq!(usage.status.code(), Some(2));
+}
+
+#[test]
+fn rollback_puts_the_last_apply_back() {
+    let dir = scratch("rollback", "one");
+
+    let nothing = meridian(&dir, &["rollback", "site.yaml"]);
+    assert_eq!(nothing.status.code(), Some(1));
+    assert_eq!(
+        stderr(&nothing),
+        "error: there is no apply to roll back: none has been recorded in this state\n"
+    );
+
+    assert!(meridian(&dir, &["apply", "site.yaml"]).status.success());
+    let first = last_run(&dir);
+    write(&dir, "two");
+    assert!(meridian(&dir, &["apply", "site.yaml"]).status.success());
+    let second = last_run(&dir);
+    assert_eq!(motd_on_disk(&dir), "two");
+
+    let back = meridian(&dir, &["rollback", "site.yaml"]);
+    assert!(back.status.success(), "{}{}", stdout(&back), stderr(&back));
+    let text = stdout(&back);
+    assert!(
+        text.starts_with(
+            "rolling back web (ResourceSet, target fake on 10.0.0.5)\n\
+             \x20 ~ update files/motd: 3 bytes\n\
+             \x20 rolled back to what was applied before (artifact "
+        ),
+        "{text}"
+    );
+    assert!(
+        text.ends_with(
+            "), 1 change\n\
+             rolling back network (Infrastructure, target fake)\n\
+             \x20 nothing to put back: the run applied what was already applied\n"
+        ),
+        "{text}"
+    );
+    assert_eq!(motd_on_disk(&dir), "one");
+    // The tool's own output is still relayed, on standard error.
+    assert!(
+        stderr(&back).contains("  web | update files/motd\n"),
+        "{}",
+        stderr(&back)
+    );
+
+    let runs = stdout(&meridian(&dir, &["runs"]));
+    assert!(
+        runs.lines()
+            .last()
+            .unwrap()
+            .contains("  rollback succeeded"),
+        "{runs}"
+    );
+
+    // The first apply had nothing before it, and by now is not what is
+    // there.
+    let older = meridian(&dir, &["rollback", "site.yaml", "--run", &first]);
+    assert_eq!(older.status.code(), Some(1));
+    assert!(
+        stdout(&older).contains("  NOT ROLLED BACK: it has been applied again since run"),
+        "{}",
+        stdout(&older)
+    );
+    let _ = second;
+}

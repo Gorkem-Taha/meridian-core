@@ -2,7 +2,8 @@
 
 A run that reaches a tool changes real things, takes real time, and can fail
 half way. This page says what Meridian does so that a run can be repeated,
-shared between people, and picked up where it stopped.
+shared between people, picked up where it stopped, or put back, and how to
+find out whether what was applied is still what is there.
 
 ```mermaid
 flowchart TB
@@ -16,7 +17,9 @@ flowchart TB
     STATE --> BACKEND
     STAGES --> DONE{"all stages done?"}
     DONE -->|"yes"| RELEASE["release the lock"]
-    DONE -->|"a stage failed"| RESUME["release the lock<br/>meridian apply --resume<br/>continues from the stage that failed"]
+    DONE -->|"a stage failed"| FAIL{"--on-failure"}
+    FAIL -->|"stop (the default)"| RESUME["release the lock<br/>meridian apply --resume<br/>continues from the stage that failed"]
+    FAIL -->|"rollback"| BACK["put back every stage this run changed,<br/>last first, then release the lock"]
 ```
 
 Three rules hold throughout:
@@ -34,7 +37,8 @@ Three rules hold throughout:
 
 Two runs against the same state collide in ways no tool can untangle: two
 `terraform apply`s in one directory, a plan read while an apply is half done.
-So `plan` and `apply` first take the state's lock.
+So everything that runs a tool (`plan`, `apply`, `drift` and `rollback`) first
+takes the state's lock.
 
 ```
 $ meridian apply site.yaml
@@ -163,8 +167,128 @@ remote backend (a Terraform `backend` block, a Pulumi backend), set in the
 document. A shared Meridian backend gives a team one lock, one history, and
 one answer to "what was applied last, and did it work".
 
+## Putting a run back
+
+Sometimes the right move after a failure is not to fix forward but to go back
+to what worked. Meridian knows no tool, so it has one honest way to undo a
+stage: apply again the artifact of that stage's last successful apply.
+
+```
+$ meridian apply site.yaml --on-failure rollback
+network (Infrastructure, target terraform)
+  ~ update web_sg
+  applied 1 change
+web (ResourceSet, target ansible on 203.0.113.10)
+  ~ update nginx_conf
+  FAILED: the play failed (ran `ansible-playbook ...`, exit status 2)
+rolling back web (ResourceSet, target ansible on 203.0.113.10)
+  ~ update nginx_conf
+  rolled back to what was applied before (artifact 77aa0c1d52e9), 1 change
+rolling back network (Infrastructure, target terraform)
+  ~ update web_sg
+  rolled back to what was applied before (artifact 9f2c41b7d003), 1 change
+```
+
+```mermaid
+sequenceDiagram
+    participant M as meridian
+    participant T as terraform (network)
+    participant A as ansible (web)
+    Note over M: artifact A of each stage was applied by an earlier run
+    M->>T: apply network, artifact B
+    T-->>M: applied
+    M->>A: apply web, artifact B
+    A-->>M: FAILED after 1 change
+    Note over M: --on-failure rollback: last stage first
+    M->>A: apply web, artifact A (kept from before)
+    A-->>M: applied
+    M->>T: apply network, artifact A (kept from before)
+    T-->>M: applied
+    Note over M: the run is recorded as failed, with both stages rolled back
+```
+
+- `--on-failure rollback` on `apply` puts back every stage the run handed to
+  a tool: the one that failed first, then the ones before it, in reverse.
+  `--on-failure stop`, the default, leaves what was applied in place for
+  `--resume`.
+- `meridian rollback <files>` does the same on request for the last apply,
+  including one that succeeded; `--run <id>` names another. Give it the files
+  the apply was given: it does not compile them, but it reads which machine
+  each document configures from them.
+- A rollback is a run: it holds the lock, is recorded, and shows in `status`.
+
+What it cannot do is said, stage by stage, and never skipped in silence:
+
+| The stage | What happens | Why |
+|---|---|---|
+| was applied for the first time by that run | `NOT ROLLED BACK`; what was created is left as it is | there is nothing to go back to. Removing what was created would need a `destroy` operation that plugins do not have; use the tool itself |
+| was applied from the same artifact as before | nothing to put back | the run did not change what the stage is |
+| has no snapshot on this machine | `NOT ROLLED BACK`, with what to do by hand | snapshots are kept on the machine that applied, and not in a shared backend. Check out the previous revision of the document and apply it |
+| has been applied again by a later run | `NOT ROLLED BACK` | that later run's work is what is there now, and undoing an older run over it would undo the wrong thing |
+| fails to go back | `ROLLBACK FAILED`, and the rollback stops | the stages before it were built on the one that would not go back, so they are left alone and reported as not attempted |
+
+**Snapshots.** After every successful apply the artifact is kept under
+`history/` in the state directory, beside the stage's working directory: the
+one just applied, and the last good one before it. A snapshot whose content no
+longer matches its hash is refused, not applied.
+
+**What a rollback cannot promise.** Applying an old artifact restores what
+the tool manages. It does not bring back data a tool destroyed on the way: a
+database that was replaced comes back empty. `plan` marks a replacement with
+`!` for that reason. Read the plan before the apply.
+
+## Finding drift
+
+Drift is a difference nobody asked for: the document still compiles to
+exactly what was applied, and the tool says the world is no longer that.
+
+```
+$ meridian drift site.yaml
+network (Infrastructure, target terraform)
+  in sync with what was applied
+web (ResourceSet, target ansible on 203.0.113.10)
+  ~ update sshd_config
+  DRIFTED: 1 difference from what was applied
+drift: 1 of 2 stages drifted
+```
+
+`meridian drift` compiles each document, asks each tool for its preview, and
+changes nothing. It then says which of five things each stage is:
+
+```mermaid
+flowchart TB
+    S["a stage"] --> A{"ever applied?"}
+    A -->|"no"| NEVER["never applied"]
+    A -->|"yes"| P{"can the tool preview?"}
+    P -->|"no"| UNKNOWN["unknown"]
+    P -->|"yes"| H{"does the document still compile to<br/>the artifact that was applied,<br/>and did that apply succeed?"}
+    H -->|"no"| PENDING["pending:<br/>changes waiting to be applied"]
+    H -->|"yes"| C{"does the tool report<br/>anything to change?"}
+    C -->|"no"| SYNC["in sync"]
+    C -->|"yes"| DRIFT["DRIFTED"]
+```
+
+| Reported | Meaning | Counts as drift |
+|---|---|---|
+| `in sync` | the tool has nothing to change | no |
+| `DRIFTED` | the tool would have to change these to restore what was applied | **yes** |
+| `pending` | the document changed since the last apply, or the last apply failed part way. The differences are changes waiting to be applied, and cannot be told from drift | no |
+| `unknown` | the tool cannot preview, so it cannot say. Never read as in sync | no |
+| `never applied` | there is nothing to compare with | no |
+
+The command exits `0` when nothing drifted, `2` when something did, and `1`
+when the check itself failed, so a scheduled job can tell the three apart.
+Run it from whatever already schedules things: CI, cron. To put drift right,
+`meridian apply`.
+
+The tools still differ, and Meridian does not pretend otherwise. Terraform
+compares against real infrastructure when it plans. Ansible's check mode is a
+dry run of the play. A tool with no real preview reports `unknown`. The
+[capability matrix](../reference/capability-matrix.md) says which targets can
+plan.
+
 ## What this does not do yet
 
-Rollback, drift detection and policy checks before an apply are designed in
-[the run safety plan](../plans/run-safety.md) and arrive in the pull requests
-that follow this one.
+Policy checks before an apply are designed in
+[the run safety plan](../plans/run-safety.md) and arrive in the pull request
+that follows this one.

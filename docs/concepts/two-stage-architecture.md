@@ -74,18 +74,22 @@ to one `meridian` command, in one file separated by `---` or in several files.
 
 ## What this does not do
 
-Meridian does not roll back a first stage because a second failed. A run
-stops at the stage that failed, and
+By default Meridian does not roll back a first stage because a second failed.
+A run stops at the stage that failed, and
 [`apply --resume`](run-safety.md#picking-up-where-a-run-stopped) continues
-from there once the cause is fixed.
+from there once the cause is fixed. Asked to with `--on-failure rollback`, it
+[puts back](run-safety.md#putting-a-run-back) what the run changed by applying
+what was applied before; it cannot remove what a first apply created.
 
 Each tool keeps its own state and its own idea of drift: Terraform notices
 drift when it plans, Ansible and Chef only when they run, Puppet and DSC
-agents on their own schedule. Meridian reports what each tool says and does
-not paper over the difference.
+agents on their own schedule. [`meridian drift`](run-safety.md#finding-drift)
+asks every tool the same question and reports what each says, without
+papering over the difference: a tool that cannot preview is reported as
+unknown, never as in sync.
 
-What Meridian does do across stages, so that a run is safe to repeat and to
+What Meridian does across stages, so that a run is safe to repeat and to
 share, is on [running safely](run-safety.md): one run at a time, a record of
-every run, and resuming a run that failed.
+every run, resuming a run that failed, putting one back, and finding drift.
 
 A worked example: [a two-stage workflow](../quickstart/first-two-stage.md).

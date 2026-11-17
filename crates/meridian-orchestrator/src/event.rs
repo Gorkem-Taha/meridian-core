@@ -26,6 +26,13 @@ pub const STEP_DEFERRED: &str = "step.deferred";
 pub const RESOURCE_PLANNED: &str = "resource.planned";
 pub const RESOURCE_CHANGED: &str = "resource.changed";
 pub const OUTPUT_PRODUCED: &str = "output.produced";
+pub const DRIFT_DETECTED: &str = "drift.detected";
+pub const DRIFT_NONE: &str = "drift.none";
+pub const DRIFT_UNKNOWN: &str = "drift.unknown";
+pub const ROLLBACK_STARTED: &str = "rollback.started";
+pub const ROLLBACK_SUCCEEDED: &str = "rollback.succeeded";
+pub const ROLLBACK_FAILED: &str = "rollback.failed";
+pub const ROLLBACK_UNAVAILABLE: &str = "rollback.unavailable";
 pub const LOCK_ACQUIRED: &str = "lock.acquired";
 pub const LOCK_RELEASED: &str = "lock.released";
 
