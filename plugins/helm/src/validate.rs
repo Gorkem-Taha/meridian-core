@@ -183,6 +183,148 @@ pub(crate) fn validate(chart: &Chart) -> Result<(), CompileError> {
 mod tests {
     use super::*;
 
+    use crate::{ChartSettings, Manifest, OutputSpec, ReleaseSettings};
+    use meridian_sdk::Position;
+
+    fn manifest(id: &str, kind: &str, namespace: &str, name: &str) -> Manifest {
+        Manifest {
+            id: id.to_owned(),
+            api_version: "v1".to_owned(),
+            kind: kind.to_owned(),
+            name: name.to_owned(),
+            namespace: namespace.to_owned(),
+            body: Vec::new(),
+            pos: Position {
+                line: 19,
+                ..Position::default()
+            },
+        }
+    }
+
+    fn output(name: &str) -> OutputSpec {
+        OutputSpec {
+            name: name.to_owned(),
+            parts: Vec::new(),
+            sensitive: false,
+        }
+    }
+
+    fn chart() -> Chart {
+        Chart {
+            document: "site".to_owned(),
+            chart: ChartSettings {
+                name: "site".to_owned(),
+                version: "1.4.0".to_owned(),
+                ..ChartSettings::default()
+            },
+            release: ReleaseSettings {
+                name: "site".to_owned(),
+                namespace: "web".to_owned(),
+                timeout: "5m".to_owned(),
+                ..ReleaseSettings::default()
+            },
+            manifests: vec![
+                manifest("cfg", "ConfigMap", "web", "site"),
+                manifest("svc", "Service", "web", "site"),
+            ],
+            outputs: vec![output("address")],
+            ..Chart::default()
+        }
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Chart);
+        let table: &[(&str, &str, Break)] = &[
+            ("invalid-release-name", "", |c| c.release.name.clear()),
+            ("invalid-release-name", "", |c| {
+                c.release.name = "Site".to_owned()
+            }),
+            ("invalid-release-name", "", |c| {
+                c.release.name = "a".repeat(54)
+            }),
+            ("invalid-param", "", |c| c.release.namespace.clear()),
+            ("invalid-param", "", |c| {
+                c.release.namespace = "web_ns".to_owned()
+            }),
+            ("invalid-param", "", |c| {
+                c.release.namespace = "a".repeat(64)
+            }),
+            ("invalid-param", "", |c| c.release.timeout = "5".to_owned()),
+            ("invalid-param", "", |c| c.release.timeout = "5d".to_owned()),
+            ("invalid-chart-name", "", |c| {
+                c.chart.name = "my_chart".to_owned()
+            }),
+            ("invalid-chart-name", "", |c| c.chart.name.clear()),
+            ("invalid-param", "", |c| c.chart.version = "1.4".to_owned()),
+            ("invalid-param", "", |c| {
+                c.chart.version = "v1.4.0".to_owned()
+            }),
+            ("empty-chart", "", |c| c.manifests.clear()),
+            ("invalid-name", "cfg", |c| {
+                c.manifests[0].name = "site_config".to_owned()
+            }),
+            ("invalid-name", "svc", |c| c.manifests[1].name.clear()),
+            ("duplicate-object", "again", |c| {
+                c.manifests
+                    .push(manifest("again", "Service", "web", "site"));
+            }),
+            ("duplicate-output", "", |c| {
+                c.outputs.push(output("address"))
+            }),
+        ];
+
+        assert_eq!(validate(&chart()), Ok(()));
+        for (i, (rule, resource, break_it)) in table.iter().enumerate() {
+            let mut broken = chart();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule, "row {i}");
+            assert_eq!(err.resource, *resource, "row {i}: {rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 19, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Chart);
+        let table: &[(&str, Change)] = &[
+            ("names at their limits", |c| {
+                c.release.name = "a".repeat(53);
+                c.release.namespace = "a".repeat(63);
+                c.chart.name = "a".repeat(63);
+            }),
+            ("no timeout", |c| c.release.timeout.clear()),
+            ("a version with a pre-release and a build", |c| {
+                c.chart.version = "1.4.0-rc.1+build.5".to_owned();
+            }),
+            ("one name in two namespaces", |c| {
+                c.manifests
+                    .push(manifest("other", "Service", "api", "site"));
+            }),
+            ("one name under two API versions", |c| {
+                let mut other = manifest("other", "Service", "web", "site");
+                other.api_version = "example.com/v1".to_owned();
+                c.manifests.push(other);
+            }),
+            ("an RBAC name with a colon", |c| {
+                c.manifests
+                    .push(manifest("role", "ClusterRole", "", "system:reader"));
+            }),
+            ("a sensitive output", |c| c.outputs[0].sensitive = true),
+            ("no outputs", |c| c.outputs.clear()),
+        ];
+        for (what, change) in table {
+            let mut c = chart();
+            change(&mut c);
+            assert_eq!(validate(&c), Ok(()), "{what}");
+        }
+    }
+
     #[test]
     fn names_follow_the_rules_of_what_they_name() {
         assert!(is_label("web-app", 53));

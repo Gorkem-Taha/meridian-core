@@ -42,6 +42,25 @@ as closely as the output is.
 the tool's place, sees its real arguments and working directory, and answers as
 the tool would. [Writing a plugin](writing-a-plugin.md) has both in detail.
 
+### A table for every validation rule
+
+Some of a plugin's validation rules cannot be reached from a document: the
+earlier stages never produce a model that breaks them, and the rule is there
+for a tree assembled some other way. A test in `tests/compile.rs` cannot break
+those, so each plugin's `src/validate.rs` ends with a test module that builds
+the stage's own model and has two tables.
+
+| Test | What it holds |
+|---|---|
+| `each_rule_refuses_the_one_mistake_it_is_for` | one row for each way to break each rule: the rule's name, the resource the refusal must name, and one change to a model the stage accepts. The refusal must also carry the target and the resource's line |
+| `what_looks_alike_but_is_allowed_is_accepted` | models a reader might expect to be refused and are not: one provider twice under two aliases, a user and a group of one name, one object name in two namespaces |
+
+A rule about names has a table of its own, of names accepted and names
+refused, with the longest allowed and the first too long. A rule that warns
+and does not refuse is tested for the warning and for the cases that stay
+quiet. When you add a rule, add its rows; a rule with no row is a rule nothing
+holds in place.
+
 ## Property tests
 
 An example-based test says "this input gives that output". A property test

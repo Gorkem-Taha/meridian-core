@@ -146,6 +146,181 @@ fn check_name<T>(placed: &crate::Placed<T>, what: &str, name: &str) -> Result<()
 mod tests {
     use super::*;
 
+    use crate::{Group, Package, Placed, User, WriteFile};
+    use meridian_sdk::Position;
+
+    fn placed<T>(id: &str, item: T) -> Placed<T> {
+        Placed {
+            id: id.to_owned(),
+            pos: Position {
+                line: 17,
+                ..Position::default()
+            },
+            item,
+        }
+    }
+
+    fn file(id: &str, path: &str) -> Placed<WriteFile> {
+        placed(
+            id,
+            WriteFile {
+                path: path.to_owned(),
+                content: "x".to_owned(),
+                ..WriteFile::default()
+            },
+        )
+    }
+
+    fn user(id: &str, name: &str) -> Placed<User> {
+        placed(
+            id,
+            User {
+                name: name.to_owned(),
+                fields: Default::default(),
+            },
+        )
+    }
+
+    fn group(id: &str, name: &str) -> Placed<Group> {
+        placed(
+            id,
+            Group {
+                name: name.to_owned(),
+                members: Vec::new(),
+            },
+        )
+    }
+
+    fn package(id: &str, name: &str) -> Placed<Package> {
+        placed(
+            id,
+            Package {
+                name: name.to_owned(),
+                version: String::new(),
+            },
+        )
+    }
+
+    fn config() -> CloudConfig {
+        CloudConfig {
+            document: "web".to_owned(),
+            host: "web01".to_owned(),
+            files: vec![file("conf", "/etc/app.conf")],
+            groups: vec![group("ops", "ops")],
+            users: vec![user("deploy", "deploy")],
+            packages: vec![package("pkg", "nginx")],
+            commands: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut CloudConfig);
+        let table: &[(&str, &str, Break)] = &[
+            ("missing-host", "", |c| c.host.clear()),
+            ("duplicate-file-path", "again", |c| {
+                c.files.push(file("again", "/etc/app.conf"));
+            }),
+            ("invalid-mode", "conf", |c| {
+                c.files[0].item.permissions = "rw-r--r--".to_owned();
+            }),
+            ("invalid-mode", "conf", |c| {
+                c.files[0].item.permissions = "0o644".to_owned()
+            }),
+            ("invalid-encoding", "conf", |c| {
+                c.files[0].item.encoding = "utf-8".to_owned()
+            }),
+            ("invalid-encoding", "conf", |c| {
+                c.files[0].item.encoding = "B64".to_owned()
+            }),
+            ("invalid-owner", "conf", |c| {
+                c.files[0].item.owner = "root:root".to_owned()
+            }),
+            ("invalid-owner", "conf", |c| {
+                c.files[0].item.group = "root:".to_owned()
+            }),
+            ("invalid-name", "deploy", |c| {
+                c.users[0].item.name = "de ploy".to_owned()
+            }),
+            ("invalid-name", "deploy", |c| {
+                c.users[0].item.name = "deploy:x".to_owned()
+            }),
+            ("duplicate-user", "again", |c| {
+                c.users.push(user("again", "deploy"))
+            }),
+            ("invalid-name", "ops", |c| {
+                c.groups[0].item.name = "ops\tteam".to_owned()
+            }),
+            ("invalid-name", "ops", |c| {
+                c.groups[0].item.name = "ops:1".to_owned()
+            }),
+            ("duplicate-group", "again", |c| {
+                c.groups.push(group("again", "ops"))
+            }),
+            ("invalid-name", "pkg", |c| {
+                c.packages[0].item.name = "ng inx".to_owned()
+            }),
+            ("duplicate-package", "again", |c| {
+                c.packages.push(package("again", "nginx"));
+            }),
+        ];
+
+        assert_eq!(validate(&config()), Ok(()));
+        for (i, (rule, resource, break_it)) in table.iter().enumerate() {
+            let mut broken = config();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule, "row {i}");
+            assert_eq!(err.resource, *resource, "row {i}: {rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 17, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut CloudConfig);
+        let table: &[(&str, Change)] = &[
+            ("a second entry that appends to a path", |c| {
+                let mut more = file("more", "/etc/app.conf");
+                more.item.append = true;
+                c.files.push(more);
+            }),
+            ("a user and a group of one name", |c| {
+                c.groups.push(group("g", "deploy"))
+            }),
+            ("a user and a package of one name", |c| {
+                c.packages.push(package("p", "deploy"));
+            }),
+            ("a package named for an architecture", |c| {
+                c.packages.push(package("p", "libc6:i386"));
+            }),
+            ("a document with nothing in it but a host", |c| {
+                c.files.clear();
+                c.groups.clear();
+                c.users.clear();
+                c.packages.clear();
+            }),
+        ];
+        for (what, change) in table {
+            let mut c = config();
+            change(&mut c);
+            assert_eq!(validate(&c), Ok(()), "{what}");
+        }
+    }
+
+    #[test]
+    fn every_encoding_cloud_init_reads_is_accepted() {
+        for encoding in ENCODINGS {
+            let mut c = config();
+            c.files[0].item.encoding = (*encoding).to_owned();
+            assert_eq!(validate(&c), Ok(()), "{encoding}");
+        }
+    }
+
     #[test]
     fn a_mode_is_three_or_four_octal_digits() {
         for good in ["644", "0644", "1777", "000"] {
