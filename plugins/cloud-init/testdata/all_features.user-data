@@ -1,0 +1,78 @@
+#cloud-config
+# Compiled by Meridian from the document "everything". Change the document, not this file.
+write_files:
+  - path: /etc/motd
+    content: |
+      Managed by Meridian.
+  - path: /etc/motd
+    content: |
+      Second line.
+    append: true
+  - path: /etc/app/blob
+    content: aGVsbG8K
+    owner: root:adm
+    permissions: "0640"
+    encoding: b64
+  - path: /srv/deploy/.profile
+    content: |
+      # "quoted", 'single', and a: colon
+      export PATH="$HOME/bin:$PATH"
+    owner: deploy
+    permissions: "644"
+    defer: true
+  - path: /etc/nginx/conf.d/app.conf
+    content: |
+      server { listen 8080; }
+    owner: root:ops
+    defer: true
+groups:
+  - ops
+  - admins:
+      - root
+      - deploy
+users:
+  - default
+  - name: deploy
+    gecos: Deployment account
+    groups:
+      - admins
+      - sudo
+    homedir: /srv/deploy
+    lock_passwd: true
+    primary_group: ops
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyReplaceWithYourOwnPublicKey00 deploy@example.com
+    sudo:
+      - ALL=(ALL) NOPASSWD:/usr/bin/systemctl
+      - ALL=(ALL) NOPASSWD:/usr/bin/journalctl
+    system: false
+    uid: 1200
+  - name: app
+    groups:
+      - ops
+    shell: /usr/sbin/nologin
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    system: true
+packages:
+  - nginx
+  - - libc6:i386
+    - 2.39-0ubuntu8
+runcmd:
+  - set -e
+  - install -d -m 0750 -o deploy -g ops '/srv/app data'
+  - rm -rf -- /etc/nginx/sites-enabled/default
+  - systemctl enable --now nginx
+  - systemctl disable --now apache2
+  - systemctl restart cron
+  - /usr/local/bin/warm-cache --all 'two words' '$NOT_EXPANDED'
+  - if [ ! -e /var/lib/app/index ] && [ -e /var/lib/app/stale ]; then ( cd '/srv/app data' && /usr/local/bin/reindex ); fi
+  - |-
+    if [ ! -e /var/lib/app/healthy ]; then
+    (
+    cd /tmp || exit
+    curl -fsS https://example.com/health | grep -q ok  # a pipeline
+    )
+    fi
+  - systemctl reload nginx
+  - if [ ! -e /var/lib/app/index ] && [ -e /var/lib/app/stale ]; then ( cd '/srv/app data' && /usr/local/bin/reindex ); fi

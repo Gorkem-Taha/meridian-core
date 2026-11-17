@@ -1,0 +1,9 @@
+# Written by Meridian from the document "metrics-pod". The next apply overwrites any change made here.
+
+[Container]
+Exec=--config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+Image=app-image.image
+Pod=metrics.pod
+
+[Install]
+WantedBy=default.target

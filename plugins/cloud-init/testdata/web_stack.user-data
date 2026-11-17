@@ -1,0 +1,20 @@
+#cloud-config
+# Compiled by Meridian from the document "web". Change the document, not this file.
+write_files:
+  - path: /etc/nginx/nginx.conf
+    content: |
+      worker_processes 4;
+    owner: root
+    permissions: "0644"
+    defer: true
+  - path: /etc/nginx/sites-enabled/app
+    content: |
+      server {}
+    defer: true
+packages:
+  - nginx
+runcmd:
+  - set -e
+  - systemctl enable --now nginx
+  - systemctl reload nginx
+  - systemctl restart nginx
