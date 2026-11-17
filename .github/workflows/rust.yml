@@ -63,7 +63,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          grep -aE "panicked at|^  left:|^ right:|^error(\[|:)|assertion" test.log \
+          grep -aE "panicked at|^  left:|^ right:|^error(\[|:)|assertion|^Test failed|minimal failing input" test.log \
             | grep -av '"reason":' | cut -c1-400 | tail -n 150 || true
           echo "== failed tests =="
           grep -aE "^test .* FAILED|^    \`-p " test.log | cut -c1-200 || true
