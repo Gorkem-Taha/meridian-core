@@ -16,6 +16,7 @@ have written and runs Salt on it.
 | `dependsOn` | Yes, as `require`. The states are also written in apply order, so the dependency graph survives into the state file intact and nothing is flattened |
 | `notifies` | Native: `watch` and `onchanges`. Actions `restart`, `reload`, `start`, `stop` on a service, `run` on an exec |
 | `runtimeWhen` | Yes: a Jinja expression over grains and pillar, which the minion evaluates when it renders the file |
+| References | `${id.param}` is settled from the document when it is compiled; anything else in `${...}` is refused, and `$${` is a literal `${` ([rules](../reference/resource-types.md#references)) |
 | Plan | Yes: Salt's dry run, `test=True`. Every state reports whether it would change, so a plan is never "unknown" |
 | Apply | Yes |
 | Outputs | No. Salt states produce no values for a later stage to read |

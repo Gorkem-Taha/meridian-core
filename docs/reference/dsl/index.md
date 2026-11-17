@@ -361,7 +361,8 @@ Rules:
   the next, declare an [output](#outputs).
 
 The configuration management targets that use the shared resource types
-(`ansible`, `puppet`, `chef`, `cloud-init`) have nothing to read at apply time,
+(`ansible`, `puppet`, `chef`, `salt`, `cloud-init`) have nothing to read at
+apply time,
 so there a reference is settled when the document is compiled: `${id.param}`
 becomes the value the document gives that param on the resource `id`. A bare
 `${id}`, a deeper path, a param the resource does not set, or anything that is

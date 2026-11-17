@@ -88,7 +88,7 @@ attribute does not exist, the tool says so when it plans.
 | `kubernetes` | the object's name | in a param, only `metadata.name` and `metadata.namespace`; in an output, any path into the live object | the value placed in the text | refused |
 | `dsc` | | `${id.Property}`: a property the other resource reported | | |
 | `podman` | the unit's name | in an output: a path into `podman inspect` | the name placed in the text | |
-| `ansible`, `puppet`, `chef`, `cloud-init` | refused | `${id.param}` only: the value the document gives that param, placed at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
+| `ansible`, `puppet`, `chef`, `salt`, `cloud-init` | refused | `${id.param}` only: the value the document gives that param, placed at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
 
 Each target's page has its own table under "References".
 
@@ -112,7 +112,8 @@ flowchart LR
 
 ## Configuration management: the shared types
 
-`ansible`, `puppet`, `chef` and `cloud-init` have nothing to read at apply time:
+`ansible`, `puppet`, `chef`, `salt` and `cloud-init` have nothing to read at
+apply time:
 a package or a file is only what the document says about it. So on these targets
 a reference is settled when the document is compiled, by the plugin, and the
 tool never sees it.

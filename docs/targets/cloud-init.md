@@ -491,8 +491,8 @@ runcmd:
 
 `${id.param}` in a param becomes the value the document gives that param on the
 resource `id`, when the document is compiled. A reference that cannot be settled
-that way is refused. This is the same on the `ansible`, `puppet` and `chef`
-targets, and the
+that way is refused. This is the same on the `ansible`, `puppet`, `chef` and
+`salt` targets, and the
 [shared types](../reference/resource-types.md#references) page has the rules.
 
 On this target a `${...}` in a file's content or in a command is most often

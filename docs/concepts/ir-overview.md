@@ -102,8 +102,8 @@ a Packer variable, the name of a Kubernetes object, a `{{ .Values }}` expression
 the target's page says. Write `$${` for a literal `${`.
 
 The configuration management targets that share the six abstract types have
-nothing to read at apply time. In a ResourceSet for `ansible`, `puppet`, `chef`
-or `cloud-init`, `${id.param}` becomes the value the document gives that param,
+nothing to read at apply time. In a ResourceSet for `ansible`, `puppet`, `chef`,
+`salt` or `cloud-init`, `${id.param}` becomes the value the document gives that param,
 when the document is compiled, and anything else in `${...}` is refused
 ([the rules](../reference/resource-types.md#references)).
 
