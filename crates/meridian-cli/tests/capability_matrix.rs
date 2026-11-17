@@ -97,6 +97,10 @@ fn matrix() -> String {
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
         ),
         row(
+            &meridian_target_opentofu::OpenTofu,
+            &meridian_target_opentofu::OpenTofuRunner::from_env(),
+        ),
+        row(
             &meridian_target_packer::Packer,
             &meridian_target_packer::PackerRunner::from_env(),
         ),

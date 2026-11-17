@@ -23,7 +23,7 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
+| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
 | its own rules | `docker` | `depends_on` between services, waiting for the other to be healthy when it declares a healthcheck; everything else Compose already creates first |
 | the stages of a build | `packer` | the order of the provisioners, and post-processors chained into a sequence; a dependency against the fixed shape of a build is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
@@ -71,6 +71,8 @@ tool's own output, so each one is documented where it happens:
   service. ([docker](../targets/docker.md#notifications))
 - Terraform: `replace_triggered_by` on the notified resource, which replaces it.
   ([terraform](../targets/terraform.md#notifications))
+- OpenTofu: the same `replace_triggered_by`.
+  ([opentofu](../targets/opentofu.md#notifications))
 - cloud-init: the notified action as a command that runs once, after every
   other command of the first boot. A first boot changes everything, so the
   reaction is unconditional. ([cloud-init](../targets/cloud-init.md#notifications))
