@@ -40,7 +40,17 @@ jobs:
           fi
           pulumi version
 
+      # Pulumi asks GitHub for a provider's latest release. Without a token
+      # that request shares the runner's address with everyone else's and is
+      # turned away once the shared allowance is spent, so the token is given
+      # here and the provider is fetched once, before the tests need it.
+      - name: Install the random provider
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: pulumi plugin install resource random
+
       - name: Test against pulumi
         env:
           MERIDIAN_REAL_PULUMI: '1'
+          GITHUB_TOKEN: ${{ github.token }}
         run: cargo test -p meridian-target-pulumi --locked --test real -- --nocapture

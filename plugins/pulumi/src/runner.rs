@@ -389,7 +389,8 @@ fn read_preview(json: &str) -> Result<Preview, RunError> {
             continue;
         };
         let text = |key: &str| diagnostic.get(key).and_then(Value::as_str).unwrap_or("");
-        let message = text("message").trim();
+        let message = plain(text("message"));
+        let message = message.trim();
         let severity = text("severity");
         // "debug" and "info" are a running commentary. Everything else is
         // something going wrong: "warning", "error", and "info#err", which is
@@ -408,6 +409,28 @@ fn read_preview(json: &str) -> Result<Preview, RunError> {
         changes,
         diagnostics,
     })
+}
+
+/// A message without the colour codes Pulumi leaves in a diagnostic even when
+/// it is told not to colour its output.
+fn plain(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    let mut chars = message.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+            continue;
+        }
+        // An escape sequence: ESC, "[", parameters, then one final letter.
+        if chars.next() == Some('[') {
+            for c in chars.by_ref() {
+                if c.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Reads `pulumi stack output --json`, taken once masked and once in full.
@@ -541,6 +564,16 @@ mod tests {
         assert!(read_outputs("{}", "{}").unwrap().is_empty());
         assert!(read_outputs("", "").unwrap().is_empty());
         assert!(read_outputs("{}", "not json").is_err());
+    }
+
+    #[test]
+    fn colour_codes_are_taken_out_of_a_message() {
+        assert_eq!(
+            plain("\u{1b}[31mError\u{1b}[0m: type \u{1b}[1;4mrandom:index:Nope\u{1b}[0m"),
+            "Error: type random:index:Nope"
+        );
+        assert_eq!(plain("plain text [not a code]"), "plain text [not a code]");
+        assert_eq!(plain("cut short \u{1b}"), "cut short ");
     }
 
     #[test]
