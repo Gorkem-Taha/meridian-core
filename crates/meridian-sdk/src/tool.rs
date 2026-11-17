@@ -203,7 +203,7 @@ impl Tool {
             command.env(key, value);
         }
 
-        let mut child = command.spawn().map_err(|err| RunError {
+        let mut child = spawn_when_ready(&mut command).map_err(|err| RunError {
             msg: if err.kind() == std::io::ErrorKind::NotFound {
                 format!(
                     "could not run {}: it is not installed, or not on the PATH of the machine running Meridian",
@@ -371,6 +371,26 @@ fn display_word(word: &str) -> String {
         word.to_owned()
     } else {
         format!("'{}'", word.replace('\'', "'\\''"))
+    }
+}
+
+/// Starts a process, trying again when the program is briefly "busy".
+///
+/// A program that was written a moment ago cannot be run while any process
+/// still holds it open for writing, and a process another thread is in the
+/// middle of starting holds every open file for an instant. The condition
+/// clears by itself, so it is waited out instead of reported.
+fn spawn_when_ready(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    const TEXT_FILE_BUSY: i32 = 26;
+    let mut attempt = 0;
+    loop {
+        match command.spawn() {
+            Err(err) if err.raw_os_error() == Some(TEXT_FILE_BUSY) && attempt < 50 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            result => return result,
+        }
     }
 }
 

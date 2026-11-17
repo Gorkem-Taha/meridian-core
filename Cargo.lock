@@ -733,6 +733,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-dsc"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-fake"
 version = "0.1.0"
 dependencies = [
