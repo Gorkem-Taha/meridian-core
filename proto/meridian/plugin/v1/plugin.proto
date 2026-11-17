@@ -195,7 +195,7 @@ message DescribeResponse {
   // spec.imports is refused for a plugin that does not say so, because the
   // values would otherwise be dropped without a word. A plugin built before
   // this field existed reports false, so the protocol version did not change.
-  bool accepts_inputs = 9;
+  bool accepts_inputs = 10;
 }
 
 message EmitRequest {
