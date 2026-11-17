@@ -1,0 +1,18 @@
+# The project. It is a module nobody depends on, so it needs no version.
+apiVersion: meridian/v1
+kind: Module
+metadata:
+  name: example-site
+spec:
+  modules:
+    # Read from a directory on disk. From git it would be:
+    #   - name: acme/hardening
+    #     version: "^1.2"
+    #     git: https://git.example.com/acme/meridian-hardening.git
+    # and from a registry:
+    #   - name: acme/hardening
+    #     version: "^1.2"
+    #     oci: registry.example.com/acme/meridian-hardening
+    - name: acme/hardening
+      version: "^1.2"
+      path: ../hardening

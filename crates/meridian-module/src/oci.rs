@@ -1,0 +1,523 @@
+//! Modules from an OCI registry.
+//!
+//! A module is stored as an OCI artifact: one manifest with one layer, a
+//! gzipped tar of the module. Any registry that implements the OCI
+//! distribution specification holds it, so an organisation's existing
+//! registry, with its existing access control, is already a module registry.
+//!
+//! Only reading is implemented here. Everything read is checked against the
+//! digest it was asked for by.
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::time::Duration;
+
+use base64::Engine as _;
+use semver::Version;
+use ureq::http::Response;
+use ureq::{Agent, Body};
+
+use crate::integrity::sha256_hex;
+use crate::pack::{unpack, MAX_UNPACKED_BYTES};
+use crate::Error;
+
+/// The artifact type of a module's manifest.
+pub const ARTIFACT_TYPE: &str = "application/vnd.meridian.module.v1";
+/// The media type of the one layer that holds the module.
+pub const LAYER_MEDIA_TYPE: &str = "application/vnd.meridian.module.layer.v1.tar+gzip";
+const MANIFEST_MEDIA_TYPE: &str = "application/vnd.oci.image.manifest.v1+json";
+
+/// A manifest is a few hundred bytes; this is generous.
+const MAX_MANIFEST_BYTES: u64 = 4 << 20;
+const MAX_TAG_PAGES: usize = 100;
+
+/// One repository on one registry.
+pub(crate) struct Repository {
+    agent: Agent,
+    /// `https://host[:port]`.
+    base: String,
+    host: String,
+    /// The repository's path on the registry.
+    path: String,
+    /// As written, for messages.
+    name: String,
+    insecure: bool,
+    credentials: Option<(String, String)>,
+    /// The `Authorization` header that last worked.
+    authorization: RefCell<Option<String>>,
+}
+
+fn percent_encode(s: &str) -> String {
+    use std::fmt::Write as _;
+    s.bytes().fold(String::new(), |mut out, b| {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+            out.push(b as char);
+        } else {
+            let _ = write!(out, "%{b:02X}");
+        }
+        out
+    })
+}
+
+/// Reads `key="value"` pairs out of a `WWW-Authenticate` challenge.
+fn challenge_params(params: &str) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let mut rest = params.trim();
+    while let Some(eq) = rest.find('=') {
+        let key = rest[..eq]
+            .trim()
+            .trim_start_matches(',')
+            .trim()
+            .to_ascii_lowercase();
+        let after = &rest[eq + 1..];
+        let (value, tail) = if let Some(quoted) = after.strip_prefix('"') {
+            match quoted.find('"') {
+                Some(end) => (&quoted[..end], &quoted[end + 1..]),
+                None => (quoted, ""),
+            }
+        } else {
+            match after.find(',') {
+                Some(end) => (&after[..end], &after[end..]),
+                None => (after, ""),
+            }
+        };
+        out.insert(key, value.trim().to_owned());
+        rest = tail;
+    }
+    out
+}
+
+/// The login for `host` from the Docker configuration file, if it has one.
+/// Only `auths` entries are read: no credential helpers are run.
+fn docker_credentials(host: &str) -> Option<(String, String)> {
+    let dir = match std::env::var_os("DOCKER_CONFIG") {
+        Some(dir) => std::path::PathBuf::from(dir),
+        None => std::path::PathBuf::from(std::env::var_os("HOME")?).join(".docker"),
+    };
+    let data = std::fs::read(dir.join("config.json")).ok()?;
+    credentials_from(&data, host)
+}
+
+fn credentials_from(config: &[u8], host: &str) -> Option<(String, String)> {
+    let config: serde_json::Value = serde_json::from_slice(config).ok()?;
+    let auths = config.get("auths")?.as_object()?;
+    let entry = auths.iter().find_map(|(key, entry)| {
+        // A key may be a bare host or a URL such as https://host/v1/.
+        let stripped = key
+            .strip_prefix("https://")
+            .or_else(|| key.strip_prefix("http://"))
+            .unwrap_or(key);
+        let key_host = stripped.split('/').next().unwrap_or(stripped);
+        (key_host == host).then_some(entry)
+    })?;
+    let auth = entry.get("auth")?.as_str()?;
+    let decoded = base64::engine::general_purpose::STANDARD
+        .decode(auth.trim())
+        .ok()?;
+    let decoded = String::from_utf8(decoded).ok()?;
+    let (user, password) = decoded.split_once(':')?;
+    Some((user.to_owned(), password.to_owned()))
+}
+
+fn basic(user: &str, password: &str) -> String {
+    format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))
+    )
+}
+
+fn header<'r>(response: &'r Response<Body>, name: &str) -> Option<&'r str> {
+    response.headers().get(name)?.to_str().ok()
+}
+
+impl Repository {
+    pub(crate) fn open(repository: &str, insecure: bool) -> Result<Repository, Error> {
+        let bad = || {
+            Error::new(format!(
+                "{repository:?} is not a registry repository such as \
+                 registry.example.com/team/module"
+            ))
+        };
+        let (host, path) = repository.split_once('/').ok_or_else(bad)?;
+        let ok_host = !host.is_empty()
+            && host.bytes().all(|b| {
+                b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b':' | b'[' | b']')
+            });
+        let ok_path = !path.is_empty()
+            && path.split('/').all(|part| {
+                !part.is_empty()
+                    && !part.starts_with('.')
+                    && part.bytes().all(|b| {
+                        b.is_ascii_lowercase()
+                            || b.is_ascii_digit()
+                            || matches!(b, b'.' | b'_' | b'-')
+                    })
+            });
+        if !ok_host || !ok_path {
+            return Err(bad());
+        }
+        let agent: Agent = Agent::config_builder()
+            // Statuses are read here: 401 starts a login and 404 has a
+            // message of its own.
+            .http_status_as_error(false)
+            // A redirect may not take a secure fetch to plain HTTP.
+            .https_only(!insecure)
+            .timeout_global(Some(Duration::from_secs(600)))
+            .timeout_connect(Some(Duration::from_secs(30)))
+            .user_agent(concat!("meridian/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .into();
+        let scheme = if insecure { "http" } else { "https" };
+        Ok(Repository {
+            agent,
+            base: format!("{scheme}://{host}"),
+            host: host.to_owned(),
+            path: path.to_owned(),
+            name: repository.to_owned(),
+            insecure,
+            credentials: docker_credentials(host),
+            authorization: RefCell::new(None),
+        })
+    }
+
+    fn send(
+        &self,
+        url: &str,
+        accept: &str,
+        authorization: Option<&str>,
+    ) -> Result<Response<Body>, Error> {
+        let mut request = self.agent.get(url).header("Accept", accept);
+        if let Some(value) = authorization {
+            request = request.header("Authorization", value);
+        }
+        request
+            .call()
+            .map_err(|e| Error::new(format!("reaching the registry {}: {e}", self.host)))
+    }
+
+    /// Answers a 401 by logging in the way the registry asked for.
+    fn authorize(&self, challenge: &str) -> Result<String, Error> {
+        let (scheme, params) = challenge.split_once(' ').unwrap_or((challenge, ""));
+        if scheme.eq_ignore_ascii_case("basic") {
+            return match &self.credentials {
+                Some((user, password)) => Ok(basic(user, password)),
+                None => Err(self.no_access()),
+            };
+        }
+        if !scheme.eq_ignore_ascii_case("bearer") {
+            return Err(Error::new(format!(
+                "the registry {} asks for {scheme:?} authentication, which is not supported",
+                self.host
+            )));
+        }
+        let params = challenge_params(params);
+        let Some(realm) = params.get("realm") else {
+            return Err(Error::new(format!(
+                "the registry {} asked for a token without saying where to get one",
+                self.host
+            )));
+        };
+        if !(realm.starts_with("https://") || self.insecure && realm.starts_with("http://")) {
+            return Err(Error::new(format!(
+                "the registry {} sends logins to {realm:?}, which is not an https address",
+                self.host
+            )));
+        }
+        let mut url = realm.clone();
+        let mut separator = if realm.contains('?') { '&' } else { '?' };
+        for key in ["service", "scope"] {
+            if let Some(value) = params.get(key) {
+                url.push(separator);
+                url.push_str(&format!("{key}={}", percent_encode(value)));
+                separator = '&';
+            }
+        }
+        let login = self
+            .credentials
+            .as_ref()
+            .map(|(user, password)| basic(user, password));
+        let mut response = self.send(&url, "application/json", login.as_deref())?;
+        if !response.status().is_success() {
+            return Err(self.no_access());
+        }
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(MAX_MANIFEST_BYTES)
+            .read_to_vec()
+            .map_err(|e| Error::new(format!("reading a token from {realm}: {e}")))?;
+        let token = serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|v| {
+                v.get("token")
+                    .or_else(|| v.get("access_token"))
+                    .and_then(|t| t.as_str().map(str::to_owned))
+            })
+            .ok_or_else(|| Error::new(format!("{realm} did not answer with a token")))?;
+        Ok(format!("Bearer {token}"))
+    }
+
+    fn no_access(&self) -> Error {
+        let hint = if self.credentials.is_some() {
+            "the login in the Docker configuration file was refused"
+        } else {
+            "no login for it was found in the Docker configuration file; run `docker login` \
+             for that registry"
+        };
+        Error::new(format!(
+            "the registry {} did not allow reading {}: {hint}",
+            self.host, self.name
+        ))
+    }
+
+    /// A GET that logs in once if the registry asks.
+    fn get(&self, url: &str, accept: &str) -> Result<Response<Body>, Error> {
+        let known = self.authorization.borrow().clone();
+        let response = self.send(url, accept, known.as_deref())?;
+        if response.status().as_u16() != 401 {
+            return Ok(response);
+        }
+        let Some(challenge) = header(&response, "www-authenticate").map(str::to_owned) else {
+            return Err(self.no_access());
+        };
+        let authorization = self.authorize(&challenge)?;
+        let response = self.send(url, accept, Some(&authorization))?;
+        if matches!(response.status().as_u16(), 401 | 403) {
+            return Err(self.no_access());
+        }
+        *self.authorization.borrow_mut() = Some(authorization);
+        Ok(response)
+    }
+
+    fn check(&self, response: &Response<Body>, what: &str) -> Result<(), Error> {
+        match response.status().as_u16() {
+            200..=299 => Ok(()),
+            404 => Err(Error::new(format!("{what} was not found in {}", self.name))),
+            403 => Err(self.no_access()),
+            status => Err(Error::new(format!(
+                "the registry {} answered {status} for {what} of {}",
+                self.host, self.name
+            ))),
+        }
+    }
+
+    fn body(&self, mut response: Response<Body>, limit: u64, what: &str) -> Result<Vec<u8>, Error> {
+        response
+            .body_mut()
+            .with_config()
+            .limit(limit)
+            .read_to_vec()
+            .map_err(|e| Error::new(format!("reading {what} of {}: {e}", self.name)))
+    }
+
+    /// Every tag of the repository.
+    pub(crate) fn tags(&self) -> Result<Vec<String>, Error> {
+        let mut out = Vec::new();
+        let mut next = Some(format!("/v2/{}/tags/list", self.path));
+        let mut pages = 0;
+        while let Some(path) = next.take() {
+            pages += 1;
+            if pages > MAX_TAG_PAGES {
+                break;
+            }
+            let response = self.get(&format!("{}{path}", self.base), "application/json")?;
+            self.check(&response, "the list of versions")?;
+            // `</v2/…/tags/list?last=…>; rel="next"`. Only a path on this
+            // registry is followed.
+            next = header(&response, "link").and_then(|link| {
+                let target = link.split(';').next()?.trim();
+                let target = target.strip_prefix('<')?.strip_suffix('>')?;
+                (link.contains("rel=\"next\"") && target.starts_with("/v2/"))
+                    .then(|| target.to_owned())
+            });
+            let body = self.body(response, MAX_MANIFEST_BYTES, "the list of versions")?;
+            let listing: serde_json::Value = serde_json::from_slice(&body).map_err(|e| {
+                Error::new(format!(
+                    "the list of versions of {} is not JSON: {e}",
+                    self.name
+                ))
+            })?;
+            if let Some(tags) = listing.get("tags").and_then(|t| t.as_array()) {
+                out.extend(tags.iter().filter_map(|t| t.as_str().map(str::to_owned)));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Fetches the manifest at a tag or digest. Returns the manifest's own
+    /// digest and the digest of the layer that holds the module.
+    fn manifest(&self, reference: &str) -> Result<(String, String), Error> {
+        let what = format!("the manifest {reference}");
+        let url = format!("{}/v2/{}/manifests/{reference}", self.base, self.path);
+        let response = self.get(&url, MANIFEST_MEDIA_TYPE)?;
+        self.check(&response, &what)?;
+        let body = self.body(response, MAX_MANIFEST_BYTES, &what)?;
+        let digest = format!("sha256:{}", sha256_hex(&body));
+        if reference.starts_with("sha256:") && reference != digest {
+            return Err(Error::new(format!(
+                "the registry {} answered a request for {reference} of {} with different \
+                 content ({digest})",
+                self.host, self.name
+            )));
+        }
+        let manifest: serde_json::Value = serde_json::from_slice(&body)
+            .map_err(|e| Error::new(format!("{what} of {} is not JSON: {e}", self.name)))?;
+        let layers = manifest
+            .get("layers")
+            .and_then(|l| l.as_array())
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let media = |layer: &serde_json::Value| {
+            layer
+                .get("mediaType")
+                .and_then(|m| m.as_str())
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let Some(layer) = layers.iter().find(|l| media(l) == LAYER_MEDIA_TYPE) else {
+            let found: Vec<String> = layers.iter().map(media).collect();
+            return Err(Error::new(format!(
+                "{reference} of {} is not a Meridian module: it has no layer of type \
+                 {LAYER_MEDIA_TYPE} (found: {})",
+                self.name,
+                if found.is_empty() {
+                    "no layers".to_owned()
+                } else {
+                    found.join(", ")
+                }
+            )));
+        };
+        let layer_digest = layer
+            .get("digest")
+            .and_then(|d| d.as_str())
+            .filter(|d| {
+                d.strip_prefix("sha256:")
+                    .is_some_and(|h| h.len() == 64 && h.bytes().all(|b| b.is_ascii_hexdigit()))
+            })
+            .ok_or_else(|| {
+                Error::new(format!(
+                    "{reference} of {} names its layer by something other than a sha256 digest",
+                    self.name
+                ))
+            })?;
+        Ok((digest, layer_digest.to_owned()))
+    }
+
+    fn blob(&self, digest: &str) -> Result<Vec<u8>, Error> {
+        let what = format!("the layer {digest}");
+        let url = format!("{}/v2/{}/blobs/{digest}", self.base, self.path);
+        let response = self.get(&url, "application/octet-stream")?;
+        self.check(&response, &what)?;
+        let body = self.body(response, MAX_UNPACKED_BYTES, &what)?;
+        let found = format!("sha256:{}", sha256_hex(&body));
+        if found != digest {
+            return Err(Error::new(format!(
+                "the registry {} answered a request for {digest} of {} with different content \
+                 ({found})",
+                self.host, self.name
+            )));
+        }
+        Ok(body)
+    }
+}
+
+/// The versions a repository offers: its tags that are SemVer versions,
+/// each with the tag that carries it.
+pub(crate) fn versions(
+    repository: &str,
+    insecure: bool,
+) -> Result<BTreeMap<Version, String>, Error> {
+    let repo = Repository::open(repository, insecure)?;
+    let mut out = BTreeMap::new();
+    for tag in repo.tags()? {
+        // A tag cannot hold `+`, so build metadata is written with `_`.
+        let text = tag.strip_prefix('v').unwrap_or(&tag).replace('_', "+");
+        if let Ok(version) = Version::parse(&text) {
+            if tag.starts_with('v') || !out.contains_key(&version) {
+                out.insert(version, tag);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Fetches the module at `reference` (a tag or a manifest digest) into the
+/// new directory `dest`. Returns the manifest's digest.
+pub(crate) fn fetch(
+    repository: &str,
+    insecure: bool,
+    reference: &str,
+    dest: &Path,
+) -> Result<String, Error> {
+    let repo = Repository::open(repository, insecure)?;
+    let (digest, layer) = repo.manifest(reference)?;
+    let archive = repo.blob(&layer)?;
+    unpack(&archive, dest)?;
+    Ok(digest)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_challenge_is_read_whatever_its_spacing() {
+        let p = challenge_params(
+            "realm=\"https://auth.example.com/token\", service=\"registry.example.com\",scope=\"repository:acme/nginx:pull\"",
+        );
+        assert_eq!(p["realm"], "https://auth.example.com/token");
+        assert_eq!(p["service"], "registry.example.com");
+        assert_eq!(p["scope"], "repository:acme/nginx:pull");
+        assert_eq!(challenge_params("realm=x,service=y")["service"], "y");
+        assert_eq!(
+            percent_encode("repository:acme/nginx:pull"),
+            "repository%3Aacme%2Fnginx%3Apull"
+        );
+    }
+
+    #[test]
+    fn a_login_is_found_by_host_in_the_docker_configuration() {
+        // "user:pass:word", so a colon in the password survives.
+        let config = br#"{"auths": {
+            "https://index.example.com/v1/": {"auth": "dXNlcjpwYXNzOndvcmQ="},
+            "registry.example.com:5000": {"auth": "YTpi"},
+            "broken.example.com": {"auth": "!!"},
+            "helper.example.com": {}
+        }}"#;
+        assert_eq!(
+            credentials_from(config, "index.example.com"),
+            Some(("user".to_owned(), "pass:word".to_owned()))
+        );
+        assert_eq!(
+            credentials_from(config, "registry.example.com:5000"),
+            Some(("a".to_owned(), "b".to_owned()))
+        );
+        for host in [
+            "registry.example.com",
+            "broken.example.com",
+            "helper.example.com",
+            "other",
+        ] {
+            assert_eq!(credentials_from(config, host), None, "{host}");
+        }
+        assert_eq!(credentials_from(b"not json", "x"), None);
+        assert_eq!(basic("a", "b"), "Basic YTpi");
+    }
+
+    #[test]
+    fn a_repository_is_a_host_and_a_path_and_nothing_else() {
+        assert!(Repository::open("registry.example.com:5000/acme/nginx", false).is_ok());
+        for bad in [
+            "nginx",
+            "registry.example.com/",
+            "registry.example.com/Acme",
+            "reg/a b",
+            "reg/a:1.0",
+            "/a/b",
+            "reg/a/../b",
+        ] {
+            assert!(Repository::open(bad, false).is_err(), "{bad}");
+        }
+    }
+}

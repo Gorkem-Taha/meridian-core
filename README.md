@@ -77,6 +77,8 @@ The core is a Cargo workspace under `crates/`:
 - `meridian-ir` — parsing and validation of the documents
 - `meridian-yaml` — YAML scalar rules and a deterministic writer, shared by the parser and the plugins that emit YAML
 - `meridian-resolve` — hierarchical data resolution
+- `meridian-module` — modules: the `meridian.yaml` manifest, path, git and OCI registry sources, version
+  resolution, `meridian.lock` and the content hash every pinned module is checked against
 - `meridian-graph` — dependency graph and topological sort
 - `meridian-ast` — the target-agnostic resource tree every plugin consumes
 - `meridian-value` — the dynamic value type and its canonical JSON form, shared by the core and the SDK

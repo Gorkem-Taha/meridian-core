@@ -1,0 +1,59 @@
+name: modules
+
+# Fetches a module from a real OCI registry and from git over the network.
+# The module crate's other tests use a registry served from the test process
+# and git repositories on disk, and run with everything else in the rust
+# workflow; this one needs Docker, oras and a network, so it runs only when
+# the module code or what it is built on changes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'crates/meridian-module/**'
+      - 'crates/meridian-cli/**'
+      - 'crates/meridian-ir/**'
+      - 'examples/modules/**'
+      - 'tools/real_registry_test.sh'
+      - 'Cargo.lock'
+      - '.github/workflows/modules.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: a real registry, with and without a login
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: oras-project/setup-oras@v1
+
+      - name: Build meridian and the Ansible plugin
+        run: cargo build --locked -p meridian-cli -p meridian-target-ansible
+
+      # Two registries: one anyone can read, and one that wants a login.
+      - name: Start the registries
+        run: |
+          docker run -d --name open -p 5000:5000 registry:2
+          mkdir -p "$RUNNER_TEMP/auth"
+          docker run --rm --entrypoint htpasswd httpd:2 -Bbn reader s3cret > "$RUNNER_TEMP/auth/htpasswd"
+          docker run -d --name private -p 5001:5000 \
+            -v "$RUNNER_TEMP/auth:/auth" \
+            -e REGISTRY_AUTH=htpasswd \
+            -e REGISTRY_AUTH_HTPASSWD_REALM=test \
+            -e REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd \
+            registry:2
+          for port in 5000 5001; do
+            for attempt in $(seq 1 30); do
+              curl -s -o /dev/null "http://localhost:$port/v2/" && break
+              sleep 1
+            done
+          done
+
+      - name: Publish, install, verify and compile
+        run: tools/real_registry_test.sh "$PWD/target/debug/meridian"

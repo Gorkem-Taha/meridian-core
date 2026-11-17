@@ -117,7 +117,8 @@ spec:
 - **`path`** is for a monorepo and for developing a module beside its consumer. It is
   never copied and never hashed, exactly because the point of it is that an edit takes
   effect at once. A module fetched from `git` or `oci` may not require a `path` module
-  outside its own tree: that path would mean something different on every machine.
+  at all: that path would point at the disk of whoever fetched it, and would mean
+  something different on every machine.
 - **`git`** uses the `git` program already on the machine, so every transport and
   credential that works for `git clone` works here, and Meridian stores no git
   credentials.
@@ -235,7 +236,8 @@ to run `meridian module install`, so a run never changes what it runs half way t
 and never reaches the network unasked.
 
 `meridian module push`, which uploads a packed module to a registry, is the second step.
-Until then `oras push` with the media types above publishes a module.
+Until then `oras push` with the media types above publishes a module. The user-facing
+reference for all of this is [Modules](../reference/modules.md).
 
 ### 1.9 What installing a module can and cannot do
 
@@ -282,8 +284,8 @@ or reports, per document, the decision only a person can make. It never guesses.
 it exists now so that the release that introduces `v2` cannot ship without it.
 
 **`meridian version`** prints every version stream of the build: the core, the language
-versions and their states, the SDK, the plugin protocol range, and the lockfile and
-run-state schemas.
+versions and their states, the SDK, the plugin protocol range and the lockfile format.
+The run-state schema joins them when the run-state gains its version stamp.
 
 ---
 
@@ -341,7 +343,7 @@ code and checked by a test, so it cannot drift:
 | Step | Holds |
 |---|---|
 | 1 | This note. `apiVersion` table, messages, per-run deprecation warning, `meridian migrate`, `meridian version`. Protocol negotiation, the SDK check, the compatibility page |
-| 2 | Modules: manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity, the `meridian module` commands, `@module:path` |
+| 2 | Modules: the crate `meridian-module` (manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity), the `meridian module` commands, `@module:path` |
 | 3 | `meridian module push`; composites and functions resolved from modules, once the language design defines them |
 
 ## 5. Open questions
