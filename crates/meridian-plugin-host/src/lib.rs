@@ -19,6 +19,7 @@
 
 mod client;
 mod registry;
+pub mod signature;
 
 use std::fmt;
 
@@ -26,6 +27,7 @@ use meridian_sdk::{Capabilities, Category, CompileError, Operations, RunError};
 
 pub use client::{Client, StartOptions, HANDSHAKE_TIMEOUT};
 pub use registry::{binary_name, Registry, Target};
+pub use signature::{Policy, PublicKey, SecretKey, Signature, Verification};
 
 /// The naming convention a discoverable plugin binary follows. Discovery is by
 /// name, not by executing every file in a directory, because running an
@@ -53,6 +55,8 @@ pub struct Info {
     pub target_versions: Vec<String>,
     /// The binary the plugin was loaded from; empty for an in-process emitter.
     pub path: String,
+    /// What checking the binary's signature found, before it was started.
+    pub signature: Signature,
 }
 
 /// A plugin-loading or plugin-transport failure.

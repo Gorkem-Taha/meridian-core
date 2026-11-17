@@ -49,5 +49,17 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # Every failure in one run, and the whole output kept, so the step
+      # below can show the failures without the thousands of lines between.
       - name: Test
-        run: cargo test --workspace --locked
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo test --workspace --locked --no-fail-fast 2>&1 | tee test.log
+
+      - name: Show only what failed
+        if: failure()
+        shell: bash
+        run: |
+          grep -aE "panicked at|^test .* FAILED|^  left:|^ right:|^error|assertion|failed to|could not|cannot|not found|No such" test.log \
+            | grep -av '"reason":' | cut -c1-600 | tail -n 200 || true

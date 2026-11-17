@@ -118,6 +118,7 @@ impl Registry {
             target_versions: emitter.target_versions(),
             operations: Operations::COMPILE_ONLY,
             path: String::new(),
+            signature: crate::Signature::NotChecked,
         };
         self.targets.insert(
             name,

@@ -14,7 +14,7 @@ use meridian_sdk::{
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::{EmitError, Error, Info, RunFailure};
+use crate::{EmitError, Error, Info, RunFailure, Verification};
 
 /// How long a host waits for a plugin to announce itself. A plugin that has
 /// not printed its handshake line by then is either not a Meridian plugin or is
@@ -38,6 +38,9 @@ pub struct StartOptions {
     pub env: Option<Vec<(String, String)>>,
     /// How long to wait for the handshake line and the first reply.
     pub handshake_timeout: Duration,
+    /// Whether, and against which keys, the binary's signature is checked
+    /// before it is started. The default checks nothing.
+    pub verification: Verification,
 }
 
 impl Default for StartOptions {
@@ -46,6 +49,7 @@ impl Default for StartOptions {
             args: Vec::new(),
             env: None,
             handshake_timeout: HANDSHAKE_TIMEOUT,
+            verification: Verification::off(),
         }
     }
 }
@@ -78,7 +82,20 @@ impl Client {
     ///
     /// On any failure the process is killed before returning, so a
     /// half-started plugin never survives the error that describes it.
+    ///
+    /// The binary's signature is checked first, as `options.verification`
+    /// says: a plugin that must not run is never started, not started and
+    /// then stopped.
     pub fn start(path: &str, options: &StartOptions) -> Result<Client, Error> {
+        let signature = options
+            .verification
+            .check(std::path::Path::new(path))
+            .map_err(|cause| Error {
+                path: path.to_owned(),
+                msg: "the plugin was not started".to_owned(),
+                cause,
+                ..Error::default()
+            })?;
         let process = Process::spawn(path, options)?;
         let deadline = Instant::now() + options.handshake_timeout;
 
@@ -159,6 +176,7 @@ impl Client {
             target_versions: reply.target_versions,
             operations: wire::operations_from_wire(reply.operations),
             path: path.to_owned(),
+            signature,
         };
         Ok(Client {
             info,
