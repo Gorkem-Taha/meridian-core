@@ -45,8 +45,9 @@ write it a second time.
 ```
 
 "When this really changes, do that to the other." It is conditional: on a run
-where the file is already right, nothing is restarted. It also orders the
-notifier first.
+where the file is already right, nothing is restarted. It is not an order:
+Meridian leaves it out of the sort, so if the notifier must also come first, say
+so with `dependsOn`.
 
 This is where tools differ most, and where Meridian is strict.
 

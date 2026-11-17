@@ -1,5 +1,7 @@
 # Target: `ansible`
 
+<img src="../branding/logos/meridian-ansible.svg" width="72" alt="Meridian Ansible plugin logo">
+
 Compiles a ResourceSet into a playbook and an inventory, and runs them with
 `ansible-playbook`.
 
