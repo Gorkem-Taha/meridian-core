@@ -26,6 +26,7 @@ about order:
 | declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
+| the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not ([helm](../targets/helm.md#ordering)) |
 | the stages of a first boot | `cloud-init` | nothing written; each resource is placed at the step cloud-init handles it, a file that has to wait is deferred, and a dependency that points backwards through those steps is refused |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
@@ -44,8 +45,9 @@ write it a second time.
 ```
 
 "When this really changes, do that to the other." It is conditional: on a run
-where the file is already right, nothing is restarted. It also orders the
-notifier first.
+where the file is already right, nothing is restarted. It is not an order:
+Meridian leaves it out of the sort, so if the notifier must also come first, say
+so with `dependsOn`.
 
 This is where tools differ most, and where Meridian is strict.
 
@@ -62,6 +64,8 @@ tool's own output, so each one is documented where it happens:
 - Kubernetes: a checksum of the notifier in an annotation on the workload's pod
   template. The checksum changes, the template changes, the pods roll.
   ([kubernetes](../targets/kubernetes.md#notifications))
+- Helm: the same checksum, written as a template expression so Helm computes it
+  each time it renders the chart. ([helm](../targets/helm.md#notifications))
 - Docker: a checksum of a config, secret, network or volume in a label on the
   service. ([docker](../targets/docker.md#notifications))
 - Terraform: `replace_triggered_by` on the notified resource, which replaces it.
@@ -78,7 +82,7 @@ actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
 Puppet with the reason, not turned into a restart. Salt restarts and reloads a
 service through the state that keeps it running, so either action aimed at a
-service whose state is `stopped` is refused. Kubernetes can roll pods and
+service whose state is `stopped` is refused. Kubernetes and Helm can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. systemd can propagate a restart between Podman units and nothing
 else, so only `restart` is accepted there. CloudFormation and Bicep have no way to react to a change at all,

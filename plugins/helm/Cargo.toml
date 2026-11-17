@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-helm"
+description = "The Meridian plugin for Helm with Kustomize: compiles a document of Kubernetes objects to a chart and an optional overlay, and installs it as a release with helm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

@@ -1,0 +1,33 @@
+# The document shown in docs/reference/dsl/containerization.md. Keep the two the same.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web
+spec:
+  target: docker
+  resources:
+    - id: backend
+      type: network
+
+    - id: db_data
+      type: volume
+
+    - id: db
+      type: service
+      params:
+        image: postgres:16
+        networks: ["${backend}"]
+        volumes: ["${db_data}:/var/lib/postgresql/data"]
+
+    - id: app
+      type: service
+      params:
+        image: ghcr.io/example/app:1.4
+        networks: ["${backend}"]
+        ports: ["8080:8080"]
+      dependsOn:
+        - resource: db
+
+  outputs:
+    - name: app_port
+      value: ${app.port.8080}
