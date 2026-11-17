@@ -172,7 +172,7 @@ fn json(report: &Report) -> String {
 
 /// Escapes text for XML and HTML, in content and in a quoted attribute.
 /// Characters XML 1.0 cannot carry at all are dropped.
-fn escape(text: &str) -> String {
+pub fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for c in text.chars() {
         match c {
@@ -540,7 +540,8 @@ fn markdown(report: &Report) -> String {
     out
 }
 
-const STYLE: &str = "\
+/// The style sheet of the HTML report, for a page that sits beside one.
+pub const STYLE: &str = "\
 :root{--bg:#fff;--fg:#1b1f24;--muted:#5b6470;--line:#d8dee4;--ok:#1a7f37;--bad:#cf222e;--idle:#6e7781;--card:#f6f8fa}\
 @media(prefers-color-scheme:dark){:root{--bg:#0d1117;--fg:#e6edf3;--muted:#9198a1;--line:#30363d;--ok:#3fb950;--bad:#f85149;--idle:#8b949e;--card:#161b22}}\
 body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 system-ui,sans-serif}\
