@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use meridian_sdk::{ImportNote, NoteLevel};
+use meridian_sdk::{ImportNote, NoteLevel, Value};
 
 /// The notes of one import, in the order they were raised.
 ///
@@ -65,6 +65,26 @@ impl Notes {
     }
 }
 
+/// Makes a value's text literal to a document.
+///
+/// In a document `${...}` is a reference to another resource, and a tool's
+/// own file may hold the same characters meaning something else, or nothing:
+/// a shell script in a ConfigMap, say. Importing such text as it stands would
+/// turn it into a reference to a resource that does not exist. This doubles
+/// the dollar of every `${`, which is how a document writes one literally.
+pub fn literal(value: &Value) -> Value {
+    match value {
+        Value::String(s) => Value::String(s.replace("${", "$${")),
+        Value::List(items) => Value::List(items.iter().map(literal).collect()),
+        Value::Map(map) => Value::Map(
+            map.iter()
+                .map(|(key, value)| (key.clone(), literal(value)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
 /// Turns any text into something usable as a resource id or a document name:
 /// lower-case letters, digits and `separator`, starting with a letter.
 pub fn slug(text: &str, separator: char) -> String {
@@ -113,6 +133,22 @@ mod tests {
         assert_eq!(slug("  web-server.conf ", '-'), "web-server-conf");
         assert_eq!(slug("80/tcp", '_'), "x80_tcp");
         assert_eq!(slug("!!", '_'), "item");
+    }
+
+    #[test]
+    fn a_literal_dollar_brace_is_doubled_at_any_depth() {
+        let value = Value::List(vec![
+            Value::String("echo ${HOME} $USER".to_owned()),
+            Value::Map(std::collections::BTreeMap::from([(
+                "k".to_owned(),
+                Value::String("${a}${b}".to_owned()),
+            )])),
+            Value::Int(1),
+        ]);
+        assert_eq!(
+            literal(&value).canonical(),
+            r#"["echo $${HOME} $USER",{"k":"$${a}$${b}"},1]"#
+        );
     }
 
     #[test]

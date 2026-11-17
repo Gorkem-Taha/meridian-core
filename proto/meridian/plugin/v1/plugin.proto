@@ -394,6 +394,11 @@ message ImportRequest {
   // source yields several documents the plugin derives each one's name from
   // it. Empty lets the plugin choose.
   string name = 2;
+  // root is the directory the files were read from, as an absolute path on
+  // the operator's machine; empty when they did not come from one place. The
+  // plugin never reads it. It is there for a configuration whose meaning
+  // depends on where it is, such as one that names files beside itself.
+  string root = 3;
 }
 
 // ImportedResource is one resource of an imported document, in the terms a

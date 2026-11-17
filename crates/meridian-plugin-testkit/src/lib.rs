@@ -193,6 +193,7 @@ pub fn import_source(dir: &Path, name: &str) -> ImportSource {
     ImportSource {
         files,
         name: name.to_owned(),
+        root: String::new(),
     }
 }
 
@@ -204,6 +205,7 @@ pub fn import_text(name: &str, files: &[(&str, &str)]) -> ImportSource {
             .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
             .collect(),
         name: name.to_owned(),
+        root: String::new(),
     }
 }
 

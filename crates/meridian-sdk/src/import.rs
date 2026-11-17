@@ -92,6 +92,11 @@ pub struct ImportSource {
     /// importer choose. When the source yields several documents the importer
     /// derives each one's name from it.
     pub name: String,
+    /// The directory the files were read from, as an absolute path on the
+    /// operator's machine; empty when they did not come from one place. An
+    /// importer never reads it. It is there for a configuration whose meaning
+    /// depends on where it is, such as one that names files beside itself.
+    pub root: String,
 }
 
 /// Which of Meridian's document kinds an imported document is.

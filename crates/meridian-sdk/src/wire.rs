@@ -523,6 +523,7 @@ pub fn import_request(source: &ImportSource) -> pb::ImportRequest {
     pb::ImportRequest {
         files: source.files.clone().into_iter().collect(),
         name: source.name.clone(),
+        root: source.root.clone(),
     }
 }
 
@@ -530,6 +531,7 @@ pub fn import_request_from_wire(request: pb::ImportRequest) -> ImportSource {
     ImportSource {
         files: request.files.into_iter().collect(),
         name: request.name,
+        root: request.root,
     }
 }
 

@@ -246,6 +246,24 @@ fn default_name(paths: &[PathBuf]) -> String {
     }
 }
 
+/// The directory the files came from, when they came from one: the directory
+/// that was named, or the one holding the file that was.
+fn root(paths: &[PathBuf]) -> String {
+    let [only] = paths else {
+        return String::new();
+    };
+    let Ok(full) = only.canonicalize() else {
+        return String::new();
+    };
+    let dir = if full.is_dir() {
+        Some(full.as_path())
+    } else {
+        full.parent()
+    };
+    dir.map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
 pub(crate) fn run(registry: &Registry, request: &Request) -> Result<(), Failure> {
     let mut found = gather(request)?;
     let info = choose(registry, request, &found)?;
@@ -292,6 +310,7 @@ pub(crate) fn run(registry: &Registry, request: &Request) -> Result<(), Failure>
             .name
             .map(str::to_owned)
             .unwrap_or_else(|| default_name(request.paths)),
+        root: root(request.paths),
     };
 
     let target = registry

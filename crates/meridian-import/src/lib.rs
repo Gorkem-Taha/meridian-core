@@ -29,5 +29,5 @@ mod render;
 pub mod tf;
 pub mod yaml;
 
-pub use notes::{slug, unique_id, Notes};
+pub use notes::{literal, slug, unique_id, Notes};
 pub use render::{render, render_all, Rendered, TODO_MARKER};
