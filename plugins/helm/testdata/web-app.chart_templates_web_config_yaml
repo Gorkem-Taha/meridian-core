@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-config" .Release.Name | toRawJson }}
+data:
+  banner.tmpl: {{ printf "{{ .Site.Title }} is served from port %s" (toRawJson .Values.port) | toRawJson }}
+  index.html: {{ printf "<h1>%s</h1>\n" .Values.greeting | toRawJson }}
