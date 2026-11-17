@@ -262,6 +262,18 @@ monitoring (Infrastructure, target kubernetes)
 A label can be interpolated too, and `-l` matches the value it comes to, so
 the data is read before the selector is applied.
 
+### Secrets
+
+A document's [secrets](dsl/secrets.md) are fetched by `plan` and `apply` only,
+each just before the stage that declares it, and wiped from memory when that
+stage ends. `validate` and `compile` never read a provider: `compile` writes a
+secret's name where its value would go, as `(secret db_password)`.
+
+A secret's value is in nothing a command prints: plans, the tool's log lines,
+errors and the run's state show `(sensitive)`. The process also turns off its
+own core dumps before it reads anything
+([how a secret is held](../concepts/secrets-in-memory.md)).
+
 ### `module`
 
 Fetches, pins and checks the [modules](modules.md) that the `meridian.yaml` in

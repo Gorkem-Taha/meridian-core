@@ -122,6 +122,8 @@ fn to_yaml(value: &Value) -> Yaml {
         Value::String(s) => Yaml::Str(s.clone()),
         Value::List(items) => Yaml::Seq(items.iter().map(to_yaml).collect()),
         Value::Map(map) => Yaml::Map(map.iter().map(|(k, v)| (k.clone(), to_yaml(v))).collect()),
+        // The strategies never make one; a document cannot write a secret's value.
+        Value::Secret(_) => Yaml::Str(meridian_value::SENSITIVE.to_owned()),
     }
 }
 

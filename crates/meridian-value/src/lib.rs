@@ -22,6 +22,34 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    /// A secret. The value holds no bytes of it, only which secret it is; the
+    /// bytes stay in the run's secret table. It prints and encodes as
+    /// [`SENSITIVE`], so nothing made from a `Value` can show a secret.
+    Secret(SecretRef),
+}
+
+/// What stands in for a secret wherever a value is shown or written.
+pub const SENSITIVE: &str = "(sensitive)";
+
+/// Names one secret of a run: a slot in the run's secret table. It is not the
+/// secret and nothing about the secret can be learned from it.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SecretRef(u64);
+
+impl SecretRef {
+    pub fn new(slot: u64) -> Self {
+        SecretRef(slot)
+    }
+
+    pub fn slot(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::fmt::Debug for SecretRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(SENSITIVE)
+    }
 }
 
 impl Value {
@@ -55,6 +83,7 @@ impl Value {
             Value::String(_) => "a string",
             Value::List(_) => "a list",
             Value::Map(_) => "a mapping",
+            Value::Secret(_) => "a secret",
         }
     }
 
@@ -147,6 +176,8 @@ impl Value {
                 out.push(']');
             }
             Value::Map(map) => write_map(map, out),
+            // Across the wire and in anything written, a secret is its mask.
+            Value::Secret(_) => write_string(SENSITIVE, out),
         }
     }
 }

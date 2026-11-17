@@ -165,6 +165,22 @@ one with the text beside it: a placed value that ends in `$`, followed by text
 or another placed value that opens with `{`. The join is made literal too, so
 two harmless halves cannot meet as a reference nobody wrote.
 
+One join cannot be made safe, and is refused. A dollar directly before a
+reference is how a literal is written, so a placed value that ends in `$`,
+directly before a reference the author wrote, would turn that reference into
+text and the tool would never resolve it:
+
+```yaml
+content: costs ${{ data.currency }}${price.amount}   # currency: $
+```
+
+```
+the value placed before ${price.amount} ends in "$", and a "$" directly before a reference makes it literal text, so the reference would be lost; put a space or other text between the two
+```
+
+Nothing is compiled. With a space between the two, or with a currency that
+does not end in a dollar, both are kept.
+
 Each tool gets its own spelling of the literal: Terraform, for instance, is
 given `$${HOME}`, which is how Terraform writes a literal `${HOME}`.
 
@@ -265,7 +281,7 @@ an edge, are on the [conditions](conditions.md) page.
 | An interpolation that is never closed | `"${{ data.env" opens an interpolation that is never closed with }}` |
 | An empty one | `"x-${{ }}" holds an empty interpolation` |
 | An expression that does not read | `in ${{ data.env == }}: the expression ends where a value was expected` |
-| A name this place cannot read | `in ${{ secret.db }}: unknown name "secret" (...)` |
+| A name this place cannot read | `in ${{ endpoint.db }}: unknown name "endpoint" (...)` |
 | An unknown function, or the wrong number of arguments | `in ${{ uper(data.a) }}: unknown function "uper"` |
 | A variable or condition that is not declared | `var.nmae is not declared (spec.variables declares: name, ports)` |
 | A circle | `these read each other in a circle, so none can be worked out: var.a -> var.b -> var.a` |
@@ -294,6 +310,10 @@ file it reads beside it:
 | [`site-by-environment.yaml`](../../../examples/language/site-by-environment.yaml) | variables, named conditions, an interpolated label and host, a `when` on an edge, on Ansible |
 | [`network-by-environment.yaml`](../../../examples/language/network-by-environment.yaml) | interpolation beside references, a whole mapping placed with its shape, a `when` on an output, on Terraform |
 | [`optional-monitoring.yaml`](../../../examples/language/optional-monitoring.yaml) | a `spec.when` that leaves a whole document out of the run, on Kubernetes |
+
+All of it together in one workflow of four documents and four tools is
+[`examples/workflow/tenants.yaml`](../../../examples/workflow/tenants.yaml),
+walked through in [worked workflows](../../quickstart/workflows.md#tenants).
 
 ```
 meridian compile examples/language/site-by-environment.yaml \

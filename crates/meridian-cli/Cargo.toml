@@ -19,8 +19,10 @@ meridian-plugin-host = { path = "../meridian-plugin-host" }
 meridian-resolve = { path = "../meridian-resolve" }
 meridian-rules = { path = "../meridian-rules" }
 meridian-sdk = { path = "../meridian-sdk" }
+meridian-secret = { path = "../meridian-secret" }
 
 [dev-dependencies]
+meridian-expr = { path = "../meridian-expr" }
 meridian-graph = { path = "../meridian-graph" }
 meridian-resolve = { path = "../meridian-resolve" }
 meridian-value = { path = "../meridian-value" }

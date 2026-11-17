@@ -186,6 +186,8 @@ pub(crate) fn plain(value: &Value) -> Yaml {
         Value::Uint(u) => Yaml::Uint(*u),
         Value::Float(f) => Yaml::Float(*f),
         Value::String(s) => Yaml::str(s),
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => Yaml::str(meridian_sdk::SENSITIVE),
         Value::List(items) => Yaml::Seq(items.iter().map(plain).collect()),
         Value::Map(map) => Yaml::Map(map.iter().map(|(k, v)| (k.clone(), plain(v))).collect()),
     }

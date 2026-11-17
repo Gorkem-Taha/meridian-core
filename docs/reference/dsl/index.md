@@ -48,6 +48,7 @@ flowchart TD
 | [Conditions](conditions.md) | `runtimeWhen` and `when` |
 | [Expressions and functions](expressions.md) | the language a `when` and an interpolation are written in: values, operators, every function, every error |
 | [Interpolation, variables and named conditions](interpolation.md) | an expression inside a value, `spec.variables`, `spec.conditions`, and what is decided in which order |
+| [Secrets](secrets.md) | `spec.secrets`: declaring a secret by where it comes from, reading it as `secret.<name>`, what an expression may do with one, and when it is fetched |
 | [References](references.md) | `${...}`: syntax, how each target rewrites it, what can be read where |
 | [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs` and `targetHost`: the one tie between documents |
 | The four flavour pages above | how all of it is written for each segment |
@@ -250,6 +251,7 @@ every `-l` given. Rules:
 | `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the whole document. False, and the document is skipped |
 | `variables` | no | a mapping of named values, read as `var.<name>`. See [variables](interpolation.md#variables) |
 | `conditions` | no | a mapping of named conditions, read as `cond.<name>`. See [named conditions](interpolation.md#named-conditions) |
+| `secrets` | no | a list of secrets, each a name and where it comes from, read as `secret.<name>`. See [secrets](secrets.md) |
 | `resources` | yes | a list of at least one [resource](#resources) |
 | `outputs` | no | a list of [outputs](#outputs) |
 
@@ -264,6 +266,7 @@ every `-l` given. Rules:
 | `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the whole document. False, and the document is skipped |
 | `variables` | no | a mapping of named values, read as `var.<name>`. See [variables](interpolation.md#variables) |
 | `conditions` | no | a mapping of named conditions, read as `cond.<name>`. See [named conditions](interpolation.md#named-conditions) |
+| `secrets` | no | a list of secrets, each a name and where it comes from, read as `secret.<name>`. See [secrets](secrets.md) |
 | `targetHost` | yes, to compile | the machine. See [`targetHost`](#targethost) |
 | `resources` | yes | a list of at least one [resource](#resources) |
 

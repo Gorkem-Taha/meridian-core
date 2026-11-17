@@ -344,6 +344,10 @@ struct Workflow {
 }
 
 fn main() -> ExitCode {
+    // Before anything is read: no core dump of this process, and no other
+    // process of the same user reading its memory, so a secret fetched later
+    // cannot leave that way.
+    let _ = meridian_secret::harden_process();
     let cli = Cli::parse();
     let outcome = match cli.command {
         Command::Validate { files, state_dir } => load(&files, &state_dir).map(|bundle| {

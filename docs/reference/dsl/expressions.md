@@ -61,14 +61,15 @@ What an expression can read depends on where it is written.
 | `data.<key>` | the values given with [`--data` and `--set`](conditions.md#giving-the-data) | every `when` and every [interpolation](interpolation.md) |
 | `var.<name>` | a [variable](interpolation.md#variables) the document declares | every `when` and every interpolation |
 | `cond.<name>` | a [named condition](interpolation.md#named-conditions) the document declares: `true` or `false` | every `when` and every interpolation |
+| `secret.<name>` | a [secret](secrets.md) the document declares. The expression holds a reference to it, never the value | a `when`, a named condition, a variable, and an interpolation in `params`; [refused](secrets.md#where-a-secret-cannot-be-used) where a value is shown or stored |
 | `facts.<path>` | facts about the machine | nowhere yet: refused, with a reason |
 
-More names (`param`, `endpoint`, `secret`, `outputs`) arrive with
+More names (`param`, `endpoint`, `outputs`) arrive with
 the [language expansion](../../plans/language-expansion.md#22-names-an-expression-can-read).
 A name the place does not offer is refused when the document is validated:
 
 ```
-site.yaml:9:7: spec.resources[1].when: unknown name "env" (an expression reads data.<key>, var.<name> or cond.<name>; text is quoted)
+site.yaml:9:7: spec.resources[1].when: unknown name "env" (an expression reads data.<key>, var.<name>, cond.<name> or secret.<name>; text is quoted)
 ```
 
 ## Operators
@@ -328,7 +329,7 @@ Inside a document it is reported with the file, line and field.
 |---|---|
 | Not in the language | `unexpected "=" (to compare two values in a condition, write ==)` |
 | Unfinished | `expected ")", but the condition ends` |
-| An unknown name | `unknown name "env" (an expression reads data.<key>, var.<name> or cond.<name>; text is quoted)` |
+| An unknown name | `unknown name "env" (an expression reads data.<key>, var.<name>, cond.<name> or secret.<name>; text is quoted)` |
 | An unknown function | `unknown function "Length" (did you mean length?)` |
 | The wrong number of arguments | `replace(...) takes 3 arguments, and was given 2` |
 | A name that is not set | `data.env is not set (give it with --data or --set, or test for it with defined(data.env))` |

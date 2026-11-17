@@ -313,6 +313,36 @@ fn a_placed_value_cannot_join_with_its_neighbour_into_a_reference() {
     // An empty value between a dollar and a brace the author wrote is the
     // author's own reference: data supplied nothing of it.
     assert_eq!(literal("${{ data.empty }}${web.id}"), text("${web.id}"));
+    // A value that ends in a dollar directly before a reference the author
+    // wrote would make that reference literal text. Nothing spells "a
+    // dollar, then a reference", so it is refused and not handed over.
+    for source in [
+        "${{ data.dollar }}${web.id}",
+        "${{ data.price }}${web.id} each",
+        "${{ data.two }}${web.id}",
+        "a ${{ data.dollar }}${{ data.empty }}${web.id}",
+    ] {
+        let refused = Template::parse(source)
+            .unwrap()
+            .eval_literal(&scope)
+            .expect_err(source);
+        assert!(
+            refused.contains("${web.id}") && refused.contains("the reference would be lost"),
+            "{source}: {refused}"
+        );
+    }
+    // Anything between the two keeps both.
+    assert_eq!(literal("${{ data.dollar }} ${web.id}"), text("$ ${web.id}"));
+    // A literal the author escaped is not a reference to lose.
+    assert_eq!(literal("${{ data.dollar }}$${HOME}"), text("$$${HOME}"));
+    // Where no plugin reads the result, there is no reference to keep.
+    assert_eq!(
+        Template::parse("${{ data.dollar }}${web.id}")
+            .unwrap()
+            .eval(&scope)
+            .unwrap(),
+        text("$${web.id}")
+    );
     // A dollar or a brace that joins nothing is left alone.
     assert_eq!(literal("${{ data.dollar }} {a}"), text("$ {a}"));
     assert_eq!(literal("${{ data.dollar }}${{ data.n }}"), text("$5"));

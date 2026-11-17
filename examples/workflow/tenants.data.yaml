@@ -1,0 +1,12 @@
+# A customer on the starter plan. Give it to every command that reads
+# examples/workflow/tenants.yaml.
+tenant: acme
+plan: starter
+team: platform
+region: eu-west-1
+cidr: 10.20.0.0/16
+# Typed by the customer. It holds something shaped like a reference, which
+# stays the text it is.
+motd: Set ${EDITOR} before you edit anything on this machine.
+addons:
+  monitoring: false

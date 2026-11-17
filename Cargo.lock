@@ -825,6 +825,7 @@ name = "meridian-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "meridian-expr",
  "meridian-graph",
  "meridian-ir",
  "meridian-module",
@@ -834,6 +835,7 @@ dependencies = [
  "meridian-resolve",
  "meridian-rules",
  "meridian-sdk",
+ "meridian-secret",
  "meridian-target-ansible",
  "meridian-target-arm",
  "meridian-target-bicep",
@@ -864,6 +866,7 @@ name = "meridian-expr"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "meridian-secret",
  "meridian-value",
  "regex",
  "sha2 0.10.9",
@@ -881,6 +884,7 @@ name = "meridian-ir"
 version = "0.1.0"
 dependencies = [
  "meridian-expr",
+ "meridian-secret",
  "meridian-value",
  "meridian-yaml",
  "saphyr-parser",
@@ -909,6 +913,7 @@ dependencies = [
  "meridian-ir",
  "meridian-plugin-host",
  "meridian-sdk",
+ "meridian-secret",
  "meridian-target-fake",
  "sha2 0.10.9",
 ]
@@ -974,6 +979,16 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "meridian-secret"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "libc",
+ "meridian-value",
+ "zeroize",
 ]
 
 [[package]]

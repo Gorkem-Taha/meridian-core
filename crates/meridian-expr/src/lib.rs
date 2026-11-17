@@ -24,6 +24,9 @@ mod parse;
 mod template;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use meridian_secret::SecretTable;
 
 use meridian_value::Value;
 
@@ -79,6 +82,7 @@ pub struct Scope {
     roots: BTreeMap<String, Value>,
     unset_hints: BTreeMap<String, String>,
     env: Option<BTreeMap<String, String>>,
+    secrets: Option<Arc<SecretTable>>,
 }
 
 impl Scope {
@@ -96,6 +100,14 @@ impl Scope {
     /// hint is replaced with the path that was read.
     pub fn with_unset_hint(mut self, root: &str, hint: &str) -> Self {
         self.unset_hints.insert(root.to_owned(), hint.to_owned());
+        self
+    }
+
+    /// The run's secrets. A value that is a secret names one of them, and an
+    /// expression that joins, encodes or compares a secret has the table do
+    /// it, so the expression itself never holds a secret's bytes.
+    pub fn with_secrets(mut self, secrets: Arc<SecretTable>) -> Self {
+        self.secrets = Some(secrets);
         self
     }
 

@@ -39,7 +39,7 @@ byte. The reasons, the layout and the order of work are in
 | [Meridian on Windows](quickstart/windows.md) | what is different on Windows, and which targets make sense there |
 | [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
 | [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
-| [Worked workflows](quickstart/workflows.md) | six workflows across every target: three tiers on four tools, a cluster platform, a golden image, Windows on Azure, an edge site, and one file for every environment |
+| [Worked workflows](quickstart/workflows.md) | seven workflows across every target: three tiers on four tools, a cluster platform, a golden image, Windows on Azure, an edge site, one file for every environment, and one file for every customer |
 
 | Concepts | |
 |---|---|
@@ -48,6 +48,7 @@ byte. The reasons, the layout and the order of work are in
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
 | [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
+| [How a secret is held in memory](concepts/secrets-in-memory.md) | locked, wiped memory, the hardened process, how a secret reaches a tool, and what is not promised |
 
 | Reference | |
 |---|---|

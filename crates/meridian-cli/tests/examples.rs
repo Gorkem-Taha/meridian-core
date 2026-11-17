@@ -164,6 +164,27 @@ fn compiled(file: &Path, data: &[PathBuf], scratch_name: &str) -> BTreeMap<Strin
     files
 }
 
+/// The documents a `spec.when` leaves out of a run with this data, by what
+/// the command prints: the document's line, then `skipped: its when ...`.
+fn skipped(file: &Path, data: &[PathBuf], scratch_name: &str) -> BTreeSet<String> {
+    let out = scratch(env!("CARGO_TARGET_TMPDIR"), scratch_name);
+    let mut command = meridian("compile", file, data);
+    command.arg("--out").arg(&out);
+    let said = run(command, &format!("compiling {}", file.display()));
+    let mut skipped = BTreeSet::new();
+    let mut document = "";
+    for line in said.lines() {
+        if let Some(what) = line.strip_prefix("  ") {
+            if what.starts_with("skipped: its when") {
+                skipped.insert(document.to_owned());
+            }
+        } else if let Some((name, _)) = line.split_once(" (") {
+            document = name;
+        }
+    }
+    skipped
+}
+
 #[test]
 fn every_example_validates_and_compiles_with_the_real_plugins() {
     let examples = examples();
@@ -194,7 +215,7 @@ fn every_workflow_compiles_each_document_or_defers_it() {
         .filter(|file| file.parent().unwrap().ends_with("workflow"))
         .collect();
     assert!(
-        workflows.len() >= 6,
+        workflows.len() >= 7,
         "examples/workflow holds {} workflows",
         workflows.len()
     );
@@ -215,7 +236,13 @@ fn every_workflow_compiles_each_document_or_defers_it() {
         assert_eq!(waiting.len(), names.len(), "{}", file.display());
 
         let stem = file.file_stem().unwrap().to_str().unwrap();
+        // A document with a `spec.when` may be left out of a run. It must
+        // still be part of at least one: a document no data set ever keeps
+        // is a document nothing here compiles.
+        let mut ever_kept: BTreeSet<&String> = BTreeSet::new();
         for (i, data) in data_sets(&file).iter().enumerate() {
+            let left_out = skipped(&file, data, &format!("workflow-skipped-{stem}-{i}"));
+            ever_kept.extend(names.iter().filter(|name| !left_out.contains(*name)));
             // A deferred document is not compiled, so on its own that run
             // proves nothing about it. Each one is compiled again here as it
             // will be once its stage has run: with the host filled in.
@@ -226,12 +253,14 @@ fn every_workflow_compiles_each_document_or_defers_it() {
             fs::write(&copy, with_hosts).unwrap();
             let files = compiled(&copy, data, &format!("workflow-hosts-{stem}-{i}"));
             for name in &names {
-                assert!(
+                assert_eq!(
                     files
                         .keys()
                         .any(|path| path.starts_with(&format!("{name}/"))),
-                    "{}: document {name:?} compiled to nothing once it had a host; files: {:?}",
+                    !left_out.contains(name),
+                    "{}: document {name:?} once it had a host (left out by its when: {}); files: {:?}",
                     file.display(),
+                    left_out.contains(name),
                     files.keys().collect::<Vec<_>>()
                 );
             }
@@ -243,13 +272,19 @@ fn every_workflow_compiles_each_document_or_defers_it() {
                     .any(|path| path.starts_with(&format!("{name}/")));
                 assert_eq!(
                     written,
-                    !waits,
+                    !waits && !left_out.contains(name),
                     "{}: document {name:?} (waits for an output: {waits}); files: {:?}",
                     file.display(),
                     files.keys().collect::<Vec<_>>()
                 );
             }
         }
+        assert_eq!(
+            ever_kept.len(),
+            names.len(),
+            "{}: a document is left out by its when with every data set beside the example",
+            file.display()
+        );
     }
 }
 
@@ -313,4 +348,127 @@ fn one_set_of_conditions_decides_a_whole_workflow() {
         String::from_utf8_lossy(&output.stderr)
     );
     assert!(said.contains("data.env is not set"), "{said}");
+}
+
+/// `tenants.yaml` is one workflow shaped entirely by data: which documents
+/// run, which resources they hold and every name and size in them. The
+/// starter and the enterprise plan are compiled, with each deferred document
+/// given its host, and compared with what the plan is documented to mean.
+#[test]
+fn a_plan_decides_documents_resources_and_values_in_the_tenants_workflow() {
+    let file = repo_root().join("examples/workflow/tenants.yaml");
+    let sets = data_sets(&file);
+    assert_eq!(sets.len(), 2, "a starter and an enterprise data set");
+
+    // The Salt document waits for Terraform's output, so it is compiled as
+    // it will be once that has been applied.
+    let with_hosts = scratch(env!("CARGO_TARGET_TMPDIR"), "tenants-hosts").join("tenants.yaml");
+    fs::write(
+        &with_hosts,
+        given_hosts(&fs::read_to_string(&file).unwrap()),
+    )
+    .unwrap();
+    let starter = compiled(&with_hosts, &sets[0], "tenants-starter");
+    let enterprise = compiled(&with_hosts, &sets[1], "tenants-enterprise");
+    let all = |files: &BTreeMap<String, String>, document: &str| -> String {
+        files
+            .iter()
+            .filter(|(path, _)| path.starts_with(&format!("{document}/")))
+            .map(|(_, content)| content.as_str())
+            .collect()
+    };
+
+    // Which documents are part of the run at all.
+    assert_eq!(
+        skipped(&file, &sets[0], "tenants-skipped-starter"),
+        BTreeSet::from(["backup".to_owned(), "dashboards".to_owned()])
+    );
+    assert!(skipped(&file, &sets[1], "tenants-skipped-enterprise").is_empty());
+    for document in ["dashboards", "backup"] {
+        assert_eq!(
+            all(&starter, document),
+            "",
+            "{document} on the starter plan"
+        );
+        assert_ne!(all(&enterprise, document), "", "{document} on enterprise");
+    }
+
+    // Terraform: named conditions, variables, functions and a typed value.
+    let (small, large) = (all(&starter, "network"), all(&enterprise, "network"));
+    assert!(
+        small.contains("t3.small") && !small.contains("m6i.large"),
+        "{small}"
+    );
+    assert!(
+        large.contains("m6i.large") && !large.contains("t3.small"),
+        "{large}"
+    );
+    assert!(!small.contains("aws_db_instance"), "{small}");
+    assert!(large.contains("aws_db_instance"), "{large}");
+    // `cidrSubnet(data.cidr, 8, 1)`, and `upper` and `title` in the tags.
+    for network in [&small, &large] {
+        assert!(network.contains("10.20.1.0/24"), "{network}");
+        assert!(network.contains("PLATFORM"), "{network}");
+    }
+    assert!(small.contains("\"Plan\": \"Starter\""), "{small}");
+    assert!(large.contains("\"Name\": \"acme-enterprise\""), "{large}");
+    // A number and a boolean keep their types on the way through.
+    assert!(large.contains("\"allocated_storage\": 200"), "{large}");
+    assert!(large.contains("\"multi_az\": true"), "{large}");
+    // The output with a condition is declared only with the database.
+    assert!(!small.contains("\"database\""), "{small}");
+    assert!(large.contains("\"database\""), "{large}");
+    // The references the author wrote are still references for Terraform.
+    assert!(large.contains("${aws_vpc.main.id}"), "{large}");
+
+    // Salt: a list joined into text, and an edge with a condition.
+    let (plain, tls) = (all(&starter, "app"), all(&enterprise, "app"));
+    assert!(plain.contains("listen 8080;"), "{plain}");
+    assert!(tls.contains("listen 80 443;"), "{tls}");
+    assert!(!plain.contains("/etc/ssl/acme.pem"), "{plain}");
+    assert!(tls.contains("/etc/ssl/acme.pem"), "{tls}");
+    // Text from data that looks like a reference is written as the text it
+    // is, on both plans.
+    for app in [&plain, &tls] {
+        assert!(
+            app.contains("Set ${EDITOR} before you edit anything on this machine."),
+            "{app}"
+        );
+    }
+
+    // Kubernetes and Chef: only on enterprise, with the values placed.
+    let dashboards = all(&enterprise, "dashboards");
+    assert!(dashboards.contains("tenant-acme"), "{dashboards}");
+    assert!(
+        dashboards.contains("RETENTION_DAYS: \"90\""),
+        "{dashboards}"
+    );
+    let backup = all(&enterprise, "backup");
+    assert!(backup.contains("backups-acme"), "{backup}");
+    assert!(backup.contains("RETAIN_DAYS=90"), "{backup}");
+
+    // Nothing compiled carries an expression: every one was decided.
+    for (path, content) in starter.iter().chain(&enterprise) {
+        for left in ["data.", "var.", "cond."] {
+            assert!(
+                !content.contains(&format!("{{ {left}")),
+                "{path} still holds an interpolation"
+            );
+        }
+    }
+
+    // One value changed on the command line changes every document.
+    let mut command = meridian("compile", &with_hosts, &sets[1]);
+    let out = scratch(env!("CARGO_TARGET_TMPDIR"), "tenants-globex");
+    command
+        .arg("--out")
+        .arg(&out)
+        .args(["--set", "tenant=globex"]);
+    let said = run(command, "compiling tenants.yaml for another tenant");
+    assert!(said.contains("backup.globex.example.com"), "{said}");
+    let conf = fs::read_to_string(out.join("network/main.tf.json")).unwrap();
+    assert!(
+        conf.contains("globex-enterprise") && !conf.contains("acme"),
+        "{conf}"
+    );
 }
