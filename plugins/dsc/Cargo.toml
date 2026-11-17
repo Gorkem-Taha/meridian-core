@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-dsc"
+description = "The Meridian plugin for DSC: compiles a document to a DscPipelineRunner configuration and runs it with Invoke-DscRunner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true
