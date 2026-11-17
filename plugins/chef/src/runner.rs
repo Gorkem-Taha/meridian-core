@@ -244,30 +244,25 @@ mod tests {
     /// bullets of their own, and the change after them.
     #[test]
     fn a_why_run_assumption_does_not_hide_the_change_that_follows_it() {
+        // As Cinc Client 18 prints it: an assumption is a bullet of its own
+        // under the resource, before or instead of the change.
         let report = "\
 Recipe: meridian_site::default
-  * directory[app_dir] action create
-    - Would create new directory /srv/app
-    - Would change mode from '' to '0755'
-  * file[app_conf] action create
-    * Parent directory /srv/app does not exist.
-    * Assuming directory /srv/app would have been created
-    - Would create new file /srv/app/app.conf
-    - Would update content in file /srv/app/app.conf from none to 5d8a9b
-  * execute[stamp] action run
-    - Would execute /bin/true
-  * service[cron] action start (up to date)
-    * Assuming nothing
+  * group[team] action create
+    - Would create group meridian-team
+  * group[deploy:meridian-team] action modify
+    * Cannot modify group[deploy:meridian-team] - group does not exist!
+    * Group group[deploy:meridian-team] does not exist. Unless it would have been created earlier in this run, this attempt to modify it would fail.
+    - Would modify group meridian-team
+    - Would add missing member(s): meridian-deploy
+  * service[scheduler] action enable
+    * Service status not available. Assuming a prior action would have installed the service.
+    * Assuming status of not running.
+     (up to date)
+  * apt_package[tool] action install (up to date)
 ";
         let shown: Vec<String> = read_report(report).iter().map(|c| c.to_string()).collect();
-        assert_eq!(
-            shown,
-            [
-                "update app_dir: create",
-                "update app_conf: create",
-                "update stamp: run",
-            ]
-        );
+        assert_eq!(shown, ["update team: create", "update deploy: modify"]);
     }
 
     #[test]

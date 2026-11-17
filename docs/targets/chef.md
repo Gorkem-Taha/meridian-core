@@ -29,7 +29,9 @@ The recipe has one block a resource, named by its id. A file whose state is
 `directory` becomes Chef's `directory` resource. A service's `enabled` becomes
 an `:enable` or `:disable` action in front of `:start` or `:stop`. A user's
 `groups` become one `group` block each, with `append true`, because Chef's
-`user` has a primary group only.
+`user` has a primary group only. A `group` resource is written with
+`append true` as well: a document declares the group, not its whole
+membership, and without it Chef would remove every member on each converge.
 
 `runtimeWhen` is the Ruby an `only_if` guard holds, so it can read node
 attributes:
