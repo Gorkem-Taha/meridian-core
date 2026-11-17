@@ -35,7 +35,8 @@ byte. The reasons, the layout and the order of work are in
 
 | Start here | |
 |---|---|
-| [Install](quickstart/install.md) | build Meridian, and what each target needs |
+| [Install](quickstart/install.md) | install a release or build from source, check what you downloaded, and what each target needs |
+| [Meridian on Windows](quickstart/windows.md) | what is different on Windows, and which targets make sense there |
 | [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
 | [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
 
@@ -49,6 +50,7 @@ byte. The reasons, the layout and the order of work are in
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [Plugin signatures](reference/plugin-signatures.md) | how `meridian` decides a plugin may be started, trusting a plugin from elsewhere, and signing your own |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
@@ -85,6 +87,7 @@ plugins.
 |---|---|
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | from a fresh clone to a merged pull request: set up, the checks, review, and the changes that need a second reviewer |
 | [Writing a plugin](contributing/writing-a-plugin.md) | add a tool to Meridian, step by step, starting from a template that already works |
+| [Releasing](contributing/releasing.md) | what the release pipeline builds and checks, the settings a release needs, and the steps to cut one |
 | [Code of Conduct](../CODE_OF_CONDUCT.md) | how we treat each other |
 
 Security reports go through [`SECURITY.md`](../SECURITY.md), not the issue tracker.

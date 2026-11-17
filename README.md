@@ -96,7 +96,10 @@ The plugins are under `plugins/`, one crate each, built as a binary named
 Meridian's, which is the same position a third-party plugin is in.
 
 A plugin is a separate process. The host launches the binary, reads one handshake line
-saying where it is listening, checks the protocol version, and then talks to it over gRPC.
+saying where it is listening (a Unix socket, or a named pipe on Windows), checks the
+protocol version, and then talks to it over gRPC. Before it starts a plugin, the host can
+check the binary's [signature](docs/reference/plugin-signatures.md); a released `meridian`
+starts only the plugins it was released with, unless told to trust another key.
 The protocol is defined in [`proto/`](proto/meridian/plugin/v1/plugin.proto), so a plugin
 can be written in any language that can serve it. A plugin binary is not meant to be run
 by hand: its stdout carries the protocol, and it exits when the host closes its stdin.
