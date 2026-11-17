@@ -1,5 +1,6 @@
 {
   "context": "",
+  "directory": "",
   "host": "ssh://deploy@web01.example.com",
   "name": "web",
   "outputs": [
@@ -13,9 +14,12 @@
       ]
     }
   ],
+  "profiles": [],
   "services": [
     "db",
     "app",
     "proxy"
-  ]
+  ],
+  "wait": true,
+  "wait_timeout": 0
 }
