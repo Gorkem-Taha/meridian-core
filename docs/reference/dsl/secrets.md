@@ -191,6 +191,16 @@ same message.
 - **Not for a document that is left out.** A document whose `spec.when` is
   false fetches nothing, as long as that `when` does not itself read a secret.
   Neither does a stage that is not run because an earlier one failed.
+- **Once, even with a policy.** `apply --policy` looks at every stage before
+  it applies the first, and that first pass fetches nothing. A document that
+  reads secrets is put to the [policy](../policy.md#when-a-policy-is-asked)
+  at its own turn instead.
+- **Not for a document that is only imported from.** A document compiled
+  because another [imports](outputs-and-hand-offs.md#imports) a file from it is read
+  as `compile` reads it: nothing is fetched, and a secret in its params is
+  written as its name.
+- **`drift` fetches as `plan` does**, because it plans each stage. `rollback`
+  fetches nothing: it puts back artifacts that were kept.
 - **Never cached.** Nothing is written to save a second fetch. The next run
   fetches again.
 

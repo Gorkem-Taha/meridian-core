@@ -1,0 +1,44 @@
+name: opa
+
+# The policy engine against a real Open Policy Agent. The rust workflow
+# already runs the engine's other tests; without OPA installed these ones
+# pass without doing anything, so they are run here, where it is.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'examples/policy/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/opa.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: policies with opa
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: 1.4.2
+
+      - name: Show the version under test
+        run: opa version
+
+      - name: Check the example policy
+        run: opa check examples/policy
+
+      - name: Test against opa
+        env:
+          MERIDIAN_TEST_OPA: opa
+        run: cargo test -p meridian-policy-opa --locked --test real -- --nocapture

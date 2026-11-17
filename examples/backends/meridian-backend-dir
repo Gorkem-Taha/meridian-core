@@ -1,0 +1,83 @@
+#!/bin/sh
+# A Meridian state backend that keeps the record in a directory.
+#
+# It is the smallest complete backend, and the one the test suite proves the
+# backend protocol against. Use it as it is for a directory several machines
+# share (an NFS or SMB mount), or as the pattern for a backend that wraps a
+# cloud CLI: the five verbs below are the whole contract.
+#
+#   meridian apply site.yaml --backend dir --backend-config path=/mnt/team/meridian
+#
+# Meridian finds it by name, `meridian-backend-<name>`, in a plugin
+# directory. Each setting arrives as MERIDIAN_BACKEND_<SETTING>.
+#
+# Exit status: 0 done, 3 not there, 4 already there (create), anything else
+# a failure, with the reason on standard error.
+set -eu
+
+root=${MERIDIAN_BACKEND_PATH:-}
+if [ -z "$root" ]; then
+    echo "the dir backend needs --backend-config path=<directory>" >&2
+    exit 2
+fi
+
+verb=${1:-}
+key=${2:-}
+
+# A key is a relative path. Refuse anything that could leave the directory.
+case "/$key" in
+    */../* | */.. | */./* | */. | *//*)
+        echo "refusing the key '$key'" >&2
+        exit 2
+        ;;
+esac
+if [ "$verb" != list ]; then
+    case "$key" in
+        "" | */)
+            echo "refusing the key '$key'" >&2
+            exit 2
+            ;;
+    esac
+fi
+
+file=$root/$key
+
+case "$verb" in
+    get)
+        [ -f "$file" ] || exit 3
+        cat "$file"
+        ;;
+    put)
+        mkdir -p "$(dirname "$file")"
+        # Written beside the file and renamed over it, so a reader sees the
+        # old blob or the new one, never part of each.
+        tmp=$file.tmp.$$
+        cat > "$tmp"
+        mv -f "$tmp" "$file"
+        ;;
+    create)
+        mkdir -p "$(dirname "$file")"
+        # noclobber makes the shell open the file with O_EXCL: of two
+        # callers, exactly one creates it. This is what the lock stands on.
+        if ! (set -C; : > "$file") 2>/dev/null; then
+            exit 4
+        fi
+        cat > "$file"
+        ;;
+    delete)
+        rm -f "$file"
+        ;;
+    list)
+        [ -d "$root" ] || exit 0
+        (cd "$root" && find . -type f ! -name '*.tmp.*' | sed 's|^\./||') |
+            while IFS= read -r found; do
+                case "$found" in
+                    "$key"*) printf '%s\n' "$found" ;;
+                esac
+            done | sort
+        ;;
+    *)
+        echo "unknown verb '$verb' (expected get, put, create, delete or list)" >&2
+        exit 2
+        ;;
+esac

@@ -629,13 +629,48 @@ that passed.
 Both are paths on the machine that ran Meridian, and `apply` prints them. They
 are known only once an apply has written the seed.
 
-In a workflow the orchestrator hands outputs on from Infrastructure documents
-only, so another document cannot yet read these two with `${...}`. Until it can,
-give the path to the tool that creates the machine yourself, as below.
+### Handing the user-data to the document that creates the machine
 
-### Using the seed
+In a workflow, the document that creates the machine
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) the `user-data`
+file this document compiles to. It arrives as that tool's own variable, and
+the machine is created with it:
 
-Hand `user_data_file` to whatever creates the machine. For example:
+```yaml
+kind: Infrastructure
+metadata: {name: machine}
+spec:
+  target: terraform
+  imports:
+    - name: user_data
+      from: artifact
+      ref: bootstrap          # this cloud-init document
+      file: user-data
+      sensitive: true
+  resources:
+    - id: user_data
+      type: variable
+      params: {type: string, sensitive: true}
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        user_data: ${user_data}
+```
+
+Meridian runs this document first, because the machine needs what it compiles
+to. Give this document an `inline` host, as above: if its host were the
+address of the machine it bootstraps, each would wait on the other, and
+`validate` refuses that. The whole workflow is
+[`examples/workflow/bootstrap-then-machine.yaml`](../../examples/workflow/bootstrap-then-machine.yaml).
+The targets that can import are `terraform`, `opentofu`, `packer`, `pulumi` and
+`arm`.
+
+### Using the seed outside a workflow
+
+When something other than Meridian creates the machine, hand it
+`user_data_file`. For example:
 
 ```console
 $ aws ec2 run-instances --user-data file://.meridian/resourceset/bootstrap/cloud-init/seed/user-data ...

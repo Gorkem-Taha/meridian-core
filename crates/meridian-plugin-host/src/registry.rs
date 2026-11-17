@@ -150,6 +150,7 @@ impl Registry {
             target_versions: emitter.target_versions(),
             import_formats: importer.as_ref().map(|i| i.formats()).unwrap_or_default(),
             operations: Operations::COMPILE_ONLY,
+            accepts_inputs: false,
             path: String::new(),
         };
         self.targets.insert(
