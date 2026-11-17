@@ -50,6 +50,21 @@ cannot express: a resource type it does not have, a param you do not map, a
 the plugin working. The background is in
 [The capability model](../concepts/capability-model.md).
 
+### What the core has already done
+
+You never see these, because the core settles them before your plugin is
+called. They are listed so that you do not handle them twice. The language
+itself is specified in the [language reference](../reference/dsl/index.md).
+
+| In the document | What the core does with it |
+|---|---|
+| `kind` | checked against your category. Infrastructure as code and container orchestration take `Infrastructure` documents and refuse a `ResourceSet`; configuration management is the reverse; containerization takes both |
+| `metadata.labels` | used to select documents on the command line (`--selector`). Not passed to plugins |
+| `when` and `ifMissing` | evaluated, and the resource kept or pruned, before you see the tree. Only `runtimeWhen` reaches you |
+| `dependsOn` | cycles and unknown resources are refused; the resources arrive in a valid order |
+| `notifies[].on` | only `changed` is accepted |
+| `spec.targetVersion` | refused unless your plugin declares versions with `Emitter::target_versions`. If it does, the version arrives as `graph.target_version` |
+
 ## Before you start
 
 1. **Check that nobody else is already on it.** Look through the
@@ -143,10 +158,10 @@ Two things to know about example files:
 
 - A test reads the target from the line that starts `  target: `, so do not
   put a comment after it on the same line.
-- Use `kind: ResourceSet` with a `targetHost` for a tool that configures a
-  machine, and `kind: Infrastructure` for one that creates things. Copy the
-  shape from an existing example of the same category under
-  [`examples/`](../../examples).
+- The kind must suit the category, or the core refuses the document:
+  `kind: ResourceSet` with a `targetHost` for a tool that configures a
+  machine, and `kind: Infrastructure` for one that creates things. The
+  scaffold already wrote the right kind for the category you gave it.
 
 ## Step 4: the compile stages
 
@@ -184,11 +199,28 @@ Use the rule names the other plugins already use where they fit:
 `unsupported-runtime-condition`, `missing-param`. Say what is supported in the
 message, as above, so the author knows what to write instead.
 
+#### References
+
+A string in `params` may carry a reference, written `${id.param}` or
+`${id.some.path}`. A plugin must never write one through as plain text, which
+would hand the tool a literal `${...}`. What to do depends on the tool, and
+[References](../reference/dsl/references.md) describes each family from the
+user's side:
+
+- **The tool has nothing to read at apply time.** Most configuration
+  management tools are like this: all a resource has is what the author
+  wrote. Call
+  [`meridian_sdk::expr::resolve_declared`](../../crates/meridian-sdk/src/expr.rs)
+  first thing in `emit`, as the template does. It replaces each `${id.param}`
+  with the value the document gives that param, and refuses anything it cannot
+  settle with the rule `invalid-reference`.
+- **The tool has its own references.** Terraform, Bicep and Compose do. Do not
+  call `resolve_declared`. Use `meridian_sdk::expr::parse` to find each
+  reference and rewrite it into the tool's own spelling in this stage, refusing
+  one that names a resource the document does not declare.
+
 If your tool can report values, such as an address or an id, also compile each
-entry of `graph.outputs` into the tool's own output mechanism here. A string
-may carry `${resource.path}` references to things only the tool knows;
-[`meridian_sdk::expr`](../../crates/meridian-sdk/src/expr.rs) finds them, and
-your plugin rewrites each one into the tool's own spelling.
+entry of `graph.outputs` into the tool's own output mechanism here.
 
 ### sort.rs
 
@@ -239,7 +271,11 @@ them, so each one is a promise:
   `<Namespace>/<type>@<api-version>`.
 - `capabilities()`: `native_notify`, `synthetic_notify` and
   `runtime_condition`. Declare only what a test in your crate proves.
-- `category()`: the one you chose before you started.
+- `category()`: the one you chose before you started. It also decides which
+  kind of document your target accepts, as the table near the top says.
+- `target_versions()`: only if the tool comes in versions that need different
+  output, as DSC does. Leave it out otherwise, and a document that asks your
+  target for a version is refused instead of being silently ignored.
 
 ## Step 5: the runner
 
@@ -344,6 +380,7 @@ Then list the new target where users look for targets. Each is one line:
 | [`docs/index.md`](../index.md) | the target, under its category in the Targets table |
 | [`docs/quickstart/install.md`](../quickstart/install.md) | what the target needs installed |
 | [`docs/concepts/ir-overview.md`](../concepts/ir-overview.md) and [`dependencies.md`](../concepts/dependencies.md) | the target, where the others of its category are listed |
+| the page for its category under [`docs/reference/dsl/`](../reference/dsl/index.md) | a row for the target, saying how the language reads on it |
 | `crates/meridian-cli/tests/capability_matrix.rs` | a `row(...)` for the plugin, and a dev-dependency on it in `crates/meridian-cli/Cargo.toml` |
 
 The capability matrix itself is generated. After adding the row, record it:

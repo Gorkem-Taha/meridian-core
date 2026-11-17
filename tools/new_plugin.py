@@ -29,6 +29,10 @@ CATEGORIES = {
     "container-orchestration": "ContainerOrchestration",
 }
 
+# The categories whose targets create things instead of configuring a host.
+# Their documents are `kind: Infrastructure`; the core refuses a ResourceSet.
+INFRASTRUCTURE_ONLY = ("infrastructure-as-code", "container-orchestration")
+
 # Where the template's own introduction ends in src/lib.rs.
 TOOL_HEADING = "//! # The tool this template drives"
 
@@ -157,6 +161,13 @@ def main() -> int:
     # them through the real command and the real plugin.
     examples.mkdir(parents=True)
     example = rename((TEMPLATE / "example" / "site.yaml").read_text(encoding="utf-8"), name)
+    if args.category in INFRASTRUCTURE_ONLY:
+        # A target of this category takes Infrastructure documents and refuses
+        # a ResourceSet, so the example becomes one: no host to configure.
+        example = example.replace("kind: ResourceSet", "kind: Infrastructure")
+        example, hosts = re.subn(r"  targetHost:\n(?:    .*\n)+", "", example)
+        if hosts != 1 or "kind: Infrastructure" not in example:
+            fail("could not turn the template's example into an Infrastructure document")
     (examples / "site.yaml").write_text(example, encoding="utf-8")
     tests = crate / "tests" / "compile.rs"
     text = tests.read_text(encoding="utf-8")

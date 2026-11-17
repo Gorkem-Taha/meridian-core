@@ -122,7 +122,21 @@ impl Emitter for Template {
         Category::ConfigurationManagement
     }
 
+    // TODO(plugin): if the tool comes in versions that need different output,
+    // also implement `target_versions`. Without it, a document that sets
+    // `spec.targetVersion` for this target is refused, which is the right
+    // answer for a plugin that would not act on the version.
+
     fn emit(&self, graph: &ResourceGraph, _data: &Data) -> Result<Emitted, CompileError> {
+        // A `${id.param}` in a param is a reference to another resource. This
+        // tool has nothing to read at apply time, so each one is settled now,
+        // from what the document declares, or refused.
+        //
+        // TODO(plugin): keep this for a tool like that, which is most
+        // configuration management tools. A tool with its own references
+        // (Terraform, Compose) rewrites them into its own spelling in
+        // `transform` instead; `meridian_sdk::expr` finds them for you.
+        let graph = &meridian_sdk::expr::resolve_declared(graph, NAME)?;
         let mut entries = transform::transform(graph)?;
         let warnings = sort::apply_ordering(graph, &mut entries)?;
         validate::validate(&entries)?;

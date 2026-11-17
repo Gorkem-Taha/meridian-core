@@ -90,6 +90,21 @@ fn a_file_needs_a_path_and_an_absolute_one() {
 }
 
 #[test]
+fn a_reference_to_another_resource_is_settled_when_compiling() {
+    let emitted = compile(&format!(
+        "{MOTD}    - id: copy\n      type: file\n      params:\n        path: /etc/motd.copy\n        content: \"see ${{motd.path}}\"\n"
+    ))
+    .unwrap();
+    assert_eq!(emitted.artifact.files["content/copy"], "see /etc/motd");
+}
+
+#[test]
+fn a_reference_to_nothing_is_refused_not_written_out_as_text() {
+    let err = refusal(&format!("{MOTD}        content: \"${{nobody.path}}\"\n"));
+    assert_eq!(err.rule, "invalid-reference");
+}
+
+#[test]
 fn two_resources_cannot_manage_one_path() {
     let err = refusal(&format!(
         "{MOTD}    - id: again\n      type: file\n      params:\n        path: /etc/motd\n"
