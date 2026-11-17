@@ -152,6 +152,7 @@ impl Registry {
             operations: Operations::COMPILE_ONLY,
             accepts_inputs: false,
             path: String::new(),
+            signature: crate::Signature::NotChecked,
         };
         self.targets.insert(
             name,

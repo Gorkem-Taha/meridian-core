@@ -655,6 +655,14 @@ in [`proto/meridian/plugin/v1/plugin.proto`](../../proto/meridian/plugin/v1/plug
 So a plugin can be written in any language, and can live in its own
 repository: build a binary named `meridian-target-<name>`, put it beside
 `meridian` or in a directory named by `--plugin-dir`, and the host finds it.
+A released `meridian` starts only plugins signed by a key it trusts, so the
+people who run your plugin need your public key, or need to relax the check:
+[Plugin signatures](../reference/plugin-signatures.md#signing-plugins-of-your-own)
+shows how to make a key and sign a binary. A plugin written without the SDK
+also has to listen where the host can dial it: print one line to stdout,
+`MERIDIAN-PLUGIN|<protocol>|<sdk version>|<network>|<address>`, where the
+network is `unix` with a socket path, `npipe` with a Windows named pipe's
+name, or `tcp` with a loopback address, and exit when stdin closes.
 The Rust SDK is the supported path today, and the only one with a test kit.
 If you write one in another language, please open an issue and tell us what
 was hard; that is how the protocol gets better.
