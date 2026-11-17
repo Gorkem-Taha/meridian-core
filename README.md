@@ -25,6 +25,7 @@ start with the [design plan](docs/plans/design-plan.md).
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
+| [`helm`](docs/targets/helm.md) | container orchestration | a Helm chart, with an optional Kustomize overlay | `helm upgrade --install`, with `kustomize build` for an overlay |
 
 What each can and cannot express is in the generated
 [capability matrix](docs/reference/capability-matrix.md). To get started, read the

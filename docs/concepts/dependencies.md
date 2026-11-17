@@ -26,6 +26,7 @@ about order:
 | declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
+| the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not ([helm](../targets/helm.md#ordering)) |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
 Terraform, the plugin does not write it a second time.
@@ -58,6 +59,8 @@ tool's own output, so each one is documented where it happens:
 - Kubernetes: a checksum of the notifier in an annotation on the workload's pod
   template. The checksum changes, the template changes, the pods roll.
   ([kubernetes](../targets/kubernetes.md#notifications))
+- Helm: the same checksum, written as a template expression so Helm computes it
+  each time it renders the chart. ([helm](../targets/helm.md#notifications))
 - Docker: a checksum of a config, secret, network or volume in a label on the
   service. ([docker](../targets/docker.md#notifications))
 - Terraform: `replace_triggered_by` on the notified resource, which replaces it.
@@ -69,7 +72,7 @@ look like.
 **The action matters.** A notify names an action, and a target accepts only the
 actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
-Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
+Puppet with the reason, not turned into a restart. Kubernetes and Helm can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. CloudFormation and Bicep have no way to react to a change at all,
 and refuse every notify.

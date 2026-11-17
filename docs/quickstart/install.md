@@ -19,6 +19,7 @@ That produces the `meridian` command and one binary per plugin, all in
 meridian
 meridian-target-ansible
 meridian-target-terraform
+meridian-target-helm
 ...
 ```
 
@@ -54,6 +55,7 @@ hand:
 | `bicep` | the `az` command line |
 | `docker` | `docker` with the Compose plugin |
 | `kubernetes` | `kubectl` |
+| `helm` | `helm`; `kustomize` when a document has an overlay; `kubectl` when an output reads from the cluster |
 
 Each tool keeps using its own credentials and configuration. Meridian does not
 store or pass any: if `aws sts get-caller-identity` or `kubectl get nodes` works

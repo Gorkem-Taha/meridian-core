@@ -612,6 +612,7 @@ dependencies = [
  "meridian-target-docker",
  "meridian-target-dsc",
  "meridian-target-fake",
+ "meridian-target-helm",
  "meridian-target-kubernetes",
  "meridian-target-puppet",
  "meridian-target-terraform",

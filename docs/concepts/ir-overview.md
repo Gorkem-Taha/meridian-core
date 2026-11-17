@@ -63,6 +63,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
+| `helm` | API version and kind, the same as `kubernetes` | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |
 | `dsc` | module and resource | `PSDscResources/Service` |
 
@@ -74,14 +75,15 @@ to the next stage, and one way to plan and apply.
 Most passthrough targets also take one **settings resource** that is not part of
 the tool's file: where to deploy, which cluster, which daemon. It has a fixed
 type name (`stack`, `deployment`, `cluster`, `project`, `runner`) and is
-described on the target's page.
+described on the target's page. The `helm` target has four: `values`, `chart`,
+`release` and `kustomization`.
 
 ## References
 
 `${id}` or `${id.path}` inside a param refers to another resource in the same
 document. Meridian checks that the resource exists, and each target rewrites the
 reference into the tool's own form: a Terraform address, a CloudFormation `Ref`,
-the name of a Kubernetes object. What a path can read depends on the tool, and
+the name of a Kubernetes object, a `{{ .Values }}` expression in a Helm chart. What a path can read depends on the tool, and
 the target's page says. Write `$${` for a literal `${`.
 
 ## What is not here yet

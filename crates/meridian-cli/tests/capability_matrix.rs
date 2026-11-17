@@ -85,6 +85,10 @@ fn matrix() -> String {
             &meridian_target_dsc::DscRunner::from_env(),
         ),
         row(
+            &meridian_target_helm::Helm,
+            &meridian_target_helm::HelmRunner::from_env(),
+        ),
+        row(
             &meridian_target_kubernetes::Kubernetes,
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
         ),

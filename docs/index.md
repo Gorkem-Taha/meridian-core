@@ -1,8 +1,8 @@
 # Meridian
 
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
-Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
-you chose to plan and apply it.
+Terraform, CloudFormation, Bicep, Docker Compose, Kubernetes and Helm, and then drives the
+tool you chose to plan and apply it.
 
 ## Honest scope statement
 
@@ -51,7 +51,7 @@ byte. The reasons, the layout and the order of work are in
 |---|---|
 | Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md) |
 | Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
-| Containers | [docker](targets/docker.md), [kubernetes](targets/kubernetes.md) |
+| Containers | [docker](targets/docker.md), [kubernetes](targets/kubernetes.md), [helm](targets/helm.md) (with Kustomize) |
 
 Every target page opens with what the target does and does not support. Every example the
 pages show is a file under [`examples/`](../examples) that a test compiles with the real
@@ -69,12 +69,6 @@ plugins.
 | [Observability, logging & diagnostics](plans/observability.md) | Log schema, plan output, fact provenance, telemetry, audit |
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
-
-## Target guides
-
-| Target | What it compiles to and runs |
-|---|---|
-| [Helm with Kustomize](targets/helm.md) | A Helm chart with an optional Kustomize overlay, installed as a release |
 
 ## Contributing
 
