@@ -1,0 +1,25 @@
+# A notify: OpenTofu's nearest thing is replacing the notified resource.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: notify
+spec:
+  target: opentofu
+  resources:
+    - id: config
+      type: terraform_data
+      params:
+        input: v1
+      notifies:
+        - resource: service
+          action: replace
+
+    - id: service
+      type: terraform_data
+      params:
+        input: running
+        lifecycle:
+          create_before_destroy: true
+  outputs:
+    - name: config
+      value: ${config.output}

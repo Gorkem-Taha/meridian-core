@@ -1,0 +1,57 @@
+name: web-vm
+runtime: yaml
+description: Compiled by Meridian from the document web-vm. Do not edit.
+config:
+  aws:region:
+    value: us-east-1
+  instance_type:
+    default: t3.small
+    type: string
+variables:
+  ubuntu:
+    fn::invoke:
+      function: aws:ec2:getAmi
+      arguments:
+        filters:
+          - name: name
+            values:
+              - ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*
+        mostRecent: true
+        owners:
+          - "099720109477"
+resources:
+  web_sg:
+    type: aws:ec2:SecurityGroup
+    properties:
+      ingress:
+        - cidrBlocks:
+            - 0.0.0.0/0
+          fromPort: 80
+          protocol: tcp
+          toPort: 80
+  web_vm:
+    type: aws:ec2:Instance
+    properties:
+      ami: ${ubuntu.id}
+      instanceType: ${instance_type}
+      tags:
+        Name: web-${pulumi.stack}
+      vpcSecurityGroupIds:
+        - ${web_sg.id}
+    options:
+      ignoreChanges:
+        - ami
+  web_ip:
+    type: aws:ec2:Eip
+    properties:
+      instance: ${web_vm.id}
+  announce:
+    type: command:local:Command
+    properties:
+      create: echo ready
+    options:
+      dependsOn:
+        - ${web_ip}
+outputs:
+  web_vm_ip: ${web_ip.publicIp}
+  web_url: http://${web_ip.publicDns}/

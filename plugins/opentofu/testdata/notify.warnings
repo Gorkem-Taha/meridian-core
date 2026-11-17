@@ -1,0 +1,1 @@
+opentofu: service: is destroyed and created again whenever "config" changes; OpenTofu has no gentler way to react to a change (replace_triggered_by)

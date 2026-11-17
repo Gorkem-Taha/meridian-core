@@ -101,12 +101,28 @@ fn matrix() -> String {
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
         ),
         row(
+            &meridian_target_opentofu::OpenTofu,
+            &meridian_target_opentofu::OpenTofuRunner::from_env(),
+        ),
+        row(
+            &meridian_target_packer::Packer,
+            &meridian_target_packer::PackerRunner::from_env(),
+        ),
+        row(
             &meridian_target_podman::Podman,
             &meridian_target_podman::PodmanRunner::from_env(),
         ),
         row(
+            &meridian_target_pulumi::Pulumi,
+            &meridian_target_pulumi::PulumiRunner::from_env(),
+        ),
+        row(
             &meridian_target_puppet::Puppet,
             &meridian_target_puppet::PuppetRunner::from_env(),
+        ),
+        row(
+            &meridian_target_salt::Salt,
+            &meridian_target_salt::SaltRunner::from_env(),
         ),
         row(
             &meridian_target_terraform::Terraform,

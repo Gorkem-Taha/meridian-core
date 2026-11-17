@@ -1,0 +1,13 @@
+{
+  "build": "app-container",
+  "outputs": {
+    "built_at": "${app.build_time}",
+    "image": "${app.id}"
+  },
+  "sources": [
+    {
+      "id": "app",
+      "type": "docker"
+    }
+  ]
+}

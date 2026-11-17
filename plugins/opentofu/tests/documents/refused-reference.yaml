@@ -1,0 +1,13 @@
+# A reference to a resource the document does not declare.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: refused-reference
+spec:
+  target: opentofu
+  resources:
+    - id: web_vm
+      type: aws_instance
+      params:
+        ami: ami-12345678
+        subnet_id: ${public_subnet.id}

@@ -7,6 +7,10 @@
 //!
 //! `$${` is the escape for a literal `${`.
 
+use std::collections::BTreeMap;
+
+use crate::{CompileError, Resource, ResourceGraph, Value};
+
 /// One piece of a string that may hold references.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Part {
@@ -92,6 +96,156 @@ pub fn is_path(expr: &str) -> bool {
         && rest
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || "._-[]\"'*".contains(c))
+}
+
+/// Resolves the references of a document whose resources are plain
+/// declarations: `${id.param}` becomes the value the document gives that param
+/// on resource `id`.
+///
+/// This is for a target with nothing to read at apply time, such as a
+/// configuration management tool: all a resource has is what the author wrote.
+/// So a reference is settled at compile time, and anything that cannot be is
+/// refused with the rule `invalid-reference`: a resource the document does not
+/// declare, a param that resource does not set, a bare `${id}`, a deeper path,
+/// or an expression that is not a path at all. `$${` comes out as a literal
+/// `${`.
+///
+/// A reference that is a param's whole value keeps the type of what it reads.
+/// Inside longer text it must read a scalar. References may chain; a chain
+/// that comes back to itself is refused.
+pub fn resolve_declared(
+    graph: &ResourceGraph,
+    target: &str,
+) -> Result<ResourceGraph, CompileError> {
+    let declared: BTreeMap<&str, &Resource> =
+        graph.resources.iter().map(|r| (r.id.as_str(), r)).collect();
+    let mut resolved = graph.clone();
+    for resource in &mut resolved.resources {
+        let id = resource.id.clone();
+        let pos = resource.pos.clone();
+        for (name, value) in &mut resource.params {
+            let mut trail = vec![(id.clone(), name.clone())];
+            *value = resolve_value(value, &declared, &mut trail).map_err(|msg| CompileError {
+                target: target.to_owned(),
+                resource: id.clone(),
+                rule: "invalid-reference".to_owned(),
+                msg: format!("param {name:?}: {msg}"),
+                pos: pos.clone(),
+            })?;
+        }
+    }
+    Ok(resolved)
+}
+
+fn resolve_value(
+    value: &Value,
+    declared: &BTreeMap<&str, &Resource>,
+    trail: &mut Vec<(String, String)>,
+) -> Result<Value, String> {
+    Ok(match value {
+        Value::String(text) => resolve_text(text, declared, trail)?,
+        Value::List(items) => Value::List(
+            items
+                .iter()
+                .map(|item| resolve_value(item, declared, trail))
+                .collect::<Result<_, _>>()?,
+        ),
+        Value::Map(map) => Value::Map(
+            map.iter()
+                .map(|(key, item)| Ok((key.clone(), resolve_value(item, declared, trail)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        other => other.clone(),
+    })
+}
+
+fn resolve_text(
+    text: &str,
+    declared: &BTreeMap<&str, &Resource>,
+    trail: &mut Vec<(String, String)>,
+) -> Result<Value, String> {
+    let parts = parse(text)?;
+    if let [Part::Expr(expr)] = parts.as_slice() {
+        return read(expr, declared, trail);
+    }
+    let mut out = String::new();
+    for part in &parts {
+        match part {
+            Part::Text(literal) => out.push_str(literal),
+            Part::Expr(expr) => match read(expr, declared, trail)? {
+                Value::String(s) => out.push_str(&s),
+                Value::Bool(b) => out.push_str(&b.to_string()),
+                Value::Int(i) => out.push_str(&i.to_string()),
+                Value::Uint(u) => out.push_str(&u.to_string()),
+                Value::Float(f) => out.push_str(&f.to_string()),
+                Value::Null | Value::List(_) | Value::Map(_) => {
+                    return Err(format!(
+                        "${{{expr}}} is not a single value, so it cannot be placed inside \
+                         text; use it as the whole value of a param"
+                    ))
+                }
+            },
+        }
+    }
+    Ok(Value::String(out))
+}
+
+/// The value one `${...}` stands for.
+fn read(
+    expr: &str,
+    declared: &BTreeMap<&str, &Resource>,
+    trail: &mut Vec<(String, String)>,
+) -> Result<Value, String> {
+    const LITERAL: &str = "for a literal ${ write $${";
+    if !is_path(expr) {
+        return Err(format!(
+            "${{{expr}}} is not a reference to a resource, and this target has no \
+             expression language; {LITERAL}"
+        ));
+    }
+    let (id, rest) = head(expr);
+    let Some(resource) = declared.get(id) else {
+        return Err(format!(
+            "${{{expr}}} refers to a resource {id:?}, which this document does not \
+             declare; {LITERAL}"
+        ));
+    };
+    let set: Vec<&str> = resource.params.keys().map(String::as_str).collect();
+    let param = rest.strip_prefix('.').unwrap_or("");
+    if param.is_empty() {
+        return Err(format!(
+            "${{{expr}}} names a resource but not which of its params to read; \
+             write ${{{id}.<param>}} (it sets: {})",
+            set.join(", ")
+        ));
+    }
+    if param.contains(['.', '[']) {
+        return Err(format!(
+            "${{{expr}}} reads inside a param, which this target cannot do; \
+             a reference is ${{{id}.<param>}} and nothing deeper"
+        ));
+    }
+    let Some(value) = resource.params.get(param) else {
+        return Err(format!(
+            "${{{expr}}} reads param {param:?}, which resource {id:?} does not set \
+             (it sets: {}); on this target a reference can only read what the \
+             document itself declares",
+            set.join(", ")
+        ));
+    };
+    let step = (id.to_owned(), param.to_owned());
+    if trail.contains(&step) {
+        let mut chain: Vec<String> = trail.iter().map(|(r, p)| format!("{r}.{p}")).collect();
+        chain.push(format!("{id}.{param}"));
+        return Err(format!(
+            "${{{expr}}} refers back to itself: {}",
+            chain.join(" -> ")
+        ));
+    }
+    trail.push(step);
+    let value = resolve_value(value, declared, trail);
+    trail.pop();
+    value
 }
 
 #[cfg(test)]

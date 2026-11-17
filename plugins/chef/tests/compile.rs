@@ -182,3 +182,21 @@ fn a_document_name_that_cannot_be_a_cookbook_is_refused() {
     .unwrap_err();
     assert_eq!(err.rule, "invalid-cookbook-name");
 }
+
+#[test]
+fn a_reference_is_settled_from_the_document_or_refused() {
+    let text = recipe(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        content: \"costs $${PRICE}\"\n",
+    );
+    assert!(text.contains("/srv/app/index.html"), "{text}");
+    assert!(text.contains("costs ${PRICE}"), "{text}");
+    assert!(!text.contains("${root"), "{text}");
+    assert!(!text.contains("$${"), "{text}");
+
+    let err = refusal(
+        "    - id: page\n      type: file\n      params:\n        path: ${nowhere.path}/index.html\n        content: x\n",
+    );
+    assert_eq!(err.rule, "invalid-reference");
+    assert_eq!(err.resource, "page");
+    assert!(err.msg.contains("does not declare"), "{}", err.msg);
+}
