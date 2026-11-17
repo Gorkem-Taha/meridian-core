@@ -1,0 +1,8 @@
+name=web
+host=web01
+target=ansible
+resource pkg type=package state= runtimeWhen= params={"name":"nginx"}
+resource conf type=file state= runtimeWhen= params={"mode":"0644","owner":"root","path":"/etc/n.conf"}
+resource svc type=service state=running runtimeWhen= params={"name":"nginx"}
+edge conf -> svc kind=notifies action=restart
+edge pkg -> conf kind=dependsOn action=

@@ -45,6 +45,27 @@ decision and the order of work are in the
 does not change, so the Go Ansible and Puppet plugins keep working behind a Rust host, and
 the Go core stays in the repository until the Rust core reproduces its golden files.
 
+The Rust core is a Cargo workspace under `crates/`. Ported so far:
+
+- `crates/meridian-ir` — parsing and validation, the counterpart of `internal/ir`
+- `crates/meridian-resolve` — hierarchical data resolution, the counterpart of `internal/resolve`
+- `crates/meridian-graph` — dependency graph and topological sort, the counterpart of `internal/graph`
+- `crates/meridian-ast` — the target-agnostic resource tree, the counterpart of `internal/ast`
+- `crates/meridian-value` — the dynamic value type and its canonical JSON form, shared by the core and the SDK
+- `crates/meridian-sdk` — the public plugin types and their wire conversion, the counterpart of `pkg/sdk`
+  (the half a plugin author needs to serve a target arrives with the first Rust plugin)
+- `crates/meridian-plugin-host` — launching, discovering and driving target plugins, the counterpart of `internal/plugin`
+
+That is every layer the Go core has. The Rust host drives the Go Ansible and Puppet plugin
+binaries and reproduces every golden file under `plugins/*/testdata` byte for byte; the
+test that proves it (`crates/meridian-plugin-host/tests/contract.rs`) compiles the documents
+in `fixtures/` and needs a Go toolchain to build the plugins.
+
+```
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Building and running the target plugins
 
 ```

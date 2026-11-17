@@ -1,0 +1,21 @@
+[package]
+name = "meridian-sdk"
+description = "The public contract a Meridian target plugin implements, and the wire protocol it speaks"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+build = "build.rs"
+
+[dependencies]
+meridian-value = { path = "../meridian-value" }
+prost = "0.14"
+tonic = "0.14"
+tonic-prost = "0.14"
+
+[build-dependencies]
+protox = "0.10"
+tonic-prost-build = "0.14"
+
+[lints]
+workspace = true

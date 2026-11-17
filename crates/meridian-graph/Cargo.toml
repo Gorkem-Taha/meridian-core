@@ -1,0 +1,13 @@
+[package]
+name = "meridian-graph"
+description = "Meridian's resource dependency graph and its deterministic topological sort"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-ir = { path = "../meridian-ir" }
+
+[lints]
+workspace = true

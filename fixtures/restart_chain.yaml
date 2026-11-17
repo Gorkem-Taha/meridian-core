@@ -1,0 +1,46 @@
+# The notify actions a target is most likely to support, restart and run, both triggered by one resource.
+# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
+# The plugin contract test compiles it through every shipped target and
+# compares the output with plugins/<target>/testdata. `target` is a placeholder:
+# the test sets it to each target in turn.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: app_pkg
+      type: package
+      params:
+        name: app
+    - id: app_conf
+      type: file
+      params:
+        path: /etc/app/app.conf
+        content: "mode = fast\nworkers = 8\n"
+        mode: "0640"
+      dependsOn:
+        - resource: app_pkg
+      notifies:
+        - resource: app_svc
+          action: restart
+        - resource: warm_cache
+          action: run
+    - id: app_svc
+      type: service
+      state: running
+      params:
+        name: app
+        enabled: true
+      dependsOn:
+        - resource: app_pkg
+    - id: warm_cache
+      type: exec
+      params:
+        command: /usr/local/bin/warm-cache --all
+      dependsOn:
+        - resource: app_svc

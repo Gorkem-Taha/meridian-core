@@ -1,0 +1,1 @@
+ansible: resources "deploy_group", "legacy_user" are independent but will run in sequence; this target flattens the dependency graph and cannot express parallelism

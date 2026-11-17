@@ -1,0 +1,44 @@
+# Users, groups and directories: no notification, a deep dependency chain, and params of several types including a list.
+# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
+# The plugin contract test compiles it through every shipped target and
+# compares the output with plugins/<target>/testdata. `target` is a placeholder:
+# the test sets it to each target in turn.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: deploy_group
+      type: group
+      params:
+        name: deploy
+        gid: 1200
+    - id: deploy_user
+      type: user
+      params:
+        name: deploy
+        uid: 1200
+        shell: /bin/bash
+        groups: [deploy, sudo]
+      dependsOn:
+        - resource: deploy_group
+    - id: legacy_user
+      type: user
+      state: absent
+      params:
+        name: old
+    - id: home_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/app
+        owner: deploy
+        group: deploy
+        mode: "0750"
+      dependsOn:
+        - resource: deploy_user

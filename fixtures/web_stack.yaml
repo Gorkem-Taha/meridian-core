@@ -1,0 +1,49 @@
+# The ordinary shape of a configuration document, and one notify action (reload) that not every target can perform.
+# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
+# The plugin contract test compiles it through every shipped target and
+# compares the output with plugins/<target>/testdata. `target` is a placeholder:
+# the test sets it to each target in turn.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+    - id: nginx_conf
+      type: file
+      params:
+        path: /etc/nginx/nginx.conf
+        content: "worker_processes 4;\n"
+        owner: root
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: restart
+    - id: nginx_site
+      type: file
+      params:
+        path: /etc/nginx/sites-enabled/app
+        content: "server {}\n"
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: reload
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg
