@@ -76,6 +76,10 @@ The merge bar for a target plugin, and the changes that need a second reviewer, 
 [`CONTRIBUTING.md`](../CONTRIBUTING.md). Security reports go through
 [`SECURITY.md`](../SECURITY.md), not the issue tracker.
 
+These pages are published as a site and as the repository's wiki by a pipeline;
+[how the wiki is published](contributing/documentation-site.md) describes it and what a
+new page needs.
+
 ## Reading order
 
 New to the project: start with the design plan's problem statement and guiding
