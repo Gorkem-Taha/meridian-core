@@ -14,7 +14,7 @@
 #   the value is shown in plans and logs unless what it reads is itself marked
 #   sensitive
 # TODO(meridian-import): not translated: versions.tf:1:
-#   terraform.required_version: the constraint "\u003e= 1.6" on the tool's own
+#   terraform.required_version: the constraint ">= 1.6" on the tool's own
 #   version has nowhere to go in a document; pin the terraform binary Meridian
 #   runs instead
 apiVersion: meridian/v1
