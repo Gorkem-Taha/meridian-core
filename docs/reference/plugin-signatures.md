@@ -166,5 +166,8 @@ The signing and checking code is the `meridian-signing` crate
 (`crates/meridian-signing`). It is not about plugins: `SecretKey::sign_file`
 signs any file, `verify_file` checks a file and its `.sig` against a list of
 `PublicKey`s, and `Verification::check` applies a `Policy` (off, warn or
-require) to the result. The plugin host re-exports it as
+require) to the result. `SecretKey::sign_bytes` and `verify_bytes` do the same
+for bytes that are not a file, which is how
+[modules are signed](modules.md#signatures): with the same keys, trusted
+through the same `--trusted-key`. The plugin host re-exports it as
 `meridian_plugin_host::signature`.
