@@ -117,6 +117,9 @@ pub struct ResourceGraph {
     pub host: String,
     /// The target name the document declared.
     pub target: String,
+    /// The version of the tool the document asked for with
+    /// `spec.targetVersion`; empty when it did not.
+    pub target_version: String,
 
     /// What the document promises to later stages, in declaration order.
     /// Only an Infrastructure document declares any.
@@ -141,7 +144,14 @@ impl ResourceGraph {
                 pos: rs.pos.clone(),
             });
         }
-        ResourceGraph::from_resources(&rs.metadata.name, host, &rs.spec.target, &rs.spec.resources)
+        let mut graph = ResourceGraph::from_resources(
+            &rs.metadata.name,
+            host,
+            &rs.spec.target,
+            &rs.spec.resources,
+        )?;
+        graph.target_version = rs.spec.target_version.clone();
+        Ok(graph)
     }
 
     /// Turns a validated Infrastructure document into a tree. It has no host:
@@ -155,6 +165,7 @@ impl ResourceGraph {
             &doc.spec.resources,
         )?;
         graph.outputs = doc.spec.outputs.clone();
+        graph.target_version = doc.spec.target_version.clone();
         Ok(graph)
     }
 
@@ -245,6 +256,7 @@ impl ResourceGraph {
             name: name.to_owned(),
             host: host.to_owned(),
             target: target.to_owned(),
+            target_version: String::new(),
             outputs: Vec::new(),
             resources: kept,
             by_id,
@@ -294,6 +306,9 @@ impl ResourceGraph {
             "name={}\nhost={}\ntarget={}\n",
             self.name, self.host, self.target
         );
+        if !self.target_version.is_empty() {
+            let _ = writeln!(out, "targetVersion={}", self.target_version);
+        }
         for r in &self.resources {
             let _ = writeln!(
                 out,

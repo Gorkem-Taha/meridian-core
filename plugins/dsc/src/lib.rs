@@ -18,6 +18,9 @@
 //! chooses the engine and says how the runner reaches the document's host
 //! (`engine`, `target`, `credential`).
 //!
+//! A document's `targetVersion` chooses the engine too: `"2"` is `DscV2` and
+//! `"3"` is `DscV3`. A `runner` that names a different engine is refused.
+//!
 //! # References
 //!
 //! `${id.Property}` reads a property of another resource as DSC reports it,
@@ -136,6 +139,12 @@ impl Emitter for Dsc {
         ["<Module>/<Resource>", "runner"]
             .map(str::to_owned)
             .to_vec()
+    }
+
+    /// The two generations of DSC the runner drives. A document that asks
+    /// for one with `targetVersion` gets that engine.
+    fn target_versions(&self) -> Vec<String> {
+        vec!["2".to_owned(), "3".to_owned()]
     }
 
     /// Both are the runner's own: `notify` forces a `Set`, and a

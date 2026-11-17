@@ -77,6 +77,7 @@ fn graph(resources: Vec<Resource>) -> ResourceGraph {
         name: "web".to_owned(),
         host: "web01.example.com".to_owned(),
         target: "fake".to_owned(),
+        target_version: String::new(),
         resources,
         edges: Vec::new(),
         outputs: Vec::new(),
@@ -123,7 +124,8 @@ fn a_rust_plugin_describes_its_category_and_operations() {
             runtime_condition: false,
         }
     );
-    assert_eq!(info.category, Category::ConfigurationManagement);
+    assert_eq!(info.category, Category::Containerization);
+    assert_eq!(info.target_versions, ["1", "2.4"]);
     assert_eq!(info.operations, Operations::ALL);
     client
         .close()

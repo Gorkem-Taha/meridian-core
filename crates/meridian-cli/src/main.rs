@@ -11,7 +11,9 @@ use std::process::ExitCode;
 
 use clap::{Args, Parser, Subcommand};
 use meridian_ir::Bundle;
-use meridian_orchestrator::{run, Mode, Observer, Options, Outcome, StageId, StageReport, MASK};
+use meridian_orchestrator::{
+    run, selected, Mode, Observer, Options, Outcome, Selector, StageId, StageReport, MASK,
+};
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
 
@@ -87,6 +89,16 @@ struct Workflow {
         default_value = ".meridian"
     )]
     state_dir: PathBuf,
+    /// Run only the documents whose metadata.labels match, as in
+    /// `tier=web,env!=prod`; may be given more than once, and every
+    /// requirement must hold. Forms: key=value, key!=value, key, !key
+    #[arg(short = 'l', long, value_name = "SELECTOR")]
+    selector: Vec<String>,
+    /// A YAML or JSON file of values that `when` conditions read as
+    /// data.<key>; may be given more than once, and a later file's keys
+    /// replace an earlier file's
+    #[arg(long, value_name = "FILE")]
+    data: Vec<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -137,6 +149,30 @@ fn load(files: &[PathBuf]) -> Result<Bundle, Failure> {
     Ok(bundle)
 }
 
+/// Reads the `--data` files into one map. Each file is a mapping; a key in a
+/// later file replaces the same key from an earlier one, whole.
+fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
+    let mut data = Data::new();
+    for file in files {
+        let name = file.to_string_lossy();
+        let raw = std::fs::read(file)
+            .map_err(|e| Failure::Message(format!("reading the data file {name}: {e}")))?;
+        match meridian_ir::parse_value(&name, &raw) {
+            Ok(meridian_ir::Value::Map(map)) => data.extend(map),
+            Ok(meridian_ir::Value::Null) => {}
+            Ok(other) => {
+                return Err(Failure::Message(format!(
+                    "the data file {name} must hold a mapping of names to values, and it \
+                     holds {}",
+                    other.describe()
+                )))
+            }
+            Err(e) => return Err(Failure::Message(e.to_string())),
+        }
+    }
+    Ok(data)
+}
+
 fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = if plugins.dirs.is_empty() {
         std::env::current_exe()
@@ -182,6 +218,9 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
         println!("  category:  {}", info.category);
         println!("  can:       {}", can.join(", "));
         println!("  resources: {}", info.resource_types.join(", "));
+        if !info.target_versions.is_empty() {
+            println!("  versions:  {}", info.target_versions.join(", "));
+        }
         println!(
             "  sdk:       {} (protocol {})",
             info.sdk_version, info.protocol_version
@@ -195,10 +234,22 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
 
 fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<(), Failure> {
     let bundle = load(&workflow.files)?;
+    let mut selector = Selector::all();
+    for text in &workflow.selector {
+        selector = selector.and(Selector::parse(text).map_err(Failure::Message)?);
+    }
+    if selected(&bundle, &selector) == 0 {
+        // Doing nothing and reporting success would read as "all applied".
+        return Err(Failure::Message(format!(
+            "no document's labels match the selector {selector}"
+        )));
+    }
+    let data = read_data(&workflow.data)?;
     let registry = registry(&workflow.plugins)?;
     let options = Options {
         state_dir: workflow.state_dir.clone(),
-        data: Data::new(),
+        data,
+        selector,
     };
     let mut printer = Printer { mode, out };
     let report = run(&bundle, &registry, mode, &options, &mut printer);

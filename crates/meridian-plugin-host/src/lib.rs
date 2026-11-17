@@ -48,6 +48,9 @@ pub struct Info {
     pub category: Category,
     /// What the target can do beyond compiling.
     pub operations: Operations,
+    /// The versions of its tool the target compiles for; empty when it does
+    /// not say.
+    pub target_versions: Vec<String>,
     /// The binary the plugin was loaded from; empty for an in-process emitter.
     pub path: String,
 }
@@ -156,6 +159,7 @@ pub fn to_sdk(graph: &meridian_ast::ResourceGraph) -> meridian_sdk::ResourceGrap
         name: graph.name.clone(),
         host: graph.host.clone(),
         target: graph.target.clone(),
+        target_version: graph.target_version.clone(),
         resources: graph
             .resources()
             .iter()
