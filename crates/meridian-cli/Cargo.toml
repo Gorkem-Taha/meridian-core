@@ -18,6 +18,17 @@ meridian-plugin-host = { path = "../meridian-plugin-host" }
 meridian-sdk = { path = "../meridian-sdk" }
 
 [dev-dependencies]
+meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
+meridian-target-ansible = { path = "../../plugins/ansible" }
+meridian-target-arm = { path = "../../plugins/arm" }
+meridian-target-bicep = { path = "../../plugins/bicep" }
+meridian-target-chef = { path = "../../plugins/chef" }
+meridian-target-cloudformation = { path = "../../plugins/cloudformation" }
+meridian-target-docker = { path = "../../plugins/docker" }
+meridian-target-dsc = { path = "../../plugins/dsc" }
+meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
+meridian-target-puppet = { path = "../../plugins/puppet" }
+meridian-target-terraform = { path = "../../plugins/terraform" }
 meridian-target-fake = { path = "../meridian-target-fake" }
 
 [lints]

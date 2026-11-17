@@ -102,7 +102,7 @@ fn compiling_is_deterministic() {
 /// The first fenced block of a language in the user guide.
 fn guide_block(language: &str) -> String {
     let guide = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/plugins/arm.md"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/targets/arm.md"),
     )
     .expect("the guide exists");
     let fence = format!("```{language}\n");
