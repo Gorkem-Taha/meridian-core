@@ -1,0 +1,76 @@
+# Compile rules: what each layer of this hierarchy may do.
+#
+# This file sits beside hierarchy.yaml and is used because it is there. It is
+# not a layer and is never merged, so no layer can add to it or answer it.
+# Protect it the way you protect hierarchy.yaml: whoever can change this file
+# decides what every layer may do.
+rulesVersion: 1
+
+# What a group may do with a capability it does not list. Deny is the safe
+# choice.
+default: deny
+
+# Who owns which layer, and what each may set. Ownership is where a file is,
+# never what it says. The first group whose pattern matches a layer's path
+# owns it, and a layer no group claims may set nothing.
+layers:
+  # The platform team: the baseline every node gets.
+  - name: organization
+    paths: [common.yaml]
+    capabilities:
+      keys: ["**"]                  # any key
+  - name: environment
+    paths: ["environment/*"]
+    capabilities:
+      keys: [variables, registry]
+  # Application teams: their roles and their own node files. Secrets and
+  # credentials are not listed, so the default (deny) applies to them.
+  - name: team
+    paths: ["role/**", "node/**"]
+    capabilities:
+      keys: [variables, packages, web]
+
+# The rule sets that ship with Meridian. These three are in force in any
+# rules file that does not say `use:` at all; they are written out here so
+# the file says everything it enforces. A more specific layer may not change
+# a variable, a secret or a credential that a less specific layer set, and no
+# secret or credential may be empty or a placeholder such as `changeme`.
+use:
+  - protect-variables
+  - protect-secrets
+  - no-placeholder-secrets
+
+rules:
+  # The region is decided once. Not even repeating it is allowed, so a copy
+  # that would silently go stale cannot exist.
+  - id: region-is-final
+    rule: final
+    keys: [variables.Region]
+
+  # Every team layer says who owns it, and every node ends up with a cost
+  # centre from somewhere.
+  - id: team-layers-name-an-owner
+    rule: required
+    keys: [variables.Owner]
+    appliesTo: [team]
+  - id: cost-centre-is-set
+    rule: required
+    keys: [variables.CostCentre]
+
+  # No floating image tags and no plain HTTP, wherever they are written.
+  - id: no-floating-tags
+    rule: forbidden-value
+    keys: ["**.image"]
+    matches: ["*:latest"]
+    ignoreCase: true
+  - id: no-plain-http
+    rule: forbidden-value
+    keys: ["**"]
+    matches: ["http://*"]
+
+  # Variables must merge deeply. Under first-found a node that set one
+  # variable would throw every organization variable away.
+  - id: variables-merge-deep
+    rule: merge-strategy
+    keys: [variables]
+    allow: [deep-merge]

@@ -1,0 +1,8 @@
+# The web role, owned by the web team.
+variables:
+  Owner: web-team
+
+packages: [nginx]
+
+web:
+  image: "registry.contoso.example/web:4.2.1"

@@ -1,0 +1,17 @@
+# The organization's layer: the baseline every node gets.
+variables:
+  OrganizationName: Contoso
+  Region: eu-west-1
+  CostCentre: "4200"
+
+secrets:
+  database:
+    from: vault
+    path: kv/platform/database
+
+credentials:
+  deploy:
+    type: ssh
+    user: deploy
+
+packages: [curl, vim]

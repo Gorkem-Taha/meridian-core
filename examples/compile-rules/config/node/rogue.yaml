@@ -1,0 +1,15 @@
+# A node file that breaks the rules several ways. `meridian rules check` lists
+# all of them and compiles nothing.
+variables:
+  OrganizationName: Fabrikam        # changes an organization variable
+  Region: eu-west-1                 # sets a final key again, even unchanged
+                                    # and names no Owner
+
+secrets:
+  database:
+    path: kv/rogue/database         # redirects an organization secret
+
+credentials: null                   # wipes the organization's credentials
+
+web:
+  image: "docker.io/library/nginx:LATEST"   # a floating tag

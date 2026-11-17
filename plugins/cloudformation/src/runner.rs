@@ -138,6 +138,16 @@ impl CloudFormationRunner {
             .cloned())
     }
 
+    /// Whether the stack exists only as the shell a change set leaves.
+    fn in_review(&self, context: &RunContext, stack: &Stack) -> bool {
+        self.status(context, stack).ok().flatten().is_some_and(|s| {
+            s.as_map()
+                .and_then(|s| s.get("StackStatus"))
+                .and_then(Value::as_str)
+                == Some("REVIEW_IN_PROGRESS")
+        })
+    }
+
     fn preview(
         &self,
         context: &RunContext,
@@ -187,7 +197,14 @@ impl CloudFormationRunner {
                 .arg("--capabilities")
                 .args(stack.capabilities.iter().cloned());
         }
-        create.run_ok("aws could not create a change set", log)?;
+        if let Err(refused) = create.run_ok("aws could not create a change set", log) {
+            // A refusal can still leave the shell of a stack that was never
+            // created. One that exists only in review is ours to remove.
+            if new_stack && self.in_review(context, &stack) {
+                let _ = self.aws(context, &stack, "delete-stack").run(&NoLog);
+            }
+            return Err(refused);
+        }
 
         // The wait fails when the change set does; the description says why.
         let _ = self

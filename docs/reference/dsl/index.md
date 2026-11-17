@@ -663,6 +663,8 @@ Every step from file to running tool is in
 [how it fits together](how-it-fits-together.md). A worked example is
 [a two-stage workflow](../../quickstart/first-two-stage.md),
 and [`examples/workflow/`](../../../examples/workflow) holds its files.
+[Worked workflows](../../quickstart/workflows.md) walks through six larger ones
+that between them use every target.
 
 ## Which check happens when
 

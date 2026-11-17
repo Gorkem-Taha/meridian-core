@@ -1,0 +1,6 @@
+# One node. It adds what is its own and changes nothing set above it.
+variables:
+  Owner: web-team
+  Description: The first web node.
+
+packages: [certbot]

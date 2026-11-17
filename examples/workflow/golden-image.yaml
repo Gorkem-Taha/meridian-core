@@ -1,0 +1,223 @@
+# From an image to a configured fleet: four tools, each doing the part it is
+# best at.
+#
+#   1. Packer builds a machine image with the web server already installed.
+#   2. CloudFormation launches a machine and gives it a fixed address.
+#   3. cloud-init writes what the machine needs on its first boot.
+#   4. Puppet keeps the machine's configuration converged from then on.
+#
+# Packer and CloudFormation are Infrastructure documents and run first, in the
+# order given. The two ResourceSets configure the machine CloudFormation
+# created: they take its address from that document's output.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-image
+  labels:
+    stage: build
+spec:
+  target: packer
+  resources:
+    - id: amazon
+      type: plugin
+      params:
+        source: github.com/hashicorp/amazon
+        version: ">= 1.3.0"
+
+    - id: region
+      type: variable
+      params:
+        type: string
+        default: us-east-1
+
+    - id: base
+      type: data.amazon-ami
+      params:
+        region: ${region}
+        most_recent: true
+        owners: ["099720109477"]
+        filters:
+          name: ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*
+          virtualization-type: hvm
+
+    - id: ubuntu
+      type: source.amazon-ebs
+      params:
+        region: ${region}
+        source_ami: ${base.id}
+        instance_type: t3.small
+        ssh_username: ubuntu
+        ami_name: web-golden
+        tags:
+          BaseImage: ${base.name}
+
+    - id: wait_for_boot
+      type: provisioner.shell
+      params:
+        inline:
+          - cloud-init status --wait
+
+    - id: install
+      type: provisioner.shell
+      params:
+        environment_vars: ["DEBIAN_FRONTEND=noninteractive"]
+        inline:
+          - sudo apt-get update
+          - sudo apt-get install -y nginx puppet-agent
+      dependsOn:
+        - resource: wait_for_boot
+
+    - id: harden
+      type: provisioner.shell
+      params:
+        inline:
+          - sudo systemctl disable --now snapd
+          - sudo rm -f /etc/ssh/ssh_host_*
+      dependsOn:
+        - resource: install
+
+  outputs:
+    - name: image_id
+      value: ${ubuntu.id}
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: fleet
+  labels:
+    stage: provision
+spec:
+  target: cloudformation
+  resources:
+    - id: deployment
+      type: stack
+      params:
+        name: web-fleet
+        region: us-east-1
+
+    - id: web_sg
+      type: AWS::EC2::SecurityGroup
+      params:
+        GroupDescription: Web traffic for ${AWS::StackName}
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+
+    - id: web_vm
+      type: AWS::EC2::Instance
+      params:
+        # The image the first document builds. Its id is copied here once the
+        # build has reported it.
+        ImageId: ami-0c7217cdde317cfec
+        InstanceType: t3.small
+        SecurityGroupIds: ["${web_sg.GroupId}"]
+
+    - id: web_ip
+      type: AWS::EC2::EIP
+      params:
+        InstanceId: ${web_vm}
+      dependsOn:
+        - resource: web_vm
+
+  outputs:
+    - name: address
+      value: ${web_ip.PublicIp}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: first_boot
+  labels:
+    stage: bootstrap
+spec:
+  target: cloud-init
+  targetHost:
+    from: infrastructure
+    ref: fleet
+    output: address
+  resources:
+    - id: ops_group
+      type: group
+      params:
+        name: ops
+
+    - id: ops_user
+      type: user
+      params:
+        name: ops
+        shell: /bin/bash
+        groups: [ops]
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyForTheDocumentation ops@example.com
+      dependsOn:
+        - resource: ops_group
+
+    - id: motd
+      type: file
+      params:
+        path: /etc/motd
+        content: |
+          This machine is managed by Meridian. Local changes are overwritten.
+        mode: "0644"
+
+    - id: host_keys
+      type: exec
+      params:
+        command: ssh-keygen -A
+        creates: /etc/ssh/ssh_host_ed25519_key
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: baseline
+  labels:
+    stage: configure
+spec:
+  target: puppet
+  targetHost:
+    from: infrastructure
+    ref: fleet
+    output: address
+  resources:
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: /srv/www
+        owner: www-data
+        mode: "0755"
+
+    - id: index
+      type: file
+      params:
+        path: ${site_root.path}/index.html
+        content: "<h1>Served from the golden image</h1>\n"
+        owner: www-data
+        mode: "0644"
+      dependsOn:
+        - resource: site_root
+
+    - id: site_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/site.conf
+        content: |
+          server {
+            listen 80;
+            root ${site_root.path};
+          }
+        mode: "0644"
+      notifies:
+        - resource: nginx_svc
+          action: restart
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: site_conf

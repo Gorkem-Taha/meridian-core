@@ -140,7 +140,17 @@ fn load_roots(name: &str, text: &str, array_is_stream: bool) -> Result<(Vec<Node
     if !matches!(first, Some(b'{' | b'[')) {
         return Ok((node::load_yaml(name, text)?, false));
     }
-    match serde_json::from_str::<serde_json::Value>(text) {
+    let parsed = serde_json::from_str::<serde_json::Value>(text);
+    // JSON is held to the limit YAML is held to, so a document is not too
+    // deep in one spelling and fine in the other.
+    if parsed.as_ref().is_ok_and(node::json_too_deep) {
+        return Err(Error::new(
+            Position::document(name, 0),
+            "",
+            "document is nested too deeply",
+        ));
+    }
+    match parsed {
         Ok(serde_json::Value::Array(items)) if array_is_stream => {
             Ok((items.into_iter().map(node::from_json).collect(), true))
         }
