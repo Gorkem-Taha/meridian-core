@@ -26,6 +26,10 @@ byte. The reasons, the layout and the order of work are in
 [design plan §11](plans/design-plan.md#11-system-architecture-rust) and
 [§12.1](plans/design-plan.md#121-rust-migration-sequencing).
 
+## Target guides
+
+- [OpenTofu](targets/opentofu.md): infrastructure as code, with state and plan encryption
+
 ## Planning documents
 
 | Document | What it settles |

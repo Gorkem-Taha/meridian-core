@@ -1,0 +1,63 @@
+{
+  "locals": {
+    "release_name": "web-${var.environment}"
+  },
+  "output": {
+    "passphrase_fingerprint": {
+      "sensitive": true,
+      "value": "${substr(sha256(var.state_passphrase), 0, 12)}"
+    },
+    "release": {
+      "value": "${terraform_data.release.output}"
+    }
+  },
+  "resource": {
+    "terraform_data": {
+      "release": {
+        "input": "${local.release_name}"
+      },
+      "smoke_test": {
+        "depends_on": [
+          "terraform_data.release"
+        ],
+        "input": "checked"
+      }
+    }
+  },
+  "terraform": {
+    "encryption": {
+      "key_provider": {
+        "pbkdf2": {
+          "main": {
+            "passphrase": "${var.state_passphrase}"
+          }
+        }
+      },
+      "method": {
+        "aes_gcm": {
+          "main": {
+            "keys": "${key_provider.pbkdf2.main}"
+          }
+        }
+      },
+      "plan": {
+        "enforced": true,
+        "method": "${method.aes_gcm.main}"
+      },
+      "state": {
+        "enforced": true,
+        "method": "${method.aes_gcm.main}"
+      }
+    }
+  },
+  "variable": {
+    "environment": {
+      "default": "staging",
+      "type": "string"
+    },
+    "state_passphrase": {
+      "sensitive": true,
+      "type": "string"
+    }
+  }
+}

@@ -7,6 +7,7 @@ project's own: one DSL for everything.
 | --- | --- | --- |
 | Core | <img src="logos/meridian-core.svg" width="48" alt="Meridian Core logo"> | Platform |
 | Terraform | <img src="logos/meridian-terraform.svg" width="48" alt="Meridian Terraform plugin logo"> | Infrastructure as code |
+| OpenTofu | <img src="logos/meridian-opentofu.svg" width="48" alt="Meridian OpenTofu plugin logo"> | Infrastructure as code |
 | Bicep | <img src="logos/meridian-bicep.svg" width="48" alt="Meridian Bicep plugin logo"> | Infrastructure as code |
 | CloudFormation | <img src="logos/meridian-cloudformation.svg" width="48" alt="Meridian CloudFormation plugin logo"> | Infrastructure as code |
 | DSC | <img src="logos/meridian-dsc.svg" width="48" alt="Meridian DSC plugin logo"> | Configuration management |

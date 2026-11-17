@@ -1,0 +1,152 @@
+{
+  "data": {
+    "aws_availability_zones": {
+      "zones": {
+        "state": "available"
+      }
+    }
+  },
+  "ephemeral": {
+    "aws_secretsmanager_secret_version": {
+      "db_password": {
+        "secret_id": "prod/db/password"
+      }
+    }
+  },
+  "locals": {
+    "name_prefix": "${lower(\"Web\")}-${var.region}",
+    "tags": {
+      "Project": "meridian",
+      "Region": "${var.region}"
+    }
+  },
+  "module": {
+    "network": {
+      "azs": "${slice(data.aws_availability_zones.zones.names, 0, 2)}",
+      "name": "${local.name_prefix}",
+      "source": "terraform-aws-modules/vpc/aws",
+      "tags": "${local.tags}",
+      "version": "5.1.0"
+    }
+  },
+  "output": {
+    "db_endpoint": {
+      "value": "${aws_db_instance.db.endpoint}"
+    },
+    "db_url": {
+      "value": "postgres://${aws_db_instance.db.endpoint}/${local.name_prefix}"
+    },
+    "first_zone": {
+      "value": "${data.aws_availability_zones.zones.names[0]}"
+    }
+  },
+  "provider": {
+    "aws": [
+      {
+        "region": "${var.region}"
+      },
+      {
+        "alias": "replica",
+        "region": "eu-central-1"
+      }
+    ]
+  },
+  "resource": {
+    "aws_db_instance": {
+      "db": {
+        "db_subnet_group_name": "${module.network.database_subnet_group_name}",
+        "engine": "postgres",
+        "identifier": "${local.name_prefix}-db",
+        "instance_class": "db.t4g.micro",
+        "password_wo": "${ephemeral.aws_secretsmanager_secret_version.db_password.secret_string}",
+        "password_wo_version": 1,
+        "tags": "${merge(local.tags, {Role = \"database\"})}"
+      },
+      "db_copy": {
+        "depends_on": [
+          "module.network"
+        ],
+        "identifier": "${local.name_prefix}-db-copy",
+        "instance_class": "db.t4g.micro",
+        "provider": "aws.replica",
+        "replicate_source_db": "${aws_db_instance.db.arn}"
+      }
+    }
+  },
+  "terraform": {
+    "backend": {
+      "s3": {
+        "bucket": "meridian-state",
+        "key": "every-block.tfstate",
+        "region": "${var.region}"
+      }
+    },
+    "encryption": {
+      "key_provider": {
+        "aws_kms": {
+          "regional": {
+            "key_spec": "AES_256",
+            "kms_key_id": "alias/meridian-state",
+            "region": "${var.region}"
+          }
+        },
+        "pbkdf2": {
+          "passphrase": {
+            "passphrase": "${var.state_passphrase}"
+          }
+        }
+      },
+      "method": {
+        "aes_gcm": {
+          "current": {
+            "keys": "${key_provider.aws_kms.regional}"
+          },
+          "previous": {
+            "keys": "${key_provider.pbkdf2.passphrase}"
+          }
+        },
+        "unencrypted": {
+          "migrating": {}
+        }
+      },
+      "plan": {
+        "fallback": {
+          "method": "${method.unencrypted.migrating}"
+        },
+        "method": "${method.aes_gcm.current}"
+      },
+      "remote_state_data_sources": {
+        "default": {
+          "method": "${method.aes_gcm.current}"
+        }
+      },
+      "state": {
+        "enforced": true,
+        "fallback": {
+          "method": "${method.aes_gcm.previous}"
+        },
+        "method": "${method.aes_gcm.current}"
+      }
+    },
+    "required_providers": {
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "~> 5.0"
+      }
+    }
+  },
+  "variable": {
+    "region": {
+      "default": "eu-west-1",
+      "type": "string",
+      "validation": {
+        "condition": "${startswith(var.region, \"eu-\")}",
+        "error_message": "Only European regions are allowed."
+      }
+    },
+    "state_passphrase": {
+      "sensitive": true,
+      "type": "string"
+    }
+  }
+}

@@ -1,0 +1,70 @@
+# A release record whose state and plan are encrypted, which only OpenTofu can do.
+#
+# This example needs no cloud account: terraform_data is built into OpenTofu.
+# Run it with a passphrase of at least 16 characters:
+#
+#   TF_VAR_state_passphrase='correct-horse-battery-staple' \
+#     meridian apply examples/opentofu/encrypted-state.yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: encrypted-state
+spec:
+  target: opentofu
+  resources:
+    # The passphrase is an input, so it is never written into this document or
+    # into the compiled configuration.
+    - id: state_passphrase
+      type: variable
+      params:
+        type: string
+        sensitive: true
+
+    - id: environment
+      type: variable
+      params:
+        type: string
+        default: staging
+
+    - id: state_encryption
+      type: encryption
+      params:
+        key_provider:
+          pbkdf2:
+            main:
+              passphrase: ${state_passphrase}
+        method:
+          aes_gcm:
+            main:
+              keys: ${key_provider.pbkdf2.main}
+        # enforced refuses to read or write an unencrypted state, so a
+        # misconfiguration fails instead of quietly storing secrets in the clear.
+        state:
+          method: ${method.aes_gcm.main}
+          enforced: true
+        plan:
+          method: ${method.aes_gcm.main}
+          enforced: true
+
+    - id: release_name
+      type: local
+      params:
+        value: web-${environment}
+
+    - id: release
+      type: terraform_data
+      params:
+        input: ${release_name}
+
+    - id: smoke_test
+      type: terraform_data
+      params:
+        input: checked
+      dependsOn:
+        - resource: release
+
+  outputs:
+    - name: release
+      value: ${release.output}
+    - name: passphrase_fingerprint
+      value: ${substr(sha256(state_passphrase), 0, 12)}
