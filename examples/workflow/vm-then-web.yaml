@@ -1,0 +1,54 @@
+# Two stages in one workflow: Terraform creates a machine, then Ansible
+# configures it.
+#
+# The ResourceSet's host is not written down anywhere. It is the `address`
+# output of the Infrastructure document, read after that document has been
+# applied. Until then `meridian plan` reports the second stage as deferred.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: machine
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        region: eu-west-1
+
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        tags:
+          Name: web
+
+  outputs:
+    - name: address
+      value: ${web.public_ip}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: site
+spec:
+  target: ansible
+  targetHost:
+    from: infrastructure
+    ref: machine
+    output: address
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg
