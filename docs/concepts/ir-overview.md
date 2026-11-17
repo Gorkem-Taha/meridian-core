@@ -71,6 +71,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
 | `packer` | the part of a build, then Packer's own type | `source.amazon-ebs`, `provisioner.shell` |
+| `pulumi` | the Pulumi type token | `aws:ec2:Instance` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
 | `helm` | API version and kind, the same as `kubernetes` | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |

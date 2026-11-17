@@ -6,7 +6,7 @@ them as two stages. This page says why they are not one.
 ## They answer different questions
 
 An Infrastructure document answers "what should exist?" Its tools (Terraform,
-CloudFormation, Bicep, Docker, Kubernetes, Helm) create things through an API, keep
+CloudFormation, Bicep, Pulumi, Docker, Kubernetes, Helm) create things through an API, keep
 track of what they created, and can tell you facts about the result: an address,
 an id, a URL.
 

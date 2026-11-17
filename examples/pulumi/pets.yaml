@@ -1,0 +1,41 @@
+# A program that needs no cloud account: Pulumi's random provider makes up a
+# name and a password. It is the document the plugin's own tests run against
+# the real `pulumi`, and a quick way to try the target:
+#
+#   meridian apply examples/pulumi/pets.yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: pets
+spec:
+  target: pulumi
+  resources:
+    - id: prefix
+      type: config
+      params:
+        type: string
+        default: web
+
+    - id: pet
+      type: random:index:RandomPet
+      params:
+        prefix: ${prefix}
+        length: 2
+
+    - id: password
+      type: random:index:RandomPassword
+      params:
+        length: 24
+        special: false
+      # Nothing in the params refers to the pet, so the order is stated.
+      dependsOn:
+        - resource: pet
+
+  outputs:
+    - name: pet_name
+      value: ${pet.id}
+    - name: greeting
+      value: hello from ${pet.id} on ${pulumi.stack}
+    # The provider marks a password as a secret, so Meridian masks it.
+    - name: password
+      value: ${password.result}

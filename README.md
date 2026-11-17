@@ -32,6 +32,7 @@ The documentation is published from `docs/` on every merge, as a
 | [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
 | [`packer`](docs/targets/packer.md) | infrastructure as code (image building) | `build.pkr.json` | `packer` |
+| [`pulumi`](docs/targets/pulumi.md) | infrastructure as code | a Pulumi YAML program | `pulumi preview`, `pulumi up` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
 | [`podman`](docs/targets/podman.md) | containerization | Quadlet units | `systemctl` and `podman`, over `ssh` for another host |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |

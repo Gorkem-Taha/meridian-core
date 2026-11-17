@@ -109,6 +109,10 @@ fn matrix() -> String {
             &meridian_target_podman::PodmanRunner::from_env(),
         ),
         row(
+            &meridian_target_pulumi::Pulumi,
+            &meridian_target_pulumi::PulumiRunner::from_env(),
+        ),
+        row(
             &meridian_target_puppet::Puppet,
             &meridian_target_puppet::PuppetRunner::from_env(),
         ),

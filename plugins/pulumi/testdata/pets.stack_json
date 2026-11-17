@@ -1,0 +1,6 @@
+{
+  "backend": "",
+  "project": "pets",
+  "secretsProvider": "",
+  "stack": "dev"
+}

@@ -21,6 +21,7 @@ meridian-target-ansible
 meridian-target-cloud-init
 meridian-target-terraform
 meridian-target-opentofu
+meridian-target-pulumi
 meridian-target-helm
 meridian-target-packer
 ...
@@ -60,6 +61,7 @@ hand:
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
 | `packer` | `packer` 1.7 or later |
+| `pulumi` | `pulumi` |
 | `docker` | `docker` with the Compose plugin |
 | `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |

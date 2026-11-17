@@ -618,6 +618,7 @@ dependencies = [
  "meridian-target-opentofu",
  "meridian-target-packer",
  "meridian-target-podman",
+ "meridian-target-pulumi",
  "meridian-target-puppet",
  "meridian-target-salt",
  "meridian-target-terraform",
@@ -812,6 +813,16 @@ dependencies = [
  "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-pulumi"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]
