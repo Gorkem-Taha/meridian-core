@@ -1,0 +1,78 @@
+# A SQL server with a database, a firewall rule and a delete lock: child
+# resources, names made from parameters, and a resource that extends another.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: orders-db
+spec:
+  target: arm
+  resources:
+    - id: deployment
+      type: deployment
+      params:
+        resourceGroup: orders-rg
+        # Complete: whatever the group holds that this document does not
+        # declare is deleted.
+        mode: Complete
+
+    - id: environment
+      type: parameter
+      params:
+        type: string
+        defaultValue: dev
+        allowedValues: [dev, test, prod]
+
+    - id: sql_admin_password
+      type: parameter
+      params:
+        type: securestring
+
+    - id: server
+      type: Microsoft.Sql/servers
+      params:
+        apiVersion: "2023-05-01-preview"
+        # The name is only known when deploying.
+        name: orders-${environment}-sql
+        location: "[resourceGroup().location]"
+        properties:
+          administratorLogin: orders_admin
+          administratorLoginPassword: ${sql_admin_password}
+          minimalTlsVersion: "1.2"
+
+    # A child resource: its type has two levels, and so has its name.
+    - id: database
+      type: Microsoft.Sql/servers/databases
+      params:
+        apiVersion: "2023-05-01-preview"
+        name: ${server.name}/orders
+        location: "[resourceGroup().location]"
+        sku:
+          name: "[if(equals(${environment}, 'prod'), 'S3', 'Basic')]"
+
+    - id: office
+      type: Microsoft.Sql/servers/firewallRules
+      params:
+        apiVersion: "2023-05-01-preview"
+        name: ${server.name}/office
+        properties:
+          startIpAddress: 203.0.113.10
+          endIpAddress: 203.0.113.10
+
+    # An extension resource: `scope` names the resource it is attached to.
+    - id: keep
+      type: Microsoft.Authorization/locks
+      params:
+        apiVersion: "2020-05-01"
+        name: keep-orders
+        scope: ${database}
+        properties:
+          level: CanNotDelete
+          notes: The orders database is not to be deleted by hand.
+
+  outputs:
+    - name: server_fqdn
+      value: ${server.properties.fullyQualifiedDomainName}
+    - name: connection_string
+      value: Server=tcp:${server.properties.fullyQualifiedDomainName},1433;Database=${database.name};
+    - name: lock_id
+      value: ${keep}

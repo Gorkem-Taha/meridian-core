@@ -2,7 +2,7 @@
 
 use meridian_sdk::CompileError;
 
-use crate::{refuse_at, Composition, Section, NAME};
+use crate::{check, refuse_at, Composition, Section, NAME};
 
 /// A Compose project name: lower-case letters, digits, hyphens and
 /// underscores, starting with a letter or digit.
@@ -48,10 +48,12 @@ pub(crate) fn validate(composition: &Composition) -> Result<(), CompileError> {
         ));
     }
     for element in &composition.elements {
+        check::attributes(element)?;
         if element.section == Section::Service
             && !element.body.contains_key("image")
             && !element.body.contains_key("build")
             && !element.body.contains_key("extends")
+            && !element.body.contains_key("provider")
         {
             return Err(refuse_at(
                 &element.id,
@@ -61,6 +63,7 @@ pub(crate) fn validate(composition: &Composition) -> Result<(), CompileError> {
             ));
         }
     }
+    check::references(composition)?;
     let mut outputs = std::collections::BTreeSet::new();
     for (name, _) in &composition.outputs {
         if !outputs.insert(name) {

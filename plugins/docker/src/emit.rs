@@ -9,8 +9,8 @@ use crate::{Composition, OutputPart, Section};
 
 /// The Compose file.
 pub const COMPOSE_PATH: &str = "compose.yaml";
-/// What the project is called, which daemon it runs on, and how to read each
-/// output. The runner reads it; Docker never does.
+/// What the project is called, which daemon it runs on, how it is brought up
+/// and how to read each output. The runner reads it; Docker never does.
 pub const PROJECT_PATH: &str = "project.json";
 
 /// The keys of a service a reader looks for first.
@@ -110,6 +110,23 @@ pub(crate) fn serialise(composition: &Composition) -> BTreeMap<String, String> {
         ("name", string(&composition.project.name)),
         ("host", string(&composition.project.host)),
         ("context", string(&composition.project.context)),
+        ("directory", string(&composition.project.directory)),
+        (
+            "profiles",
+            Value::List(
+                composition
+                    .project
+                    .profiles
+                    .iter()
+                    .map(|p| string(p))
+                    .collect(),
+            ),
+        ),
+        ("wait", Value::Bool(composition.project.wait)),
+        (
+            "wait_timeout",
+            Value::Uint(composition.project.wait_timeout),
+        ),
         ("services", named(Section::Service)),
         ("outputs", Value::List(outputs)),
     ]);

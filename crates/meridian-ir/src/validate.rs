@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use crate::condition::Condition;
 use crate::error::{Error, ErrorList, Position};
 use crate::parse::parse_file;
 use crate::types::*;
@@ -212,6 +213,11 @@ fn validate_document(doc: &Document, errs: &mut ErrorList) {
                 "missing required field".into(),
             );
         }
+        if !r.when.is_empty() {
+            if let Err(why) = Condition::parse(&r.when) {
+                fail(&r.pos, format!("{path}.when"), why);
+            }
+        }
     }
 
     for (i, r) in resources.iter().enumerate() {
@@ -245,6 +251,18 @@ fn validate_document(doc: &Document, errs: &mut ErrorList) {
         for (j, n) in r.notifies.iter().enumerate() {
             let p = format!("{path}.notifies[{j}]");
             check_if_missing(&n.if_missing, &n.pos, &p, &mut fail);
+            if !n.on.is_empty() && n.on != NOTIFY_ON_CHANGED {
+                fail(
+                    &n.pos,
+                    format!("{p}.on"),
+                    format!(
+                        "unknown event {:?} (expected {NOTIFY_ON_CHANGED:?}, which is also \
+                         what leaving `on` out means: a notify fires when the resource \
+                         really changes, and no target can fire one on anything else)",
+                        n.on
+                    ),
+                );
+            }
             if n.action.is_empty() {
                 fail(
                     &n.pos,
@@ -275,6 +293,18 @@ fn validate_document(doc: &Document, errs: &mut ErrorList) {
                 );
             }
         }
+    }
+
+    if let Some((at, cycle)) = dependency_cycle(resources) {
+        fail(
+            &resources[at].pos,
+            format!("spec.resources[{at}].dependsOn"),
+            format!(
+                "dependency cycle among {} resources: {}",
+                cycle.len() - 1,
+                cycle.join(" -> ")
+            ),
+        );
     }
 
     if let Document::Infrastructure(infra) = doc {
@@ -312,4 +342,76 @@ fn check_if_missing(
             format!("unknown policy {v:?} (expected \"error\" or \"skip\")"),
         );
     }
+}
+
+/// Finds one dependency cycle among a document's resources: the index of the
+/// resource it is reported at, and the ids along it, closing on the id it
+/// opened with and read in apply order (each resource is waited for by the
+/// next).
+///
+/// Only `dependsOn` counts. A notify is a deferred trigger, not an ordering
+/// constraint, and a notification loop is legal. Every resource is
+/// considered, whatever its `when` says: an order that only works while one
+/// condition happens to be false is still a mistake in the document.
+///
+/// The walk follows declaration order, so the same document always reports
+/// the same cycle, and it keeps its own stack, because a chain of
+/// dependencies can be as long as the document.
+fn dependency_cycle(resources: &[Resource]) -> Option<(usize, Vec<String>)> {
+    #[derive(Clone, Copy, PartialEq)]
+    enum State {
+        Unvisited,
+        OnPath,
+        Done,
+    }
+    let mut by_id: HashMap<&str, usize> = HashMap::with_capacity(resources.len());
+    for (i, r) in resources.iter().enumerate() {
+        // The first declaration wins; a duplicate id is reported on its own.
+        by_id.entry(r.id.as_str()).or_insert(i);
+    }
+    // Per resource, the resources that depend on it, in declaration order.
+    let mut dependents: Vec<Vec<usize>> = vec![Vec::new(); resources.len()];
+    for (to, r) in resources.iter().enumerate() {
+        for dep in &r.depends_on {
+            match by_id.get(dep.resource.as_str()) {
+                // A resource depending on itself has its own diagnostic.
+                Some(&from) if from != to => dependents[from].push(to),
+                _ => {}
+            }
+        }
+    }
+
+    let mut state = vec![State::Unvisited; resources.len()];
+    for start in 0..resources.len() {
+        if state[start] != State::Unvisited {
+            continue;
+        }
+        let mut path: Vec<(usize, usize)> = vec![(start, 0)];
+        state[start] = State::OnPath;
+        while let Some(&mut (node, ref mut followed)) = path.last_mut() {
+            let Some(&next) = dependents[node].get(*followed) else {
+                state[node] = State::Done;
+                path.pop();
+                continue;
+            };
+            *followed += 1;
+            match state[next] {
+                State::OnPath => {
+                    let opens = path.iter().position(|&(n, _)| n == next).unwrap_or(0);
+                    let mut cycle: Vec<String> = path[opens..]
+                        .iter()
+                        .map(|&(n, _)| resources[n].id.clone())
+                        .collect();
+                    cycle.push(resources[next].id.clone());
+                    return Some((next, cycle));
+                }
+                State::Unvisited => {
+                    state[next] = State::OnPath;
+                    path.push((next, 0));
+                }
+                State::Done => {}
+            }
+        }
+    }
+    None
 }

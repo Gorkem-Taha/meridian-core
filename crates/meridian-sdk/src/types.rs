@@ -106,6 +106,10 @@ pub struct ResourceGraph {
     pub host: String,
     /// The target name the document selected.
     pub target: String,
+    /// The version of the tool the document asked for with
+    /// `spec.targetVersion`, or empty. The host only hands over a version the
+    /// plugin declared in [`Emitter::target_versions`], or one under it.
+    pub target_version: String,
     pub resources: Vec<Resource>,
     pub edges: Vec<Edge>,
     /// What the document promises to later stages. Only a document that
@@ -149,6 +153,9 @@ impl ResourceGraph {
             "name={}\nhost={}\ntarget={}\n",
             self.name, self.host, self.target
         );
+        if !self.target_version.is_empty() {
+            let _ = writeln!(out, "targetVersion={}", self.target_version);
+        }
         for r in &self.resources {
             let _ = writeln!(
                 out,
@@ -304,6 +311,16 @@ pub trait Emitter {
     /// should say.
     fn category(&self) -> Category {
         Category::Unspecified
+    }
+    /// The versions of its tool this target compiles for, such as `"3"` or
+    /// `"1.9"`. A document's `spec.targetVersion` must be one of them, or a
+    /// more specific version under one of them (`"3.1"` under `"3"`).
+    ///
+    /// The default, an empty list, means the target does not say. A document
+    /// that asks such a target for a version is refused, because accepting a
+    /// version nothing checks would be a silent loss.
+    fn target_versions(&self) -> Vec<String> {
+        Vec::new()
     }
     /// Compiles the tree, or refuses it.
     fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, CompileError>;

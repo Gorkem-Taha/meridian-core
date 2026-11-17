@@ -137,6 +137,25 @@ fn depend(
             Value::String("service_started".to_owned()),
         )]))
     };
+    // A dependency Meridian writes waits for the other service to be healthy
+    // when it can say so, and to have started when it cannot.
+    let healthy = composition
+        .elements
+        .iter()
+        .any(|e| e.id == on && e.section == Section::Service && crate::check::has_healthcheck(e));
+    let waited = || {
+        Value::Map(BTreeMap::from([(
+            "condition".to_owned(),
+            Value::String(
+                if healthy {
+                    "service_healthy"
+                } else {
+                    "service_started"
+                }
+                .to_owned(),
+            ),
+        )]))
+    };
     let slot = composition.elements[index]
         .body
         .entry("depends_on".to_owned())
@@ -154,7 +173,7 @@ fn depend(
     let Value::Map(dependencies) = slot else {
         return Err("depends_on must be a list or a map".to_owned());
     };
-    let entry = dependencies.entry(on.to_owned()).or_insert_with(started);
+    let entry = dependencies.entry(on.to_owned()).or_insert_with(waited);
     let Value::Map(entry) = entry else {
         return Err(format!("depends_on.{on} must be a map"));
     };

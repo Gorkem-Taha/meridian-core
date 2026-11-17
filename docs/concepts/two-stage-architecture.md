@@ -6,14 +6,22 @@ them as two stages. This page says why they are not one.
 ## They answer different questions
 
 An Infrastructure document answers "what should exist?" Its tools (Terraform,
-CloudFormation, Bicep, Docker, Kubernetes) create things through an API, keep
+CloudFormation, Bicep, ARM templates, Pulumi, Docker, Kubernetes, Helm) create things through an API, keep
 track of what they created, and can tell you facts about the result: an address,
 an id, a URL.
 
 A ResourceSet answers "how should this machine be set up?" Its tools (Ansible,
-Puppet, Chef, DSC) log in to a machine, or run on it, and converge packages,
+Puppet, OpenVox, Chef, DSC) log in to a machine, or run on it, and converge packages,
 files and services. They need the machine to exist first, and they need to know
 where it is.
+
+Meridian holds a document to its question. Each plugin declares its category,
+and a ResourceSet aimed at Terraform, or an Infrastructure document aimed at
+Ansible, is refused when it is compiled. Docker is the one tool that answers
+both: a container project either stands on its own, or runs on the daemon of a
+machine the document names, so the `docker` target takes either kind.
+[The table](../reference/dsl/index.md#the-document) is in the language
+reference.
 
 A single graph over both would have to pretend that "create a VM" and "install
 nginx" are the same sort of step. They are not: one of them does not have a

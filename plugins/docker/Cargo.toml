@@ -11,6 +11,7 @@ meridian-sdk = { path = "../../crates/meridian-sdk" }
 meridian-yaml = { path = "../../crates/meridian-yaml" }
 
 [dev-dependencies]
+meridian-plugin-host = { path = "../../crates/meridian-plugin-host" }
 meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
 
 [lints]

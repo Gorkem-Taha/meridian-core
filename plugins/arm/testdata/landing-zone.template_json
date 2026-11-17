@@ -1,0 +1,74 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Compiled by Meridian from the document landing-zone. Do not edit."
+  },
+  "outputs": {
+    "network_rg_id": {
+      "type": "string",
+      "value": "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'network-rg')]"
+    },
+    "workload_location": {
+      "type": "string",
+      "value": "[string(reference(subscriptionResourceId('Microsoft.Resources/resourceGroups', 'workload-rg'), '2024-03-01', 'Full').location)]"
+    }
+  },
+  "parameters": {
+    "owner": {
+      "defaultValue": "platform-team",
+      "type": "string"
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "2024-03-01",
+      "location": "australiaeast",
+      "name": "network-rg",
+      "tags": {
+        "owner": "[parameters('owner')]"
+      },
+      "type": "Microsoft.Resources/resourceGroups"
+    },
+    {
+      "apiVersion": "2024-03-01",
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'network-rg')]"
+      ],
+      "location": "australiaeast",
+      "name": "workload-rg",
+      "tags": {
+        "network": "network-rg",
+        "owner": "[parameters('owner')]"
+      },
+      "type": "Microsoft.Resources/resourceGroups"
+    },
+    {
+      "apiVersion": "2023-11-01",
+      "dependsOn": [
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'network-rg')]",
+        "[subscriptionResourceId('Microsoft.Resources/resourceGroups', 'workload-rg')]"
+      ],
+      "name": "landing-zone-budget",
+      "properties": {
+        "amount": 500,
+        "category": "Cost",
+        "filter": {
+          "dimensions": {
+            "name": "ResourceGroupName",
+            "operator": "In",
+            "values": [
+              "network-rg",
+              "workload-rg"
+            ]
+          }
+        },
+        "timeGrain": "Monthly",
+        "timePeriod": {
+          "startDate": "2026-12-01"
+        }
+      },
+      "type": "Microsoft.Consumption/budgets"
+    }
+  ]
+}

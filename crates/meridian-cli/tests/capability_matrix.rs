@@ -65,6 +65,10 @@ fn matrix() -> String {
             &meridian_target_ansible::AnsibleRunner::from_env(),
         ),
         row(
+            &meridian_target_arm::Arm,
+            &meridian_target_arm::ArmRunner::from_env(),
+        ),
+        row(
             &meridian_target_bicep::Bicep,
             &meridian_target_bicep::BicepRunner::from_env(),
         ),
@@ -89,16 +93,40 @@ fn matrix() -> String {
             &meridian_target_dsc::DscRunner::from_env(),
         ),
         row(
+            &meridian_target_helm::Helm,
+            &meridian_target_helm::HelmRunner::from_env(),
+        ),
+        row(
             &meridian_target_kubernetes::Kubernetes,
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
+        ),
+        row(
+            &meridian_target_opentofu::OpenTofu,
+            &meridian_target_opentofu::OpenTofuRunner::from_env(),
+        ),
+        row(
+            &meridian_target_packer::Packer,
+            &meridian_target_packer::PackerRunner::from_env(),
         ),
         row(
             &meridian_target_podman::Podman,
             &meridian_target_podman::PodmanRunner::from_env(),
         ),
         row(
+            &meridian_target_pulumi::Pulumi,
+            &meridian_target_pulumi::PulumiRunner::from_env(),
+        ),
+        row(
+            &meridian_target_openvox::OpenVox,
+            &meridian_target_openvox::OpenVoxRunner::from_env(),
+        ),
+        row(
             &meridian_target_puppet::Puppet,
             &meridian_target_puppet::PuppetRunner::from_env(),
+        ),
+        row(
+            &meridian_target_salt::Salt,
+            &meridian_target_salt::SaltRunner::from_env(),
         ),
         row(
             &meridian_target_terraform::Terraform,

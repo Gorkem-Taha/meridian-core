@@ -1,0 +1,87 @@
+# A virtual machine on AWS with a fixed public address, provisioned by Pulumi.
+#
+# Every resource's type is the Pulumi type token and its params are that
+# type's properties. ${id.property} refers to another resource of this
+# document.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: pulumi
+  resources:
+    # Where the program is deployed. Without this the stack is called "dev".
+    - id: deployment
+      type: stack
+      params:
+        name: prod
+
+    # A setting of the AWS provider. The name is the provider's, so it is
+    # given apart from the id.
+    - id: region
+      type: config
+      params:
+        name: aws:region
+        value: us-east-1
+
+    # A value the program takes. An earlier stage's output, or
+    # `pulumi config set instance_type ...`, replaces the default.
+    - id: instance_type
+      type: config
+      params:
+        type: string
+        default: t3.small
+
+    # A function call: look up the newest Ubuntu image.
+    - id: ubuntu
+      type: invoke.aws:ec2:getAmi
+      params:
+        mostRecent: true
+        owners: ["099720109477"]
+        filters:
+          - name: name
+            values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+
+    - id: web_sg
+      type: aws:ec2:SecurityGroup
+      params:
+        ingress:
+          - fromPort: 80
+            toPort: 80
+            protocol: tcp
+            cidrBlocks: ["0.0.0.0/0"]
+
+    - id: web_vm
+      type: aws:ec2:Instance
+      params:
+        ami: ${ubuntu.id}
+        instanceType: ${instance_type}
+        vpcSecurityGroupIds: ["${web_sg.id}"]
+        tags:
+          Name: web-${pulumi.stack}
+        # Pulumi's resource options sit beside the properties.
+        resourceOptions:
+          ignoreChanges: [ami]
+
+    - id: web_ip
+      type: aws:ec2:Eip
+      params:
+        instance: ${web_vm.id}
+      # The reference above already orders this after the machine, so no
+      # dependsOn is written for it.
+      dependsOn:
+        - resource: web_vm
+
+    - id: announce
+      type: command:local:Command
+      params:
+        create: echo ready
+      # Nothing in the params says so, so this one becomes dependsOn.
+      dependsOn:
+        - resource: web_ip
+
+  outputs:
+    - name: web_vm_ip
+      value: ${web_ip.publicIp}
+    - name: web_url
+      value: http://${web_ip.publicDns}/

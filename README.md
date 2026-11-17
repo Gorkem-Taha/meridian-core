@@ -14,19 +14,31 @@ quietly does less.
 Early, and moving quickly. The accepted specifications are in [`docs/`](docs/index.md);
 start with the [design plan](docs/plans/design-plan.md).
 
+The documentation is published from `docs/` on every merge, as a
+[site](https://zanattamichael.github.io/meridian-core/) and as this repository's
+[wiki](https://github.com/ZanattaMichael/meridian-core/wiki);
+[how the wiki is published](docs/contributing/documentation-site.md) says how.
+
 | Plugin | Category | Compiles to | Runs with |
 |---|---|---|---|
 | [`ansible`](docs/targets/ansible.md) | configuration management | a playbook and inventory | `ansible-playbook` |
 | [`puppet`](docs/targets/puppet.md) | configuration management | a class and node statement | `puppet apply`, or `bolt apply` for another host |
+| [`salt`](docs/targets/salt.md) | configuration management | a state file and top file | `salt-call --local`, or `salt-ssh` for another host |
+| [`openvox`](docs/targets/openvox.md) | configuration management | a class and node statement | OpenVox's `puppet apply`, or OpenBolt's `bolt apply` for another host |
 | [`chef`](docs/targets/chef.md) | configuration management | a cookbook | `chef-client`, or `chef-run` for another host |
 | [`dsc`](docs/targets/dsc.md) | configuration management | a DscPipelineRunner configuration | `Invoke-DscRunner` (DSC v2 and v3) |
 | [`cloud-init`](docs/targets/cloud-init.md) | configuration management | first-boot user-data and a NoCloud seed | `cloud-init schema` to check it; the machine applies it on its first boot |
 | [`terraform`](docs/targets/terraform.md) | infrastructure as code | `main.tf.json` | `terraform`, or `tofu` |
+| [`opentofu`](docs/targets/opentofu.md) | infrastructure as code | `main.tofu.json`, with state and plan encryption | `tofu` |
 | [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
+| [`arm`](docs/targets/arm.md) | infrastructure as code | an ARM JSON template | `az deployment group`, or `az deployment sub` |
+| [`packer`](docs/targets/packer.md) | infrastructure as code (image building) | `build.pkr.json` | `packer` |
+| [`pulumi`](docs/targets/pulumi.md) | infrastructure as code | a Pulumi YAML program | `pulumi preview`, `pulumi up` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
 | [`podman`](docs/targets/podman.md) | containerization | Quadlet units | `systemctl` and `podman`, over `ssh` for another host |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
+| [`helm`](docs/targets/helm.md) | container orchestration | a Helm chart, with an optional Kustomize overlay | `helm upgrade --install`, with `kustomize build` for an overlay |
 
 What each can and cannot express is in the generated
 [capability matrix](docs/reference/capability-matrix.md). To get started, read the

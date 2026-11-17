@@ -1,0 +1,36 @@
+# Something to try on your own machine without root: two files and a command
+# under /tmp, applied by `puppet apply` because the host is localhost.
+#
+#   meridian plan  examples/openvox/local.yaml
+#   meridian apply examples/openvox/local.yaml
+#   meridian plan  examples/openvox/local.yaml    # now reports nothing to do
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: hello
+spec:
+  target: openvox
+  targetHost:
+    from: inline
+    host: localhost
+  resources:
+    - id: hello_dir
+      type: file
+      state: directory
+      params:
+        path: /tmp/meridian-hello
+    - id: hello_conf
+      type: file
+      params:
+        path: /tmp/meridian-hello/hello.conf
+        content: "greeting = hello\n"
+        mode: "0644"
+      dependsOn:
+        - resource: hello_dir
+    - id: hello_stamp
+      type: exec
+      params:
+        command: /bin/sh -c 'date > /tmp/meridian-hello/first-applied'
+        creates: /tmp/meridian-hello/first-applied
+      dependsOn:
+        - resource: hello_conf

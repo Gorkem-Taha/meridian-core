@@ -13,7 +13,8 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Composition, CompileErr
         project: Project {
             name: graph.name.clone(),
             host: daemon_of(&graph.host),
-            context: String::new(),
+            wait: true,
+            ..Project::default()
         },
         ..Composition::default()
     };
@@ -177,25 +178,64 @@ fn check_meta(r: &Resource) -> Result<(), CompileError> {
 }
 
 fn read_project(r: &Resource, project: &mut Project) -> Result<(), CompileError> {
+    let invalid = |msg: String| refuse(r, "invalid-param", msg);
     for (name, value) in &r.params {
-        let Value::String(text) = value else {
-            return Err(refuse(
-                r,
-                "invalid-param",
-                format!("param {name:?} of the project must be a string"),
-            ));
-        };
-        match name.as_str() {
-            "name" => project.name = text.clone(),
-            "host" => project.host = daemon_of(text),
-            "context" => project.context = text.clone(),
+        match (name.as_str(), value) {
+            ("name", Value::String(text)) => project.name = text.clone(),
+            ("host", Value::String(text)) => project.host = daemon_of(text),
+            ("context", Value::String(text)) => project.context = text.clone(),
+            ("directory", Value::String(text)) if text.starts_with(['/', '~']) => {
+                project.directory = text.clone();
+            }
+            ("directory", _) => {
+                return Err(invalid(
+                    "param \"directory\" of the project must be an absolute path: it is the \
+                     directory Compose resolves the file's relative paths against"
+                        .to_owned(),
+                ))
+            }
+            ("name" | "host" | "context", _) => {
+                return Err(invalid(format!(
+                    "param {name:?} of the project must be a string"
+                )))
+            }
+            ("profiles", Value::List(items)) => {
+                for item in items {
+                    let Value::String(profile) = item else {
+                        return Err(invalid("every profile must be a string".to_owned()));
+                    };
+                    project.profiles.push(profile.clone());
+                }
+            }
+            ("profiles", _) => {
+                return Err(invalid(
+                    "param \"profiles\" of the project must be a list".to_owned(),
+                ))
+            }
+            ("wait", Value::Bool(wait)) => project.wait = *wait,
+            ("wait", _) => {
+                return Err(invalid(
+                    "param \"wait\" of the project must be true or false".to_owned(),
+                ))
+            }
+            ("wait_timeout", Value::Int(seconds)) if *seconds > 0 => {
+                project.wait_timeout = seconds.unsigned_abs();
+            }
+            ("wait_timeout", _) => {
+                return Err(invalid(
+                    "param \"wait_timeout\" of the project must be a whole number of seconds, \
+                     greater than zero"
+                        .to_owned(),
+                ))
+            }
             _ => {
                 return Err(refuse(
                     r,
                     "unsupported-param",
                     format!(
                         "resource type \"project\" does not accept param {name:?} on this \
-                         target (accepted: context, host, name)"
+                         target (accepted: context, directory, host, name, profiles, wait, \
+                         wait_timeout)"
                     ),
                 ))
             }

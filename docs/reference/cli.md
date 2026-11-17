@@ -2,9 +2,9 @@
 
 ```
 meridian validate <files>...
-meridian compile  <files>... [--out DIR]
-meridian plan     <files>...
-meridian apply    <files>...
+meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
+meridian plan     <files>... [-l SELECTOR] [--data FILE]
+meridian apply    <files>... [-l SELECTOR] [--data FILE]
 meridian plugins
 ```
 
@@ -17,9 +17,19 @@ documents separated by `---`. Infrastructure documents run before ResourceSets
 ### `validate`
 
 Checks the documents and loads no plugin: required fields, unique ids,
-dependencies that exist and form no cycle, and hand-offs between documents that
-name a real document and output. Errors give the file, line and field. It does
-not know what a target can express; `compile` does.
+dependencies that exist and do not form a cycle, conditions that are written in
+the condition language, and hand-offs between documents that name a real
+document and output. Errors give the file, line and field. A cycle is reported
+with the resources in it:
+
+```
+site.yaml:12:7: spec.resources[1].dependsOn: dependency cycle among 2 resources: key -> lock -> key
+```
+
+It does not know what a target can express, so it cannot say whether the
+target takes the document's kind, its `targetVersion` or its resource types;
+`compile` does. [Which check happens when](dsl/index.md#which-check-happens-when)
+has the full list.
 
 ### `compile`
 
@@ -29,6 +39,18 @@ command only reports whether each document compiles, with any warnings.
 
 A ResourceSet whose host is an output that has not been produced yet is reported
 as deferred.
+
+Before a document reaches its plugin, Meridian settles what is its own to
+settle, and refuses the document if it cannot:
+
+- the document's kind is one the target's category takes
+  ([the pairing](dsl/index.md#the-document));
+- the target compiles for the document's
+  [`targetVersion`](dsl/index.md#targetversion), if it sets one;
+- every [`when`](dsl/index.md#when-and-runtimewhen) is decided from the `--data`
+  files, and the resources whose condition is false are left out.
+
+`plan` and `apply` compile first, so the same holds for them.
 
 ### `plan`
 
@@ -54,7 +76,21 @@ Values a tool marks sensitive are shown as `(sensitive)`.
 ### `plugins`
 
 Lists every plugin Meridian can find: its category, what it can do, the resource
-types it takes, and where its binary is.
+types it takes, the versions of its tool it compiles for (when it declares any),
+and where its binary is.
+
+```
+dsc
+  category:  configuration-management
+  can:       compile, plan, apply
+  resources: <Module>/<Resource>, runner
+  versions:  2, 3
+  sdk:       0.1.0 (protocol 2)
+  binary:    /usr/local/bin/meridian-target-dsc
+```
+
+The category decides which kind of document the plugin is handed, and the
+versions decide which `targetVersion` a document may ask it for.
 
 ## Options
 
@@ -63,6 +99,28 @@ types it takes, and where its binary is.
 | `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`) | the directory `meridian` is in | where to look for plugins; may be repeated |
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and the outputs of applied stages |
 | `--out DIR` | | | `compile` only: where to write the compiled files |
+| `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
+| `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
+
+### Running part of a workflow
+
+```
+meridian apply site.yaml -l tier=web
+```
+
+Only the documents labelled `tier: web` run. The others are still loaded and
+checked, and a selected document can still take its host from an unselected
+one's last apply. A selector that matches no document is an error.
+
+### Deciding conditions
+
+```
+meridian plan site.yaml --data common.yaml --data prod.yaml
+```
+
+A resource with `when: "data.env != 'prod'"` is in the plan or not, depending on
+what the data files say `env` is. A condition that reads a key no file sets is
+an error; nothing is guessed.
 
 ## Exit status
 

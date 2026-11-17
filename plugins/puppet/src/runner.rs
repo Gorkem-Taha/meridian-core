@@ -78,7 +78,9 @@ impl PuppetRunner {
         }
     }
 
-    fn transport_for(&self, host: &str) -> Transport {
+    /// How a manifest for `host` would be applied: the forced transport, or
+    /// the one the host implies.
+    pub fn transport_for(&self, host: &str) -> Transport {
         self.transport
             .unwrap_or(if matches!(host, "" | "localhost" | "127.0.0.1" | "::1") {
                 Transport::Local
@@ -246,9 +248,15 @@ impl Report {
     /// Records one event against a resource, folding several properties of
     /// one resource into a single change.
     fn record(&mut self, resource: &str, property: &str, message: &str) {
-        let action = if message == "created" || message.contains("current_value 'absent'") {
+        // A noop run says what a real one would, with a suffix. A new file
+        // with content is "defined content as ...", not "created".
+        let said = message.strip_suffix(" (noop)").unwrap_or(message);
+        let action = if said == "created"
+            || (property == "ensure" && said.starts_with("defined content as "))
+            || message.contains("current_value 'absent'")
+        {
             ChangeAction::Create
-        } else if message == "removed" || message.contains("should be 'absent'") {
+        } else if said == "removed" || message.contains("should be 'absent'") {
             ChangeAction::Delete
         } else {
             ChangeAction::Update
@@ -290,7 +298,9 @@ struct Reader<'a> {
 impl Log for Reader<'_> {
     fn line(&self, line: LogLine) {
         if line.stream == LogStream::Stdout {
-            if let Some((resource, property, message)) = read_notice(&line.text) {
+            if let Some((resource, property, message)) =
+                read_notice(&line.text).filter(|(_, property, message)| is_event(property, message))
+            {
                 self.report
                     .lock()
                     .expect("no panic holds the report")
@@ -321,6 +331,21 @@ fn read_notice(text: &str) -> Option<(&str, &str, &str)> {
     };
     let (property, message) = after.split_once(": ")?;
     Some((title, property, message))
+}
+
+/// Whether a notice against a resource reports a change. Most do, and two
+/// kinds do not: a command's own output, which Puppet logs against the
+/// command's `returns` property, and a remark about a resource that was not
+/// touched, such as one skipped because a dependency failed.
+fn is_event(property: &str, message: &str) -> bool {
+    match property {
+        "" => {
+            message.starts_with("Triggered 'refresh'")
+                || message.starts_with("Would have triggered 'refresh'")
+        }
+        "returns" => message.strip_suffix(" (noop)").unwrap_or(message) == "executed successfully",
+        _ => true,
+    }
 }
 
 /// Reads the report Bolt prints with `--format json`: one item per target,
@@ -388,6 +413,59 @@ mod tests {
                 "Notice: Class[Meridian_web]: Would have triggered 'refresh' from 2 events"
             ),
             None
+        );
+    }
+
+    /// Lines as `puppet apply` really prints them, with and without
+    /// `--noop`.
+    #[test]
+    fn only_notices_that_report_a_change_are_events() {
+        fn events(text: &str) -> Option<(&str, &str, &str)> {
+            read_notice(text).filter(|(_, p, m)| is_event(p, m))
+        }
+        assert_eq!(
+            events("Notice: /Stage[main]/Meridian_site/Exec[stamp]/returns: executed successfully"),
+            Some(("stamp", "returns", "executed successfully"))
+        );
+        assert!(events(
+            "Notice: /Stage[main]/Meridian_site/Exec[stamp]/returns: executed successfully (noop)"
+        )
+        .is_some());
+        // A command's output is logged against the same property.
+        assert_eq!(
+            events("Notice: /Stage[main]/Meridian_site/Exec[broken]/returns: no such luck"),
+            None
+        );
+        assert_eq!(
+            events(
+                "Notice: /Stage[main]/Meridian_site/File[after]: Dependency Exec[broken] has failures: true"
+            ),
+            None
+        );
+        assert!(events(
+            "Notice: /Stage[main]/Meridian_site/Exec[reload]: Would have triggered 'refresh' from 1 event"
+        )
+        .is_some());
+    }
+
+    #[test]
+    fn a_noop_run_is_read_as_the_real_one_would_be() {
+        let mut report = Report::default();
+        report.record("dir", "ensure", "created (noop)");
+        report.record("conf", "ensure", "defined content as '{sha256}ca97' (noop)");
+        report.record("conf2", "ensure", "defined content as '{sha256}ca97'");
+        report.record("old", "ensure", "removed (noop)");
+        report.record("drift", "mode", "mode changed '0644' to '0600' (noop)");
+        let actions: Vec<ChangeAction> = report.changes.iter().map(|c| c.action).collect();
+        assert_eq!(
+            actions,
+            [
+                ChangeAction::Create,
+                ChangeAction::Create,
+                ChangeAction::Create,
+                ChangeAction::Delete,
+                ChangeAction::Update,
+            ]
         );
     }
 

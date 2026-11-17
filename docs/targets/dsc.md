@@ -1,5 +1,7 @@
 # Target: `dsc`
 
+<img src="../branding/logos/meridian-dsc.svg" width="72" alt="Meridian DSC plugin logo">
+
 Compiles a ResourceSet into a DscPipelineRunner configuration and runs it with
 `Invoke-DscRunner`.
 
@@ -35,6 +37,28 @@ One resource may have the type `runner`. It is not a DSC resource:
 | `engine` | `DscV2`, `DscV3`, or `Auto` (the default: v3 when `dsc` is installed) |
 | `target` | `Local`, `WinRM` or `SSH`: how the runner reaches the document's host |
 | `credential` | the name of a credential the runner resolves itself. The secret never appears in the document |
+
+### The version of DSC
+
+The plugin declares the versions `2` and `3`, and a document's
+[`targetVersion`](../reference/dsl/index.md#targetversion) chooses the engine:
+
+| `targetVersion` | Engine |
+|---|---|
+| not set | the runner's `engine`, or `Auto` |
+| `"2"` (or `"2.x"`) | `DscV2` |
+| `"3"` (or `"3.x"`) | `DscV3` |
+
+```yaml
+spec:
+  target: dsc
+  targetVersion: "3"
+```
+
+Say it once. A document whose `targetVersion` means one engine and whose
+`runner` names another (including `Auto`) is refused with the rule
+`conflicting-engine`; it is not resolved in favour of either. Any other version
+is refused by Meridian before the plugin is asked.
 
 When the document's host is another machine, `target` must be given. The runner
 cannot guess between WinRM and SSH, and Meridian will not guess for it.

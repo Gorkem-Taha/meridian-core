@@ -7,11 +7,14 @@ use std::path::{Path, PathBuf};
 
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
-    artifact_hash, run, work_dir, Mode, Observer, Options, Outcome, Quiet, RunState, StageId,
-    StageKind, StageReport, MASK,
+    artifact_hash, kind_fits, run, run_selected, selected, version_fits, work_dir, Mode, Observer,
+    Options, Outcome, Quiet, RunState, Selector, StageId, StageKind, StageReport, MASK,
 };
 use meridian_plugin_host::{Registry, StartOptions};
-use meridian_sdk::{ChangeAction, Data, LogLine, Value};
+use meridian_sdk::{
+    Capabilities, Category, ChangeAction, CompileError, Data, Emitted, Emitter, LogLine,
+    ResourceGraph, Value,
+};
 
 /// An Infrastructure document that "provisions" a machine by writing its
 /// address into a file, and a ResourceSet configured on whatever address that
@@ -393,4 +396,477 @@ fn an_artifact_hash_depends_on_content_and_not_on_how_files_are_split() {
     assert_ne!(a, artifact_hash(&artifact(&[("ab", "c"), ("d", "")])));
     assert_ne!(a, artifact_hash(&artifact(&[("a", "bcd")])));
     assert!(a.starts_with("sha256:") && a.len() == 71);
+}
+
+/// A target that lives in this process, so a test can give it any category
+/// and any list of versions. It compiles a document into one file listing
+/// what it was handed.
+struct InProcess {
+    name: &'static str,
+    category: Category,
+    versions: &'static [&'static str],
+}
+
+impl Emitter for InProcess {
+    fn name(&self) -> &str {
+        self.name
+    }
+    fn supported_resource_types(&self) -> Vec<String> {
+        vec!["file".to_owned()]
+    }
+    fn capabilities(&self) -> Capabilities {
+        Capabilities::default()
+    }
+    fn category(&self) -> Category {
+        self.category
+    }
+    fn target_versions(&self) -> Vec<String> {
+        self.versions.iter().map(|v| (*v).to_owned()).collect()
+    }
+    fn emit(&self, graph: &ResourceGraph, _data: &Data) -> Result<Emitted, CompileError> {
+        let mut emitted = Emitted::default();
+        emitted
+            .artifact
+            .files
+            .insert("tree".to_owned(), graph.canonical());
+        Ok(emitted)
+    }
+}
+
+const CATEGORIES: [(&str, Category); 5] = [
+    ("iac", Category::InfrastructureAsCode),
+    ("cm", Category::ConfigurationManagement),
+    ("containers", Category::Containerization),
+    ("cluster", Category::ContainerOrchestration),
+    ("old", Category::Unspecified),
+];
+
+fn in_process(versions: &'static [&'static str]) -> Registry {
+    let mut registry = Registry::new();
+    for (name, category) in CATEGORIES {
+        registry
+            .register(Box::new(InProcess {
+                name,
+                category,
+                versions,
+            }))
+            .unwrap();
+    }
+    registry
+}
+
+const PROVISION: &str = r#"apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: net
+spec:
+  target: TARGET
+  resources:
+    - id: vm
+      type: file
+"#;
+
+fn outcome_of(text: &str, registry: &Registry, test: &str) -> Outcome {
+    let report = run(
+        &bundle(text),
+        registry,
+        Mode::Compile,
+        &options(test),
+        &mut Quiet,
+    );
+    report.stages[0].outcome.clone()
+}
+
+fn failure(outcome: Outcome) -> String {
+    match outcome {
+        Outcome::Failed(why) => why,
+        other => panic!("expected a failure, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_document_is_only_handed_to_a_category_that_takes_its_kind() {
+    let registry = in_process(&[]);
+    let resource_set = |target: &str| INLINE.replace("TARGET", target).replace("CONTENT", "x");
+    let infrastructure = |target: &str| PROVISION.replace("TARGET", target);
+
+    // (target, takes a ResourceSet, takes an Infrastructure document)
+    for (target, takes_resource_set, takes_infrastructure) in [
+        ("iac", false, true),
+        ("cm", true, false),
+        ("containers", true, true),
+        ("cluster", false, true),
+        ("old", true, true),
+    ] {
+        let test = format!("category-{target}");
+        let got = outcome_of(&resource_set(target), &registry, &test);
+        assert_eq!(
+            got == Outcome::Compiled,
+            takes_resource_set,
+            "{target}: {got:?}"
+        );
+        let got = outcome_of(&infrastructure(target), &registry, &test);
+        assert_eq!(
+            got == Outcome::Compiled,
+            takes_infrastructure,
+            "{target}: {got:?}"
+        );
+    }
+
+    assert_eq!(
+        failure(outcome_of(&resource_set("iac"), &registry, "category-why")),
+        "this is a ResourceSet document, and its target is an infrastructure-as-code tool: it \
+         creates what should exist and is not pointed at one machine, so it takes kind: \
+         Infrastructure, without a targetHost"
+    );
+    assert_eq!(
+        failure(outcome_of(&infrastructure("cm"), &registry, "category-why")),
+        "this is an Infrastructure document, and its target is a configuration-management \
+         tool: it configures a machine that already exists, so it takes kind: ResourceSet, \
+         with a targetHost"
+    );
+    assert!(failure(outcome_of(
+        &resource_set("cluster"),
+        &registry,
+        "category-why"
+    ))
+    .contains("a container-orchestration tool"),);
+}
+
+#[test]
+fn the_pairing_of_kind_and_category_is_one_table() {
+    use Category::*;
+    use StageKind::*;
+    for (kind, category, fits) in [
+        (ResourceSet, ConfigurationManagement, true),
+        (ResourceSet, Containerization, true),
+        (ResourceSet, Unspecified, true),
+        (ResourceSet, InfrastructureAsCode, false),
+        (ResourceSet, ContainerOrchestration, false),
+        (Infrastructure, InfrastructureAsCode, true),
+        (Infrastructure, Containerization, true),
+        (Infrastructure, ContainerOrchestration, true),
+        (Infrastructure, Unspecified, true),
+        (Infrastructure, ConfigurationManagement, false),
+    ] {
+        assert_eq!(
+            kind_fits(kind, category).is_ok(),
+            fits,
+            "{kind:?} {category}"
+        );
+    }
+}
+
+#[test]
+fn a_wrong_pairing_is_refused_before_the_plugin_or_the_host_is_asked_for() {
+    // The ResourceSet names an Infrastructure output that does not exist yet.
+    // Without the check it would be reported as deferred, and the mistake
+    // would only surface after the infrastructure had been applied.
+    let registry = in_process(&[]);
+    let text = WORKFLOW
+        .replace(
+            "target: fake\n  targetHost",
+            "target: cluster\n  targetHost",
+        )
+        .replace("target: fake", "target: iac");
+    let report = run(
+        &bundle(&text),
+        &registry,
+        Mode::Compile,
+        &options("category-first"),
+        &mut Quiet,
+    );
+    assert_eq!(report.stages[0].outcome, Outcome::Compiled);
+    assert!(
+        failure(report.stages[1].outcome.clone()).starts_with("this is a ResourceSet document"),
+    );
+}
+
+#[test]
+fn a_target_version_must_be_one_the_target_declares() {
+    for (asked, declared, fits) in [
+        ("3", &["3"][..], true),
+        ("3.0", &["3"], true),
+        ("3.1.4", &["3"], true),
+        ("3.1.4", &["3.1"], true),
+        ("2", &["2", "3"], true),
+        ("4", &["2", "3"], false),
+        // A version is compared part by part, never as a prefix of text.
+        ("30", &["3"], false),
+        ("1.10", &["1.1"], false),
+        // The document may be more specific than the target, not less.
+        ("3", &["3.1"], false),
+        ("3", &[], false),
+    ] {
+        let declared: Vec<String> = declared.iter().map(|v| (*v).to_owned()).collect();
+        assert_eq!(
+            version_fits(asked, &declared),
+            fits,
+            "{asked} in {declared:?}"
+        );
+    }
+}
+
+#[test]
+fn a_target_version_reaches_the_plugin_or_the_document_is_refused() {
+    let versioned = |target: &str, version: &str| {
+        PROVISION.replace(
+            "target: TARGET\n",
+            &format!("target: {target}\n  targetVersion: \"{version}\"\n"),
+        )
+    };
+
+    // Through a real plugin process: the fake declares 1 and 2.4.
+    let registry = registry();
+    for version in ["1", "1.9", "2.4", "2.4.1"] {
+        let report = run(
+            &bundle(&versioned("fake", version)),
+            &registry,
+            Mode::Compile,
+            &options("version-ok"),
+            &mut Quiet,
+        );
+        assert_eq!(report.stages[0].outcome, Outcome::Compiled, "{version}");
+    }
+    for version in ["2", "2.5", "3", "10"] {
+        assert_eq!(
+            failure(outcome_of(
+                &versioned("fake", version),
+                &registry,
+                "version-no"
+            )),
+            format!(
+                "the document asks for targetVersion {version:?}, and target \"fake\" compiles \
+                 for: 1, 2.4"
+            )
+        );
+    }
+
+    // The version is in the tree the plugin compiles.
+    let registry = in_process(&["3"]);
+    let report = run(
+        &bundle(&versioned("iac", "3.1")),
+        &registry,
+        Mode::Compile,
+        &options("version-tree"),
+        &mut Quiet,
+    );
+    let tree = &report.stages[0].artifact.as_ref().unwrap().files["tree"];
+    assert!(tree.contains("\ntargetVersion=3.1\n"), "{tree}");
+
+    // A target that declares nothing cannot honour a version, and says so.
+    let registry = in_process(&[]);
+    assert_eq!(
+        failure(outcome_of(
+            &versioned("iac", "3"),
+            &registry,
+            "version-undeclared"
+        )),
+        "the document asks for targetVersion \"3\", but target \"iac\" does not say which \
+         versions of its tool it compiles for, so the request cannot be honoured; remove \
+         targetVersion"
+    );
+    // And a document that asks for none is unaffected.
+    assert_eq!(
+        outcome_of(
+            &PROVISION.replace("TARGET", "iac"),
+            &registry,
+            "version-none"
+        ),
+        Outcome::Compiled
+    );
+}
+
+const CONDITIONAL: &str = r#"apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: cm
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: old_conf
+      type: file
+      when: data.legacy
+    - id: conf
+      type: file
+      dependsOn:
+        - resource: old_conf
+          ifMissing: POLICY
+    - id: banner
+      type: file
+      when: "data.env == 'prod'"
+"#;
+
+fn with_data(text: &str, data: &[(&str, Value)], test: &str) -> StageReport {
+    let mut options = options(test);
+    options.data = data
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), v.clone()))
+        .collect();
+    let report = run(
+        &bundle(text),
+        &in_process(&[]),
+        Mode::Compile,
+        &options,
+        &mut Quiet,
+    );
+    report.stages[0].clone()
+}
+
+fn resources_in(report: &StageReport) -> Vec<String> {
+    report.artifact.as_ref().unwrap().files["tree"]
+        .lines()
+        .filter_map(|line| line.strip_prefix("resource "))
+        .map(|line| line.split(' ').next().unwrap().to_owned())
+        .collect()
+}
+
+#[test]
+fn a_when_decides_what_is_compiled_and_if_missing_decides_the_edges() {
+    let prod = Value::String("prod".to_owned());
+    let dev = Value::String("dev".to_owned());
+
+    // Every condition holds: everything is compiled, in dependency order.
+    let all = with_data(
+        &CONDITIONAL.replace("POLICY", "error"),
+        &[("legacy", Value::Bool(true)), ("env", prod.clone())],
+        "when-all",
+    );
+    assert_eq!(resources_in(&all), ["old_conf", "conf", "banner"]);
+    let tree = &all.artifact.as_ref().unwrap().files["tree"];
+    assert!(
+        tree.contains("edge old_conf -> conf kind=dependsOn"),
+        "{tree}"
+    );
+
+    // A removed resource that nothing depends on simply is not there.
+    let no_banner = with_data(
+        &CONDITIONAL.replace("POLICY", "error"),
+        &[("legacy", Value::Bool(true)), ("env", dev.clone())],
+        "when-some",
+    );
+    assert_eq!(resources_in(&no_banner), ["old_conf", "conf"]);
+
+    // A removed resource something depends on: refused by default...
+    let refused = with_data(
+        &CONDITIONAL.replace("POLICY", "error"),
+        &[("legacy", Value::Bool(false)), ("env", dev.clone())],
+        "when-error",
+    );
+    assert_eq!(
+        failure(refused.outcome),
+        "workflow.yaml:17:11: spec.resources[1].dependsOn[0].resource: resource \"conf\" \
+         depends on \"old_conf\", which its `when` removed from this run; set ifMissing: \
+         skip on this entry if the resource should carry on without it"
+    );
+
+    // ...and with skip, the edge goes and the resource stays.
+    let skipped = with_data(
+        &CONDITIONAL.replace("POLICY", "skip"),
+        &[("legacy", Value::Bool(false)), ("env", dev)],
+        "when-skip",
+    );
+    assert_eq!(resources_in(&skipped), ["conf"]);
+    let tree = &skipped.artifact.as_ref().unwrap().files["tree"];
+    assert!(!tree.contains("edge "), "{tree}");
+
+    // Data the condition needs and was not given is an error, not a "no".
+    let missing = with_data(&CONDITIONAL.replace("POLICY", "skip"), &[], "when-missing");
+    assert!(failure(missing.outcome).contains("resource \"old_conf\": data.legacy is not set"),);
+}
+
+const LABELLED: &str = r#"apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+  labels: {tier: net, env: prod}
+spec:
+  target: fake
+  resources:
+    - id: vm
+      type: file
+      params: {content: 10.0.0.5}
+  outputs:
+    - name: address
+      value: "${vm.content}"
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+  labels: {tier: web, env: prod}
+spec:
+  target: fake
+  targetHost: {from: infrastructure, ref: network, output: address}
+  resources:
+    - id: motd
+      type: file
+      params: {content: web}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: batch
+spec:
+  target: fake
+  targetHost: {from: inline, host: batch01}
+  resources:
+    - id: motd
+      type: file
+      params: {content: batch}
+"#;
+
+fn names(report: &meridian_orchestrator::RunReport) -> Vec<&str> {
+    report.stages.iter().map(|s| s.id.name.as_str()).collect()
+}
+
+#[test]
+fn a_selector_chooses_which_documents_run() {
+    let registry = registry();
+    let bundle = bundle(LABELLED);
+    let run_with = |selector: &str, mode: Mode, state: &Options| {
+        let selector = Selector::parse(selector).unwrap();
+        run_selected(&bundle, &registry, mode, state, &selector, &mut Quiet)
+    };
+    let state = options("selector");
+
+    for (selector, want) in [
+        ("tier=net", vec!["network"]),
+        ("env=prod", vec!["network", "web"]),
+        ("env=prod,tier!=net", vec!["web"]),
+        ("!env", vec!["batch"]),
+        ("tier", vec!["network", "web"]),
+        ("tier=db", vec![]),
+    ] {
+        let report = run_with(selector, Mode::Compile, &state);
+        assert_eq!(names(&report), want, "{selector}");
+        let selector = Selector::parse(selector).unwrap();
+        assert_eq!(selected(&bundle, &selector), want.len());
+    }
+    assert_eq!(selected(&bundle, &Selector::all()), 3);
+
+    // A document left out is still there to be referred to. Selecting only
+    // the web tier before the network exists defers it, as ever...
+    let report = run_with("tier=web", Mode::Apply, &state);
+    assert_eq!(names(&report), ["web"]);
+    assert!(
+        matches!(report.stages[0].outcome, Outcome::Deferred { .. }),
+        "{:?}",
+        report.stages[0].outcome
+    );
+    // ...and once the network has been applied on its own, the web tier
+    // alone finds its host from what that apply left behind.
+    let report = run_with("tier=net", Mode::Apply, &state);
+    assert!(report.succeeded());
+    let report = run_with("tier=web", Mode::Apply, &state);
+    assert_eq!(names(&report), ["web"]);
+    assert_eq!(report.stages[0].host, "10.0.0.5");
+    assert!(
+        matches!(report.stages[0].outcome, Outcome::Applied { .. }),
+        "{:?}",
+        report.stages[0].outcome
+    );
 }
