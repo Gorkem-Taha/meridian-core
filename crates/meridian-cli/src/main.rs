@@ -314,6 +314,10 @@ enum ModuleCommand {
         /// Talk plain HTTP. For a registry on a trusted network only
         #[arg(long)]
         insecure: bool,
+        /// Log in with this credential from spec.credentials in
+        /// meridian.yaml, instead of a login from the Docker configuration
+        #[arg(long, value_name = "NAME")]
+        credential: Option<String>,
     },
 }
 
@@ -988,7 +992,8 @@ fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
         ModuleCommand::Push {
             repository,
             insecure,
-        } => return push_module(&project, &repository, insecure),
+            credential,
+        } => return push_module(&project, &repository, insecure, credential.as_deref()),
     };
 
     let report = meridian_module::install(&project, mode).map_err(module_failure)?;
@@ -1057,8 +1062,13 @@ fn push_module(
     project: &meridian_module::Project<'_>,
     repository: &str,
     insecure: bool,
+    credential: Option<&str>,
 ) -> Result<(), Failure> {
     let manifest = meridian_module::Manifest::load(project.dir).map_err(module_failure)?;
+    let login = credential
+        .map(|name| meridian_module::resolve_login(&manifest, name))
+        .transpose()
+        .map_err(module_failure)?;
     let Some(version) = &manifest.version else {
         return Err(Failure::Message(format!(
             "{} has no metadata.version, and a module is published as a version",
@@ -1069,6 +1079,7 @@ fn push_module(
     let pushed = meridian_module::push(
         repository,
         insecure,
+        login.as_ref(),
         &manifest.name,
         version,
         &manifest.description,
