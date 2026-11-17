@@ -223,6 +223,137 @@ mod imp {
         let answer = unsafe { libc::kill(pid, 0) };
         answer == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
+    /// The kernel keyring's user keyring and session keyring, as the
+    /// special ids `keyctl(2)` takes.
+    #[cfg(target_os = "linux")]
+    const KEYRINGS: [libc::c_long; 2] = [-3, -4];
+    #[cfg(target_os = "linux")]
+    const USER_KEYRING: libc::c_long = -4;
+    #[cfg(target_os = "linux")]
+    const KEYCTL_SEARCH: libc::c_long = 10;
+    #[cfg(target_os = "linux")]
+    const KEYCTL_READ: libc::c_long = 11;
+    #[cfg(target_os = "linux")]
+    const KEY_TYPE: &std::ffi::CStr = c"user";
+
+    /// Finds a key of type `user` by its description, in the session
+    /// keyring and then the user keyring. `None` when neither holds it.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn keyring_find(description: &std::ffi::CStr) -> std::io::Result<Option<i64>> {
+        for keyring in KEYRINGS {
+            // SAFETY: both strings are NUL-terminated and outlive the call;
+            // the call reads them and returns an id or an error.
+            let id = unsafe {
+                libc::syscall(
+                    libc::SYS_keyctl,
+                    KEYCTL_SEARCH,
+                    keyring,
+                    KEY_TYPE.as_ptr(),
+                    description.as_ptr(),
+                    0 as libc::c_long,
+                )
+            };
+            if id > 0 {
+                return Ok(Some(id));
+            }
+            let error = std::io::Error::last_os_error();
+            match error.raw_os_error() {
+                // Not in this keyring, or the keyring itself is not there.
+                Some(libc::ENOKEY | libc::EKEYEXPIRED | libc::EKEYREVOKED) => {}
+                _ => return Err(error),
+            }
+        }
+        Ok(None)
+    }
+
+    /// How many bytes the key holds.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn keyring_len(id: i64) -> std::io::Result<usize> {
+        // SAFETY: a null buffer of no length asks only for the size.
+        let len = unsafe {
+            libc::syscall(
+                libc::SYS_keyctl,
+                KEYCTL_READ,
+                id as libc::c_long,
+                std::ptr::null_mut::<u8>(),
+                0 as libc::c_long,
+            )
+        };
+        usize::try_from(len).map_err(|_| std::io::Error::last_os_error())
+    }
+
+    /// Reads the key into `into`, and says how many bytes the key holds.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn keyring_read(id: i64, into: &mut [u8]) -> std::io::Result<usize> {
+        // SAFETY: the buffer is valid for `into.len()` bytes for the whole
+        // call, and the kernel writes no more than that.
+        let len = unsafe {
+            libc::syscall(
+                libc::SYS_keyctl,
+                KEYCTL_READ,
+                id as libc::c_long,
+                into.as_mut_ptr(),
+                into.len() as libc::c_long,
+            )
+        };
+        usize::try_from(len).map_err(|_| std::io::Error::last_os_error())
+    }
+
+    /// Puts a key of type `user` in the user keyring, replacing one of the
+    /// same description.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn keyring_store(description: &std::ffi::CStr, value: &[u8]) -> std::io::Result<()> {
+        // SAFETY: the strings are NUL-terminated, the payload is valid for
+        // `value.len()` bytes, and the kernel copies it before returning.
+        let id = unsafe {
+            libc::syscall(
+                libc::SYS_add_key,
+                KEY_TYPE.as_ptr(),
+                description.as_ptr(),
+                value.as_ptr(),
+                value.len(),
+                USER_KEYRING,
+            )
+        };
+        if id > 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
+    /// Reads from standard input straight into `into`, with no buffer of
+    /// the standard library's in between to hold a copy.
+    pub(crate) fn stdin_read(into: &mut [u8]) -> std::io::Result<usize> {
+        // SAFETY: the buffer is valid for `into.len()` bytes for the call.
+        let read = unsafe { libc::read(0, into.as_mut_ptr().cast(), into.len()) };
+        usize::try_from(read).map_err(|_| std::io::Error::last_os_error())
+    }
+
+    /// What a terminal was like before its echo was turned off.
+    pub(crate) type Echo = libc::termios;
+
+    /// Stops what is typed at the terminal on `fd` from being shown, and
+    /// gives back what to restore. `None` when `fd` is not a terminal.
+    pub(crate) fn echo_off(fd: i32) -> Option<Echo> {
+        // SAFETY: termios is plain data, and tcgetattr fills it or fails.
+        let mut was: libc::termios = unsafe { std::mem::zeroed() };
+        // SAFETY: `was` is valid for the call.
+        if unsafe { libc::tcgetattr(fd, &mut was) } != 0 {
+            return None;
+        }
+        let mut quiet = was;
+        quiet.c_lflag &= !libc::ECHO;
+        quiet.c_lflag |= libc::ECHONL;
+        // SAFETY: `quiet` is a valid termios read from this terminal.
+        (unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &quiet) } == 0).then_some(was)
+    }
+
+    /// Puts a terminal back as [`echo_off`] found it.
+    pub(crate) fn echo_restore(fd: i32, was: &Echo) {
+        // SAFETY: `was` came from tcgetattr on this terminal.
+        unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, was) };
+    }
 }
 
 #[cfg(not(unix))]
@@ -278,9 +409,28 @@ mod imp {
     pub(crate) fn process_exists(_pid: u32) -> bool {
         true
     }
+
+    /// Reads from standard input. Not yet unbuffered on this platform.
+    pub(crate) fn stdin_read(into: &mut [u8]) -> std::io::Result<usize> {
+        use std::io::Read;
+        std::io::stdin().read(into)
+    }
+
+    /// Echo is not turned off on this platform yet.
+    pub(crate) type Echo = ();
+
+    pub(crate) fn echo_off(_fd: i32) -> Option<Echo> {
+        None
+    }
+
+    pub(crate) fn echo_restore(_fd: i32, _was: &Echo) {}
 }
 
-pub(crate) use imp::{harden, hardened, process_exists, user_id, Region};
+pub(crate) use imp::{
+    echo_off, echo_restore, harden, hardened, process_exists, stdin_read, user_id, Region,
+};
+#[cfg(target_os = "linux")]
+pub(crate) use imp::{keyring_find, keyring_len, keyring_read, keyring_store};
 
 /// Overwrites `bytes` with zeroes in a way the compiler cannot remove.
 pub(crate) fn wipe(bytes: &mut [u8]) {

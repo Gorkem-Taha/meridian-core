@@ -25,6 +25,11 @@ const ALLOWED: &[(&str, &str)] = &[
         "crates/meridian-secret/src/table.rs",
         "secrets are joined and encoded into new protected memory",
     ),
+    (
+        "crates/meridian-secret/src/stores.rs",
+        "meridian secret set hands the bytes to the kernel keyring, or to secret-tool on its \
+         standard input",
+    ),
 ];
 
 fn workspace() -> PathBuf {
