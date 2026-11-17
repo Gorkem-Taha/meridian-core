@@ -6,7 +6,7 @@ host. This page is how the [Meridian language](index.md) is written for them.
 | | |
 |---|---|
 | Category, as `meridian plugins` prints it | `containerization` |
-| Kind of document | `Infrastructure` |
+| Kind of document | `Infrastructure`. A `ResourceSet` is also taken: the project then runs on the daemon of the host its `targetHost` names |
 | `type` and `params` | the tool's own, passed through |
 | Outputs | yes |
 

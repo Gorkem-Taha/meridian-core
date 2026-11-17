@@ -63,7 +63,8 @@ $ meridian validate examples/ansible/web-server.yaml
 ```
 
 `validate` loads no plugin. It checks the document's own shape: required fields,
-ids that exist, dependencies that do not form a cycle. An error names the file,
+ids that exist, dependencies that do not form a cycle (a cycle is reported with
+the resources in it). An error names the file,
 the line and the field.
 
 ## Compile it

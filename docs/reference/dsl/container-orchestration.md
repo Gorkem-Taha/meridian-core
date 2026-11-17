@@ -7,7 +7,7 @@ is written for them.
 | | |
 |---|---|
 | Category, as `meridian plugins` prints it | `container-orchestration` |
-| Kind of document | `Infrastructure` |
+| Kind of document | `Infrastructure`. A `ResourceSet` is refused: a cluster is not one machine |
 | `type` and `params` | the cluster's own API, passed through |
 | Outputs | yes |
 

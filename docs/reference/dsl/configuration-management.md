@@ -91,8 +91,12 @@ Anything outside the six types and their params is refused when the document is
 compiled: an unknown type, a param the type does not have, a state the tool
 cannot express. Nothing is dropped.
 
-In this dialect `${...}` is not a reference. It is ordinary text, written to the
-tool's file as it stands.
+In this dialect a resource has nothing to read during the apply, so a reference
+is settled when the document is compiled: `${id.param}` becomes the value the
+document gives that param on resource `id`. Anything else in `${...}`, or a
+reference to a resource or param that is not there, is refused with the rule
+`invalid-reference`, and `$${` is a literal `${`. See
+[references](../resource-types.md#references).
 
 ## The native dialect: DSC
 
@@ -166,5 +170,6 @@ target's page lists the exact commands under "Running".
 - A way to create the machine. That is an Infrastructure document, joined to
   this one through `targetHost` with `from: infrastructure`
   ([two-stage workflow](../../quickstart/first-two-stage.md)).
-- `when`, the condition decided before compiling. It is
-  [not available yet](index.md#when-and-runtimewhen).
+- A `when` that depends on the node. [`when`](index.md#when-and-runtimewhen) is
+  decided from the `--data` files before compiling, on every target; facts
+  about the node are not gathered yet.

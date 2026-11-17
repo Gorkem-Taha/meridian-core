@@ -15,6 +15,14 @@ Puppet, Chef, DSC) log in to a machine, or run on it, and converge packages,
 files and services. They need the machine to exist first, and they need to know
 where it is.
 
+Meridian holds a document to its question. Each plugin declares its category,
+and a ResourceSet aimed at Terraform, or an Infrastructure document aimed at
+Ansible, is refused when it is compiled. Docker is the one tool that answers
+both: a container project either stands on its own, or runs on the daemon of a
+machine the document names, so the `docker` target takes either kind.
+[The table](../reference/dsl/index.md#the-document) is in the language
+reference.
+
 A single graph over both would have to pretend that "create a VM" and "install
 nginx" are the same sort of step. They are not: one of them does not have a
 place to run until the other has finished.
