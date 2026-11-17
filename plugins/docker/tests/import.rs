@@ -111,9 +111,16 @@ fn the_directory_the_file_was_in_becomes_the_projects() {
     let (imported, trips) = round_trip(&DockerImporter, &Docker, &source);
     let project = &imported.documents[0].resources[0];
     assert_eq!(project.r#type, "project");
-    assert_eq!(project.params["directory"], Value::String("/srv/blog".to_owned()));
+    assert_eq!(
+        project.params["directory"],
+        Value::String("/srv/blog".to_owned())
+    );
     // With the directory known the target has nothing to warn about.
-    assert!(trips[0].emitted.warnings.is_empty(), "{:?}", trips[0].emitted.warnings);
+    assert!(
+        trips[0].emitted.warnings.is_empty(),
+        "{:?}",
+        trips[0].emitted.warnings
+    );
     assert_eq!(imported.documents[0].name, "blog");
 }
 
@@ -151,7 +158,12 @@ volumes:
         .collect();
     assert_eq!(
         lost,
-        ["service \"my.service\"", "volume \"db\"", "include", "service \"web\""]
+        [
+            "service \"my.service\"",
+            "volume \"db\"",
+            "include",
+            "service \"web\""
+        ]
     );
     assert_eq!(trips[0].rendered.todos, 4);
     let variables = imported
@@ -162,7 +174,10 @@ volumes:
     assert!(variables.msg.contains("$HOME, ${TAG}"), "{}", variables.msg);
     // The text is carried literally, which is what the marker says.
     let compiled = &trips[0].emitted.artifact.files[COMPOSE_PATH];
-    assert!(compiled.contains("example/web:$${TAG:-latest}"), "{compiled}");
+    assert!(
+        compiled.contains("example/web:$${TAG:-latest}"),
+        "{compiled}"
+    );
 }
 
 #[test]

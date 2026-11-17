@@ -44,7 +44,10 @@ fn manifests_come_back_meaning_the_same() {
     assert_same(&objects(original), &objects(compiled), Rules::default());
 
     // The shell variables came through as the text they are.
-    assert!(compiled.contains("echo \"starting as ${USER} in ${HOME}\""), "{compiled}");
+    assert!(
+        compiled.contains("echo \"starting as ${USER} in ${HOME}\""),
+        "{compiled}"
+    );
     // A Deployment and its Service share a name; both kept it.
     let ids: Vec<&str> = imported.documents[0]
         .resources

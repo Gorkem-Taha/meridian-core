@@ -78,7 +78,10 @@ impl Importer for DockerImporter {
             return Err(ImportError::at(
                 file,
                 root.line,
-                format!("a Compose file is a mapping, and this is {}", root.describe()),
+                format!(
+                    "a Compose file is a mapping, and this is {}",
+                    root.describe()
+                ),
             ));
         };
         if !top.iter().any(|(key, _)| key == "services") {
@@ -482,7 +485,10 @@ mod tests {
         );
         assert!(variables.is_empty());
         let text = "img:${TAG:-latest} $USER $${literal}";
-        assert_eq!(unescape_text(text, &mut variables), "img:${TAG:-latest} $USER ${literal}");
+        assert_eq!(
+            unescape_text(text, &mut variables),
+            "img:${TAG:-latest} $USER ${literal}"
+        );
         assert_eq!(
             variables.into_iter().collect::<Vec<_>>(),
             ["$USER", "${TAG}"]

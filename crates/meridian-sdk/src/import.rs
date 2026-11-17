@@ -336,6 +336,9 @@ mod tests {
             ImportError::at("main.tf", 3, "unexpected }").to_string(),
             "main.tf:3: unexpected }"
         );
-        assert_eq!(ImportError::new("nothing to read").to_string(), "nothing to read");
+        assert_eq!(
+            ImportError::new("nothing to read").to_string(),
+            "nothing to read"
+        );
     }
 }

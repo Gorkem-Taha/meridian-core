@@ -48,7 +48,11 @@ fn a_configuration_in_hcl_comes_back_meaning_the_same() {
     // by hand in the JSON syntax, with the two renames the notes report.
     let expected = std::fs::read_to_string(testdata().join("web-vm.expected.tf.json")).unwrap();
     let compiled = &trips[0].emitted.artifact.files[CONFIG_PATH];
-    assert_same(&without_comment(json(&expected)), &json(compiled), TERRAFORM);
+    assert_same(
+        &without_comment(json(&expected)),
+        &json(compiled),
+        TERRAFORM,
+    );
 }
 
 #[test]
@@ -131,7 +135,11 @@ output "a" {
     // Every one of them is a marker in the file, so none can be missed.
     let text = &trips[0].rendered.text;
     assert_eq!(trips[0].rendered.todos, 7);
-    assert_eq!(text.matches("TODO(meridian-import): not translated").count(), 7);
+    assert_eq!(
+        text.matches("TODO(meridian-import): not translated")
+            .count(),
+        7
+    );
     // The one that is about a resource sits beside it.
     let marker = text.find("uses a %{ } template directive").unwrap();
     let resource = text.find("- id: a\n").unwrap();
@@ -154,7 +162,10 @@ fn a_file_that_is_not_a_configuration_is_refused_with_its_line() {
 
     let other = import_text("x", &[("playbook.yml", "- hosts: all\n")]);
     let err = TerraformImporter.import(&other).unwrap_err();
-    assert!(err.msg.contains("not a Terraform configuration file"), "{err}");
+    assert!(
+        err.msg.contains("not a Terraform configuration file"),
+        "{err}"
+    );
 }
 
 #[test]

@@ -53,9 +53,9 @@
 #![allow(clippy::result_large_err)]
 
 mod emit;
-mod import;
 mod encryption;
 mod expression;
+mod import;
 mod runner;
 mod sort;
 mod transform;

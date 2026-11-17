@@ -59,11 +59,11 @@ pub mod pb {
     tonic::include_proto!("meridian.plugin.v1");
 }
 
-pub use meridian_value::{canonical_map, decode_map, decode_value, Value};
 pub use import::{
     DocumentKind, ImportError, ImportFormat, ImportNote, ImportSource, Imported, ImportedDocument,
     ImportedNotify, ImportedOutput, ImportedResource, Importer, NoteLevel,
 };
+pub use meridian_value::{canonical_map, decode_map, decode_value, Value};
 pub use run::{
     Applied, Category, Change, ChangeAction, Log, LogLine, LogStream, NoLog, Operations, Output,
     Plan, RunContext, RunError, Runner,

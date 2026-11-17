@@ -62,14 +62,10 @@ struct Found {
 
 /// Lists a directory's files, sorted, descending into its directories when
 /// asked. Hidden entries are skipped: they are tool state, not configuration.
-fn walk(
-    dir: &Path,
-    prefix: &str,
-    recursive: bool,
-    found: &mut Vec<Found>,
-) -> Result<(), Failure> {
-    let failed =
-        |e: std::io::Error| Failure::Message(format!("reading the directory {}: {e}", dir.display()));
+fn walk(dir: &Path, prefix: &str, recursive: bool, found: &mut Vec<Found>) -> Result<(), Failure> {
+    let failed = |e: std::io::Error| {
+        Failure::Message(format!("reading the directory {}: {e}", dir.display()))
+    };
     let mut entries: Vec<PathBuf> = std::fs::read_dir(dir)
         .map_err(failed)?
         .map(|entry| entry.map(|e| e.path()))

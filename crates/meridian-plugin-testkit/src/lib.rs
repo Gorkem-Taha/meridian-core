@@ -11,8 +11,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::{Mutex, OnceLock};
 
-use meridian_ir::{Bundle, Document};
 use meridian_import::Rendered;
+use meridian_ir::{Bundle, Document};
 use meridian_sdk::{
     Artifact, Data, Emitted, Emitter, ImportSource, Imported, Importer, LogLine, Position,
     ResourceGraph, Value,
