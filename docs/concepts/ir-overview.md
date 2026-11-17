@@ -62,6 +62,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `terraform` | the Terraform type | `aws_instance` |
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
+| `arm` | the Azure type; the API version is the `apiVersion` param | `Microsoft.Network/publicIPAddresses` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |
 | `dsc` | module and resource | `PSDscResources/Service` |
@@ -74,7 +75,8 @@ to the next stage, and one way to plan and apply.
 Most passthrough targets also take one **settings resource** that is not part of
 the tool's file: where to deploy, which cluster, which daemon. It has a fixed
 type name (`stack`, `deployment`, `cluster`, `project`, `runner`) and is
-described on the target's page.
+described on the target's page. The `arm` target has one more type of its
+own, `parameter`, which declares a parameter of the template.
 
 ## References
 

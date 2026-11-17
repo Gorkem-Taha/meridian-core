@@ -1,17 +1,31 @@
-# ARM templates
+# Target: `arm`
 
 <img src="../branding/logos/meridian-arm.svg" width="72" alt="Meridian ARM plugin logo">
 
-The ARM plugin compiles a Meridian infrastructure document into an Azure Resource Manager
-(ARM) JSON template and deploys it with the `az` command line.
+Compiles an Infrastructure document into an Azure Resource Manager (ARM) JSON template
+and deploys it to a resource group or a subscription with the `az` command line.
+
+## What it does and does not support
 
 | | |
 |---|---|
-| Target name | `arm` |
+| Document kind | `Infrastructure` |
 | Category | Infrastructure as code |
-| Operations | compile, plan, apply, outputs |
-| Tool it drives | Azure CLI (`az deployment group` and `az deployment sub`) |
-| Package | `meridian-target-arm` in [`plugins/arm`](../../plugins/arm) |
+| Compiles to | `template.json`, the ARM template, and `deployment.json`, where and how to deploy it |
+| Resource types | Azure's own, `Namespace/type`, with the API version in the `apiVersion` param; plus `deployment` for the deployment's settings and `parameter` for a template parameter |
+| Scopes | Resource group and subscription. Management group and tenant deployments are not supported |
+| References | Yes: a resource's id, name, type, API version and state, and parameters. Checked at compile time |
+| ARM expressions | Yes, written in square brackets and passed through after a check that they are well formed |
+| `dependsOn` | Yes, as ARM's `dependsOn`. Every reference is written as one too, because Resource Manager infers no order from a resource id |
+| `notifies` | No. Resource Manager has no way to react to a change in another resource. Refused |
+| `runtimeWhen` | No. An ARM `condition` is decided before anything is deployed. Refused |
+| `state: absent` | No. A template only says what should exist. Refused; remove the resource, and use mode `Complete` if it should be deleted |
+| Plan | Yes: `what-if`. Where Azure cannot analyse a resource, the plan is reported as unknown |
+| Apply | Yes: `az deployment group create` or `az deployment sub create` |
+| Outputs | Yes, always as strings |
+| Template `variables` and `functions` | No. Write the expression where it is used |
+| Typed outputs | No. A Meridian output has no type |
+| Checking a resource's properties against its type | No. The plugin checks the template's structure, references and expressions; Azure checks the properties, and a plan reports what it says |
 
 ![How the ARM plugin compiles and deploys a document](images/arm-flow.svg)
 
@@ -229,21 +243,57 @@ A Meridian output has no declared type, and an ARM output must have one, so ever
 is declared as a `string`. A value that might not be text is converted with `string()`: a
 number arrives as its digits, and an object or an array as JSON text.
 
-## Running it
+## `notifies`, `runtimeWhen` and `state`
+
+None of the three has anything in a template to compile into, so each is refused when
+the document is compiled, with the reason:
+
+- `notifies` on any resource, whatever the action: `unsupported-action`.
+- `runtimeWhen`: `unsupported-runtime-condition`. ARM's own `condition` is a param like
+  any other and is passed through; it is decided from the template's parameters before
+  anything is deployed.
+- `state: absent`, or any state other than `present`: `unsupported-state`.
+
+## Plan, apply and outputs
 
 | Operation | What the plugin runs |
 |---|---|
-| plan | `az deployment group what-if`, Resource Manager's own preview. Nothing is changed. |
-| apply | The same preview, so the changes can be reported, then `az deployment group create`. |
-| outputs | `az deployment group show`, reading the last deployment's record. |
+| Plan | `az deployment group what-if --name <name> --resource-group <rg> --template-file template.json --mode <mode> --no-pretty-print` |
+| Apply | the same preview, so the changes can be reported, then `az deployment group create` with the same arguments |
+| Outputs later | `az deployment group show --name <name> --resource-group <rg>` |
 
-At subscription scope the commands are `az deployment sub ...`.
+At subscription scope the commands are `az deployment sub ...`, with `--location` in
+place of `--resource-group` and `--mode`. `--subscription` is added when the deployment
+names one. Every call asks for `--output json`.
 
-Changes are reported under the ids you wrote in the document. Azure's `Modify` is an
-update, listing the properties that change. A resource Azure will deploy again without
-being able to say what changes is an update that says so. If the preview cannot look at a
-resource at all, the plan is marked as unknown and is not reported as in sync. A resource
-whose name is only known when deploying is reported under its Azure resource id.
+How Azure's preview is reported:
+
+| Azure says | Meridian reports |
+|---|---|
+| `Create` | create |
+| `Delete` | delete |
+| `Modify` | update, listing up to five of the properties that change |
+| `Deploy` | update, saying that the resource is deployed again and the preview cannot tell what changes |
+| `NoChange`, `Ignore` | nothing. `Ignore` is a resource that exists, is not in the template, and is left alone |
+| `Unsupported` | nothing, and the plan is marked unknown, so it is never reported as in sync |
+
+Changes are reported under the ids you wrote in the document. A resource whose name is
+only known when deploying, and one the document does not declare, are reported under
+their Azure resource id.
+
+An apply always creates the deployment, even when the preview shows nothing to change, so
+that its record and outputs exist. If the preview fails or Resource Manager rejects the
+template, nothing is deployed. A failed deployment is reported with the end of what `az`
+printed; Azure does not roll back a failed deployment.
+
+Outputs are read from the deployment's record. An output of a secure type is reported as
+sensitive, and Azure does not return its value. Asking for outputs before the document
+was ever applied is an error that says so.
+
+Credentials are the `az` command's own (`az login`). Meridian stores and passes none.
+
+This plugin's runner has been tested against a stand-in for the `az` command. It has not
+yet been run against a real Azure subscription.
 
 ### Environment
 
@@ -287,6 +337,7 @@ names the resource, the line it was written on and a rule:
 | `invalid-expression` | A string in square brackets is not a well-formed ARM expression |
 | `duplicate-resource`, `duplicate-output`, `duplicate-deployment` | The same thing is declared twice. Azure compares names without regard to case. Two resources with the same name are allowed when one has a `condition` or a `copy`. |
 | `invalid-deployment-name`, `empty-template`, `template-too-large` | Resource Manager's own limits: a deployment name of up to 64 characters, at least one resource, and at most 800 resources, 256 parameters and 64 outputs |
+| `unsupported-dependency` | A `dependsOn` names a `parameter` or the `deployment`, which are not resources of the template |
 | `unsupported-action` | `notifies` has nothing to compile into: Resource Manager cannot act on one resource because another changed |
 | `unsupported-state` | `state: absent`: a template only says what should exist. Remove the resource, and use mode `Complete` if it should be deleted. |
 | `unsupported-runtime-condition` | `runtimeWhen`: an ARM `condition` is decided before anything is deployed |

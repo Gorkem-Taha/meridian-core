@@ -23,12 +23,14 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
+| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `arm` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
-Terraform, the plugin does not write it a second time.
+Terraform, the plugin does not write it a second time. An ARM template is the
+exception: Resource Manager infers no order from a resource id, so the `arm`
+target writes a `dependsOn` for every reference as well.
 
 ## `notifies`: reaction
 
@@ -71,8 +73,8 @@ actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
 Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
-is accepted. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
+is accepted. CloudFormation, Bicep and ARM templates have no way to react to a change at
+all, and refuse every notify.
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to

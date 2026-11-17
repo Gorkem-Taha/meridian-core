@@ -1,7 +1,7 @@
 # Meridian
 
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
-Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
+Terraform, CloudFormation, Bicep, ARM templates, Docker Compose and Kubernetes, and then drives the tool
 you chose to plan and apply it.
 
 ## Honest scope statement
