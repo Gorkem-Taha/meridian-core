@@ -1,0 +1,229 @@
+# An edge site: Pulumi provisions it, Chef and OpenVox configure its two
+# machines, and Podman runs the workload under systemd.
+#
+#   1. Pulumi creates a gateway machine and a worker machine.
+#   2. Chef configures the gateway.
+#   3. OpenVox configures the worker.
+#   4. Podman runs the site's containers on the worker, as Quadlet units.
+#
+# Chef and OpenVox are given the same six resource types. What differs between
+# the two documents is only what each machine needs.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: edge-site
+  labels:
+    site: edge-01
+spec:
+  target: pulumi
+  resources:
+    - id: deployment
+      type: stack
+      params:
+        name: edge-01
+
+    - id: region
+      type: config
+      params:
+        name: aws:region
+        value: ap-southeast-2
+
+    - id: size
+      type: config
+      params:
+        type: string
+        default: t3.small
+
+    - id: ubuntu
+      type: invoke.aws:ec2:getAmi
+      params:
+        mostRecent: true
+        owners: ["099720109477"]
+        filters:
+          - name: name
+            values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+
+    - id: edge_sg
+      type: aws:ec2:SecurityGroup
+      params:
+        ingress:
+          - fromPort: 443
+            toPort: 443
+            protocol: tcp
+            cidrBlocks: ["0.0.0.0/0"]
+
+    - id: gateway
+      type: aws:ec2:Instance
+      params:
+        ami: ${ubuntu.id}
+        instanceType: ${size}
+        vpcSecurityGroupIds: ["${edge_sg.id}"]
+        tags:
+          Name: gateway-${pulumi.stack}
+
+    - id: worker
+      type: aws:ec2:Instance
+      params:
+        ami: ${ubuntu.id}
+        instanceType: ${size}
+        vpcSecurityGroupIds: ["${edge_sg.id}"]
+        tags:
+          Name: worker-${pulumi.stack}
+      dependsOn:
+        - resource: gateway
+
+  outputs:
+    - name: gateway_address
+      value: ${gateway.publicIp}
+    - name: worker_address
+      value: ${worker.privateIp}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: gateway
+  labels:
+    site: edge-01
+    role: gateway
+spec:
+  target: chef
+  targetHost:
+    from: infrastructure
+    ref: edge-site
+    output: gateway_address
+  resources:
+    - id: haproxy_pkg
+      type: package
+      params:
+        name: haproxy
+
+    - id: haproxy_conf
+      type: file
+      params:
+        path: /etc/haproxy/haproxy.cfg
+        content: |
+          frontend edge
+            bind :443
+            default_backend workers
+          backend workers
+            server worker worker.internal:8080 check
+        owner: root
+        mode: "0644"
+      dependsOn:
+        - resource: haproxy_pkg
+      notifies:
+        - resource: haproxy_svc
+          action: reload
+
+    - id: haproxy_svc
+      type: service
+      state: running
+      params:
+        name: haproxy
+        enabled: true
+      dependsOn:
+        - resource: haproxy_pkg
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: worker
+  labels:
+    site: edge-01
+    role: worker
+spec:
+  target: openvox
+  targetHost:
+    from: infrastructure
+    ref: edge-site
+    output: worker_address
+  resources:
+    - id: podman_pkg
+      type: package
+      params:
+        name: podman
+
+    - id: apps_group
+      type: group
+      params:
+        name: apps
+        system: true
+
+    - id: apps_user
+      type: user
+      params:
+        name: apps
+        system: true
+        home: /var/lib/apps
+        groups: [apps]
+      dependsOn:
+        - resource: apps_group
+
+    - id: data_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/edge/data
+        owner: ${apps_user.name}
+        mode: "0750"
+      dependsOn:
+        - resource: apps_user
+
+    - id: linger
+      type: exec
+      params:
+        command: loginctl enable-linger apps
+        creates: /var/lib/systemd/linger/apps
+      dependsOn:
+        - resource: apps_user
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: edge-apps
+  labels:
+    site: edge-01
+    role: worker
+spec:
+  target: podman
+  targetHost:
+    from: infrastructure
+    ref: edge-site
+    output: worker_address
+  resources:
+    - id: edge-net
+      type: network
+      params:
+        Subnet: 10.89.9.0/24
+
+    - id: edge-data
+      type: volume
+      params:
+        Device: /srv/edge/data
+        Type: none
+        Options: bind
+
+    - id: collector
+      type: container
+      state: running
+      params:
+        Image: docker.io/library/telegraf:1.33
+        Network: ${edge-net}
+        Volume: ${edge-data}:/var/lib/telegraf:Z
+        service:
+          Restart: always
+
+    - id: api
+      type: container
+      state: running
+      params:
+        Image: ghcr.io/example/edge-api:1.8.0
+        Network: ${edge-net}
+        PublishPort:
+          - "8080:8080"
+        Environment:
+          COLLECTOR_HOST: ${collector.name}
+        unit:
+          Description: The edge site's API
+      dependsOn:
+        - resource: collector

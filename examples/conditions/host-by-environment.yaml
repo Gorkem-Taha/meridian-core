@@ -1,0 +1,97 @@
+# Conditions on a configured machine.
+#
+# Every `when` here is decided by Meridian before anything is compiled, from
+# the values given with --data and --set. Ansible never sees a condition: the
+# playbook holds the resources that were kept, and nothing else. Change
+# `target` to puppet, chef or salt and the same resources are kept, because
+# the target takes no part in the decision.
+#
+#   meridian compile examples/conditions/host-by-environment.yaml \
+#     --data examples/conditions/host-by-environment.data.yaml
+#
+# Then try `--set env=dev` or `--set memory_mb=2048` and compile again.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: app-host
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: app01.example.com
+  resources:
+    - id: app_pkg
+      type: package
+      params:
+        name: app
+
+    # A comparison of text. Kept everywhere except production.
+    - id: debug_log
+      type: file
+      when: "data.env != 'prod'"
+      params:
+        path: /var/log/app/debug.log
+        content: ""
+
+    # Membership of a list, and a key that may not be set at all: ?? gives the
+    # fallback when data.tls or data.tls.enabled is missing or null.
+    - id: tls_dir
+      type: file
+      state: directory
+      when: "data.env in ['staging', 'prod'] && (data.tls.enabled ?? false)"
+      params:
+        path: /etc/app/tls
+        mode: "0700"
+
+    # A comparison of numbers, with arithmetic.
+    - id: swap_file
+      type: exec
+      when: "data.memory_mb < 4 * 1024"
+      params:
+        command: fallocate -l 2G /swapfile
+
+    # A pattern.
+    - id: eu_mirror
+      type: file
+      when: "data.region =~ '^eu-'"
+      params:
+        path: /etc/apt/sources.list.d/eu-mirror.list
+        content: "deb https://eu.mirror.example.com/ubuntu noble main\n"
+
+    # A function over a list: only when at least one backup target is given.
+    - id: backup_tool
+      type: package
+      when: "length(data.backup.targets ?? []) > 0"
+      params:
+        name: restic
+
+    # A version requirement.
+    - id: legacy_shim
+      type: package
+      when: "!semverSatisfies(data.os_version, '>=22.04')"
+      params:
+        name: app-compat
+
+    - id: app_conf
+      type: file
+      params:
+        path: /etc/app/app.conf
+        content: "workers = 8\n"
+      dependsOn:
+        - resource: app_pkg
+        # tls_dir is not there outside staging and production. Without
+        # ifMissing: skip that would be an error, not a silent drop.
+        - resource: tls_dir
+          ifMissing: skip
+      notifies:
+        - resource: app_svc
+          action: restart
+
+    - id: app_svc
+      type: service
+      state: running
+      params:
+        name: app
+        enabled: true
+      dependsOn:
+        - resource: app_pkg

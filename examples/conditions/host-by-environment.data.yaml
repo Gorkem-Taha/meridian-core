@@ -1,0 +1,10 @@
+# The values the conditions of host-by-environment.yaml read.
+env: prod
+region: eu-west-1
+memory_mb: 8192
+os_version: "24.04"
+tls:
+  enabled: true
+backup:
+  targets:
+    - s3://backups/app01

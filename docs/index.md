@@ -38,6 +38,7 @@ byte. The reasons, the layout and the order of work are in
 | [Install](quickstart/install.md) | build Meridian, and what each target needs |
 | [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
 | [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
+| [Worked workflows](quickstart/workflows.md) | six workflows across every target: three tiers on four tools, a cluster platform, a golden image, Windows on Azure, an edge site, and one file for every environment |
 
 | Concepts | |
 |---|---|
@@ -56,6 +57,7 @@ byte. The reasons, the layout and the order of work are in
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
 | [Modules](reference/modules.md) | packaging configuration to share it: the manifest, sources (path, git, registry), versions, the lockfile, integrity, the `meridian module` commands |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
+| [Conformance matrix](reference/conformance-matrix.md) | the same document on every configuration management target, cell by cell; generated from the plugins |
 | [Compatibility](reference/compatibility.md) | which language versions a build reads, and which plugins it loads; generated from the code |
 
 | Targets | |
@@ -89,6 +91,7 @@ plugins.
 |---|---|
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | from a fresh clone to a merged pull request: set up, the checks, review, and the changes that need a second reviewer |
 | [Writing a plugin](contributing/writing-a-plugin.md) | add a tool to Meridian, step by step, starting from a template that already works |
+| [How Meridian is tested](contributing/testing.md) | unit tests and golden files, property tests, cross-target conformance, examples, coverage; and how to add to each |
 | [Code of Conduct](../CODE_OF_CONDUCT.md) | how we treat each other |
 
 Security reports go through [`SECURITY.md`](../SECURITY.md), not the issue tracker.

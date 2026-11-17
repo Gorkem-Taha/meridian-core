@@ -41,6 +41,9 @@ cargo test --workspace
 
 If the tests do not pass on a fresh clone, that is a bug. Please report it.
 
+What kinds of test there are, what each is for and how to add one is in
+[how Meridian is tested](docs/contributing/testing.md).
+
 To try what you built:
 
 ```
@@ -156,6 +159,8 @@ for code: complete and current.
   test compiles it.
 - The capability matrix is generated. Record it with
   `UPDATE_GOLDEN=1 cargo test -p meridian-cli --test capability_matrix`.
+- So is the conformance matrix, by `--test conformance`. Read the rows it
+  changes: they are what your change did on every target.
 - Relative links and heading anchors are checked by `tools/check_links.py`.
 
 ## Where the project is going
