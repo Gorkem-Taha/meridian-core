@@ -31,7 +31,8 @@ outputs:
 | Field | Required | Value |
 |---|---|---|
 | `name` | yes | the output's name, unique among the document's outputs. This is what another document asks for |
-| `value` | give one | text holding one or more [references](references.md). The core does not insist on it, but an output without a value has nothing to report |
+| `value` | give one | text holding one or more [references](references.md). The core does not insist on it, but an output without a value has nothing to report. It may also hold an [interpolation](interpolation.md), which Meridian places before compiling: `https://${web.public_dns}/${{ data.project }}` |
+| `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the output. False, and the output is not declared. Give it the same condition as the resource the output reads |
 
 ```
 out.yaml:13:7: spec.outputs[1].name: duplicate output name "o" (first declared at out.yaml:12:7)

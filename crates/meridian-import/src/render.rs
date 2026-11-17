@@ -84,6 +84,10 @@ fn value_node(value: &Value) -> Yaml {
                 .map(|(key, value)| (key.clone(), value_node(value)))
                 .collect(),
         ),
+        // An importer reads text and has no secret table, so it cannot make
+        // one of these. Should one arrive, it is written as every other
+        // rendering of a value writes it.
+        Value::Secret(_) => Yaml::str(meridian_sdk::SENSITIVE),
     }
 }
 

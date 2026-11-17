@@ -64,7 +64,7 @@ pub use import::{
     DocumentKind, ImportError, ImportFormat, ImportNote, ImportSource, Imported, ImportedDocument,
     ImportedNotify, ImportedOutput, ImportedResource, Importer, NoteLevel,
 };
-pub use meridian_value::{canonical_map, decode_map, decode_value, Value};
+pub use meridian_value::{canonical_map, decode_map, decode_value, SecretRef, Value, SENSITIVE};
 pub use run::{
     Applied, Category, Change, ChangeAction, Log, LogLine, LogStream, NoLog, Operations, Output,
     Plan, RunContext, RunError, Runner,

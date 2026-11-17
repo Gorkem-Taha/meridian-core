@@ -110,6 +110,8 @@ fn literal(value: &Value, d: &Declaration) -> Result<String, CompileError> {
             ))
         }
         Value::String(s) => quote(s),
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => quote(meridian_sdk::SENSITIVE),
         Value::Bool(b) => b.to_string(),
         Value::Int(i) => i.to_string(),
         Value::Uint(u) => u.to_string(),

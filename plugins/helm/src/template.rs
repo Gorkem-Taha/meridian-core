@@ -69,6 +69,8 @@ pub(crate) fn go_path(root: &str, steps: &[Step]) -> String {
 pub(crate) fn as_text(value: &Value) -> Option<String> {
     match value {
         Value::String(s) => Some(s.clone()),
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => Some(meridian_sdk::SENSITIVE.to_owned()),
         Value::Bool(_) | Value::Int(_) | Value::Uint(_) | Value::Float(_) => {
             Some(value.canonical())
         }

@@ -9,12 +9,25 @@ meridian plugins
 meridian import   <paths>... [--from TARGET] [--name NAME] [-o DIR] [-r] [--force] [--strict]
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
+meridian module   install [--locked] | update [NAME]... | verify | list | pack [--out FILE] | push REPOSITORY
 meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--data FILE] [--set KEY=VALUE]
 ```
 
 The files given to one command are one workflow. A file may hold several
 documents separated by `---`. Infrastructure documents run before ResourceSets
 ([why](../concepts/two-stage-architecture.md)).
+
+A file can also be one inside a [module](modules.md) the project has pinned,
+written `@<module>:<path>`:
+
+```
+meridian plan site.yaml @acme/nginx:documents/proxy.yaml --data @acme/nginx:data/defaults.yaml
+```
+
+This works wherever a document or a `--data` file is given. The module must be
+in the project's `meridian.lock` and already fetched: `validate`, `compile`,
+`plan` and `apply` never fetch anything, and they check each module against
+its pinned hash before reading it.
 
 ## Commands
 
@@ -186,12 +199,14 @@ meridian 0.1.0
   language         meridian/v1  supported
   plugin sdk       0.1.0
   plugin protocol  2
+  lockfile format  1
 ```
 
 A language version is `supported`, `deprecated since meridian <release>` or
 `removed in meridian <release>`. `plugin protocol` is the range this build
-speaks, such as `2` or `2 to 3`. `meridian --version` prints the first line
-only. [Compatibility](compatibility.md) explains each.
+speaks, such as `2` or `2 to 3`. `lockfile format` is the format of
+[`meridian.lock`](modules.md#the-lockfile) this build writes. `meridian --version`
+prints the first line only. [Compatibility](compatibility.md) explains each.
 
 ### `rules check`
 
@@ -220,11 +235,11 @@ and the output in full.
 | Option | Environment | Default | Meaning |
 |---|---|---|---|
 | `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`) | the directory `meridian` is in | where to look for plugins; may be repeated |
-| `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and the outputs of applied stages |
+| `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, the outputs of applied stages, and fetched [modules](modules.md#where-modules-are-kept) |
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
-| `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
-| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
+| `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions and [interpolations](dsl/interpolation.md) read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
+| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions and interpolations, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
 
 ### Running part of a workflow
 
@@ -245,6 +260,54 @@ meridian plan site.yaml --data common.yaml --data prod.yaml
 A resource with `when: "data.env != 'prod'"` is in the plan or not, depending on
 what the data files say `env` is. A condition that reads a key no file sets is
 an error; nothing is guessed.
+
+The same values are what an [interpolation](dsl/interpolation.md) reads:
+`${{ data.env }}` inside a value is replaced before the document is compiled.
+
+Every decision is printed under its stage, and a document its own `spec.when`
+leaves out is reported as skipped. Neither is a failure:
+
+```
+site (ResourceSet, target ansible on shop-dev.example.com)
+  when: 2 removed
+    resource "site_cert": cond.needs_tls is false
+    "site_conf" depends on "site_cert": cond.needs_tls is false
+  compiled 2 files into build/site
+monitoring (Infrastructure, target kubernetes)
+  skipped: its when (data.monitoring.enabled ?? false) is false
+```
+
+A label can be interpolated too, and `-l` matches the value it comes to, so
+the data is read before the selector is applied.
+
+### Secrets
+
+A document's [secrets](dsl/secrets.md) are fetched by `plan` and `apply` only,
+each just before the stage that declares it, and wiped from memory when that
+stage ends. `validate` and `compile` never read a provider: `compile` writes a
+secret's name where its value would go, as `(secret db_password)`.
+
+A secret's value is in nothing a command prints: plans, the tool's log lines,
+errors and the run's state show `(sensitive)`. The process also turns off its
+own core dumps before it reads anything
+([how a secret is held](../concepts/secrets-in-memory.md)).
+
+### `module`
+
+Fetches, pins and checks the [modules](modules.md) that the `meridian.yaml` in
+the current directory requires.
+
+| Command | Does |
+|---|---|
+| `meridian module install` | Resolves the requirements, fetches what is missing, writes `meridian.lock`. With `--locked`, fails if the lockfile would change |
+| `meridian module update [NAME]...` | Moves the named modules, or all of them, to the newest version that still fits |
+| `meridian module verify` | Checks every pinned module against its hash; exits `1` if any differs |
+| `meridian module list` | Lists the pinned modules, their versions and sources |
+| `meridian module pack [--out FILE]` | Writes the module in the current directory as the archive a registry stores |
+| `meridian module push REPOSITORY [--insecure]` | Publishes the module in the current directory to an OCI registry under its version. A version that is already published is never replaced with other content |
+
+Only `install`, `update` and `push` use the network. Each command, its output and its
+errors are described in [Modules](modules.md#commands).
 
 ### A deprecated language version
 

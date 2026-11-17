@@ -22,6 +22,8 @@ fn yaml(value: &Value) -> Yaml {
         Value::Uint(n) => Yaml::Uint(*n),
         Value::Float(f) => Yaml::Float(*f),
         Value::String(s) => Yaml::str(s),
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => Yaml::str(meridian_sdk::SENSITIVE),
         Value::List(items) => Yaml::Seq(items.iter().map(yaml).collect()),
         Value::Map(map) => yaml_map(map),
     }

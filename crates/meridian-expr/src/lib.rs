@@ -21,13 +21,18 @@
 mod eval;
 mod funcs;
 mod parse;
+mod template;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
+
+use meridian_secret::SecretTable;
 
 use meridian_value::Value;
 
 pub use funcs::function_names;
 use parse::Node;
+pub use template::{has_interpolation, Template};
 
 /// A parsed expression. Parsing checks the grammar; [`Expr::check`] checks
 /// the names against what a place allows; [`Expr::eval`] decides it.
@@ -77,6 +82,7 @@ pub struct Scope {
     roots: BTreeMap<String, Value>,
     unset_hints: BTreeMap<String, String>,
     env: Option<BTreeMap<String, String>>,
+    secrets: Option<Arc<SecretTable>>,
 }
 
 impl Scope {
@@ -94,6 +100,14 @@ impl Scope {
     /// hint is replaced with the path that was read.
     pub fn with_unset_hint(mut self, root: &str, hint: &str) -> Self {
         self.unset_hints.insert(root.to_owned(), hint.to_owned());
+        self
+    }
+
+    /// The run's secrets. A value that is a secret names one of them, and an
+    /// expression that joins, encodes or compares a secret has the table do
+    /// it, so the expression itself never holds a secret's bytes.
+    pub fn with_secrets(mut self, secrets: Arc<SecretTable>) -> Self {
+        self.secrets = Some(secrets);
         self
     }
 
@@ -131,6 +145,15 @@ impl Expr {
     pub fn roots(&self) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
         eval::roots(&self.node, &mut Vec::new(), &mut out);
+        out
+    }
+
+    /// Every root the expression reads, with the first key under it when
+    /// that key is written out: `var.name` is `("var", Some("name"))`. This
+    /// is how the order of variables and named conditions is found.
+    pub fn reads(&self) -> BTreeSet<(String, Option<String>)> {
+        let mut out = BTreeSet::new();
+        eval::reads(&self.node, &mut Vec::new(), &mut out);
         out
     }
 

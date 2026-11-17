@@ -147,6 +147,8 @@ impl Text {
             Value::Uint(u) => Yaml::Uint(*u),
             Value::Float(f) => Yaml::Float(*f),
             Value::String(s) => Yaml::Str(self.escape(s)),
+            // A plugin is never sent a secret as a value; one would be written as its mask.
+            Value::Secret(_) => Yaml::Str(meridian_sdk::SENSITIVE.to_owned()),
             Value::List(items) => Yaml::Seq(items.iter().map(|v| self.value(v)).collect()),
             Value::Map(map) => Yaml::Map(
                 map.iter()

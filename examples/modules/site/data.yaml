@@ -1,0 +1,2 @@
+# The project's own values. Anything set here replaces the module's default.
+environment: production
