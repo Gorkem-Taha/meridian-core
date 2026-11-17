@@ -3,7 +3,8 @@
 # project, the way the documentation says to.
 #
 # It expects an open registry on localhost:5000 and one that wants the login
-# reader / s3cret on localhost:5001, and `oras` on the PATH. The modules
+# reader / s3cret on localhost:5001, and `oras` on the PATH, which is used to
+# show that a module published by another tool installs too. The modules
 # workflow starts both; see .github/workflows/modules.yml.
 #
 #   tools/real_registry_test.sh /path/to/meridian
@@ -24,13 +25,26 @@ fail() {
   exit 1
 }
 
-# Publishes the example module as the given version to a repository.
-publish() {
-  local repository=$1 version=$2
+# Copies the example module, as the given version, and packs it.
+prepare() {
+  local version=$1
   local src="$work/src-$version"
   cp -r "$root/examples/modules/hardening" "$src"
   sed -i "s/^  version: .*/  version: $version/" "$src/meridian.yaml"
   (cd "$src" && "$meridian" module pack --out "$work/module-$version.tar.gz")
+}
+
+# Publishes a version with `meridian module push`.
+publish() {
+  local repository=$1 version=$2
+  prepare "$version"
+  (cd "$work/src-$version" && "$meridian" module push "$repository" --insecure)
+}
+
+# Publishes a version with oras, as the documentation says another tool can.
+publish_with_oras() {
+  local repository=$1 version=$2
+  prepare "$version"
   (cd "$work" && oras push --plain-http "$repository:$version" \
     --artifact-type "$artifact" "module-$version.tar.gz:$layer")
 }
@@ -56,9 +70,20 @@ YAML
 
 say "an open registry"
 open=localhost:5000/acme/meridian-hardening
-publish "$open" 1.2.0
+publish_with_oras "$open" 1.2.0
 publish "$open" 1.3.0
 publish "$open" 2.0.0
+
+# A version is published once: the same content again is a no-op, and other
+# content under the same version is refused.
+(cd "$work/src-1.3.0" && "$meridian" module push "$open" --insecure) | tee "$work/again.txt"
+grep -q 'is already published' "$work/again.txt" || fail "a second push of the same content was not recognised"
+cp -r "$work/src-1.3.0" "$work/src-changed"
+echo '# changed after release' >> "$work/src-changed/documents/ssh.yaml"
+if (cd "$work/src-changed" && "$meridian" module push "$open" --insecure) 2> "$work/replace.txt"; then
+  fail "a published version was replaced"
+fi
+grep -q 'a version is published once' "$work/replace.txt" || { cat "$work/replace.txt"; fail "the refusal does not say why"; }
 # A tag that is not a version, and an image that is not a module, are both
 # in the repository and must both be ignored.
 (cd "$work" && echo notes > notes.txt && oras push --plain-http "$open:latest" notes.txt:text/plain)
@@ -114,10 +139,14 @@ if "$meridian" module install 2> "$work/denied.txt"; then
 fi
 grep -q 'no login for it was found' "$work/denied.txt" || { cat "$work/denied.txt"; fail "the refusal does not say why"; }
 
-# The login is written the way `docker login` writes it.
+# The login is written the way `docker login` writes it. Without it the
+# push is refused too.
+if (cd "$work/src-1.2.0" && "$meridian" module push "$private" --insecure) 2> "$work/push-denied.txt"; then
+  fail "a private registry was written to without a login"
+fi
+grep -q 'did not allow writing to' "$work/push-denied.txt" || { cat "$work/push-denied.txt"; fail "the refusal does not say why"; }
 printf '{"auths":{"localhost:5001":{"auth":"%s"}}}\n' "$(printf 'reader:s3cret' | base64)" > "$DOCKER_CONFIG/config.json"
-(cd "$work" && oras push --plain-http -u reader -p s3cret "$private:1.2.0" \
-  --artifact-type "$artifact" "module-1.2.0.tar.gz:$layer")
+(cd "$work/src-1.2.0" && "$meridian" module push "$private" --insecure)
 "$meridian" module install | tee "$work/private.txt"
 grep -q '^+ acme/hardening 1.2.0 ' "$work/private.txt" || fail "the private module was not installed"
 "$meridian" module verify

@@ -14,17 +14,17 @@ that nothing has changed since.
 - Pins every fetched module in `meridian.lock` by a hash of its content, and
   checks that hash each time the module is used.
 - Lets a command name a file inside a module: `@acme/nginx:documents/proxy.yaml`.
+- Publishes a module to a registry, and refuses to replace a version that is
+  already published with different content.
 
 **What it does not do**
 
 - There is no central index and no hosted registry. A requirement says where
   the module comes from: your git server or your container registry.
-- It does not publish. `meridian module pack` writes the archive;
-  [uploading it](#to-a-registry) is done with `oras` for now.
 - It does not sign modules or verify signatures. A pin proves the content has
   not changed since you pinned it, not who wrote it.
-- `compile`, `plan` and `apply` never fetch. Only `meridian module install` and
-  `meridian module update` use the network.
+- `compile`, `plan` and `apply` never fetch. Only `meridian module install`,
+  `update` and `push` use the network.
 - Installing a module runs nothing from it: no hooks, no scripts.
 
 A complete, runnable project is in
@@ -347,6 +347,7 @@ meridian module update [NAME]...
 meridian module verify
 meridian module list
 meridian module pack [--out FILE]
+meridian module push REPOSITORY [--insecure]
 ```
 
 | Option | Environment | Default | Meaning |
@@ -443,6 +444,33 @@ give the same bytes on any machine at any time, because file times, owners and
 permissions are left out. The `integrity` line is the hash a consumer's
 lockfile will hold.
 
+### `push`
+
+Publishes the module in the current directory to an OCI registry, under its
+`metadata.version`.
+
+```
+$ meridian module push registry.example.com/acme/meridian-nginx
+published acme/nginx 1.4.2 to registry.example.com/acme/meridian-nginx:1.4.2
+  digest:     sha256:3f1c…
+  integrity:  h1:91c4d7a2…
+```
+
+`REPOSITORY` is written as in a requirement's `oci`: no scheme and no tag.
+`--insecure` uses plain HTTP. The login comes from the Docker configuration
+file, as it does for fetching.
+
+A version is published once:
+
+- Pushing the same content again uploads nothing and says the version is
+  already published.
+- Pushing different content under a version that is already there is refused.
+  Consumers who pinned it would keep the old content while new ones got the
+  new, under one version number. Raise `metadata.version` and push that.
+
+`digest` is what a consumer's lockfile records as `resolved`, and `integrity`
+is the hash it records for the content.
+
 ## Publishing
 
 ### To git
@@ -468,7 +496,13 @@ A module is stored as an OCI artifact with one layer.
 | Layer media type | `application/vnd.meridian.module.layer.v1.tar+gzip` |
 | Tag | the version: `1.4.2` or `v1.4.2` |
 
-Pack the module, then upload the archive with [`oras`](https://oras.land):
+```
+meridian module push registry.example.com/acme/meridian-nginx
+```
+
+That is all a module needs. A module can also be published with any tool that
+pushes OCI artifacts, as long as it uses the two types above. With
+[`oras`](https://oras.land):
 
 ```
 meridian module pack --out module.tar.gz
@@ -505,7 +539,8 @@ committed. Do not edit files in it: the next command will refuse the module.
 | `the version X of … holds a manifest that says Y` | A tag and the module's `metadata.version` disagree | Fix it in the module and release a new version |
 | `… needs meridian >=X, and this is meridian Y` | The module's `spec.meridian` excludes this release | Upgrade `meridian`, or use an older version of the module |
 | `… requires … by path, which only works between modules on disk` | A fetched module names a `path` source | The module must name a `git` or `oci` source |
-| `the registry … did not allow reading …` | No login, or a refused one | `docker login` for that registry |
+| `the registry … did not allow reading …` or `writing to …` | No login, or a refused one | `docker login` for that registry |
+| `… is already published in … with different content` | A push of a version that exists, with other files | Raise `metadata.version` and push again |
 | `… is not a Meridian module: it has no layer of type …` | The registry tag holds something else, such as a container image | Check the repository; see [publishing to a registry](#to-a-registry) |
 | `… is not a module of this project` | `@name:path` names a module that is not pinned | Add it to `spec.modules` and install |
 | `the git program was not found` | A git module needs `git` | Install git, or set `MERIDIAN_GIT` |

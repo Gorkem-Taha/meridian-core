@@ -16,7 +16,7 @@
 //! - [`Modules::load`] opens the pinned modules for use, checking each.
 //! - [`verify`] reports on every pinned module without stopping at the first
 //!   that is wrong.
-//! - [`pack`] writes the archive a registry stores.
+//! - [`pack`] writes the archive a registry stores, and [`push`] publishes it.
 
 use std::fmt;
 
@@ -31,7 +31,7 @@ mod project;
 pub use integrity::hash_dir;
 pub use lock::{Lock, Locked, LOCK_FILE, LOCK_VERSION};
 pub use manifest::{valid_name, Manifest, Requirement, Source, MANIFEST_FILE};
-pub use oci::{ARTIFACT_TYPE, LAYER_MEDIA_TYPE};
+pub use oci::{push, Pushed, ARTIFACT_TYPE, LAYER_MEDIA_TYPE};
 pub use pack::{pack, unpack, MAX_UNPACKED_BYTES};
 pub use project::{
     install, verify, Change, Check, Mode, Modules, Project, Report, MODULE_REFERENCE_PREFIX,

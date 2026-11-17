@@ -12,7 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use meridian_module::{
-    install, pack, Change, Mode, Modules, Project, ARTIFACT_TYPE, LAYER_MEDIA_TYPE, LOCK_FILE,
+    install, pack, push, Change, Manifest, Mode, Modules, Project, ARTIFACT_TYPE, LAYER_MEDIA_TYPE,
+    LOCK_FILE,
 };
 use sha2::{Digest, Sha256};
 
@@ -150,6 +151,7 @@ fn serve(stream: TcpStream, content: &Mutex<Content>, private: bool, realm: &str
     let mut parts = line.split_whitespace();
     let (method, target) = (parts.next().unwrap_or(""), parts.next().unwrap_or(""));
     let mut authorization = String::new();
+    let mut length = 0usize;
     loop {
         let mut header = String::new();
         if reader.read_line(&mut header).is_err() || header.trim().is_empty() {
@@ -159,7 +161,14 @@ fn serve(stream: TcpStream, content: &Mutex<Content>, private: bool, realm: &str
             if name.eq_ignore_ascii_case("authorization") {
                 authorization = value.trim().to_owned();
             }
+            if name.eq_ignore_ascii_case("content-length") {
+                length = value.trim().parse().unwrap_or(0);
+            }
         }
+    }
+    let mut sent = vec![0u8; length];
+    if std::io::Read::read_exact(&mut reader, &mut sent).is_err() {
+        return;
     }
 
     let mut content = content.lock().unwrap();
@@ -182,12 +191,42 @@ fn serve(stream: TcpStream, content: &Mutex<Content>, private: bool, realm: &str
         }
     } else if private && authorization != format!("Bearer {TOKEN}") {
         unauthorized()
+    } else if method == "POST" && path.ends_with("/blobs/uploads/") {
+        // An upload session: the bytes go to the address in Location.
+        Reply::new(202, "").with("Location", &format!("{path}session-1?state=x"))
+    } else if method == "PUT" && path.contains("/blobs/uploads/") {
+        let named = target
+            .split("digest=")
+            .nth(1)
+            .unwrap_or_default()
+            .replace("%3A", ":");
+        if named == digest(&sent) {
+            let repository = path.split("/blobs/uploads/").next().unwrap_or_default();
+            let stored = format!("{repository}/blobs/{named}");
+            content.paths.insert(stored, Reply::new(200, sent));
+            Reply::new(201, "")
+        } else {
+            Reply::new(400, "the digest does not match the bytes")
+        }
+    } else if method == "PUT" && path.contains("/manifests/") {
+        let repository = path.split("/manifests/").next().unwrap_or_default();
+        let by_digest = format!("{repository}/manifests/{}", digest(&sent));
+        content
+            .paths
+            .insert(by_digest, Reply::new(200, sent.clone()));
+        content.paths.insert(path.to_owned(), Reply::new(200, sent));
+        Reply::new(201, "")
     } else {
         match content.paths.get(path) {
             Some(reply) => Reply {
                 status: reply.status,
                 headers: reply.headers.clone(),
-                body: reply.body.clone(),
+                // A HEAD is answered like a GET, without the bytes.
+                body: if method == "HEAD" {
+                    Vec::new()
+                } else {
+                    reply.body.clone()
+                },
             },
             None => missing,
         }
@@ -512,5 +551,103 @@ fn a_long_list_of_versions_is_read_page_by_page() {
     assert_eq!(
         run(&project, Mode::Install).unwrap().lock.modules[0].version,
         "3.1.0"
+    );
+}
+
+/// Publishes the module directory `dir` with `push`, the way the command does.
+fn publish(
+    registry: &Registry,
+    repository: &str,
+    dir: &Path,
+) -> Result<meridian_module::Pushed, String> {
+    let manifest = Manifest::load(dir).unwrap();
+    push(
+        &format!("{}/{repository}", registry.host),
+        true,
+        &manifest.name,
+        manifest.version.as_ref().unwrap(),
+        &manifest.description,
+        &pack(dir).unwrap(),
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[test]
+fn a_pushed_module_installs_and_a_version_is_published_once() {
+    let root = scratch("push");
+    let (registry, private) = registries();
+    let dir = module(&root, "acme/pushed", "1.0.0", "pushed");
+
+    let pushed = publish(registry, "acme/pushed", &dir).unwrap();
+    assert_eq!(pushed.tag, "1.0.0");
+    assert!(!pushed.already_published);
+    let asked = registry.requests("acme/pushed");
+    // The empty configuration and the layer are each checked for, then
+    // uploaded, and the manifest goes last.
+    let methods: Vec<&str> = asked.iter().map(|r| r.split(' ').next().unwrap()).collect();
+    assert_eq!(
+        methods,
+        ["GET", "HEAD", "POST", "PUT", "HEAD", "POST", "PUT", "PUT"],
+        "{asked:?}"
+    );
+    assert_eq!(asked[7], "PUT /v2/acme/pushed/manifests/1.0.0");
+
+    // What was pushed is what installs, with the hash of the directory.
+    registry.tags("acme/pushed", &["1.0.0"]);
+    let project = site(&root, &entry("acme/pushed", registry, "acme/pushed", "1"));
+    let report = run(&project, Mode::Install).unwrap();
+    let pin = &report.lock.modules[0];
+    assert_eq!(pin.resolved, pushed.digest);
+    assert_eq!(pin.integrity, meridian_module::hash_dir(&dir).unwrap());
+
+    // The same content again uploads nothing.
+    registry.requests("acme/pushed");
+    let again = publish(registry, "acme/pushed", &dir).unwrap();
+    assert!(again.already_published);
+    assert_eq!(again.digest, pushed.digest);
+    assert_eq!(
+        registry.requests("acme/pushed"),
+        ["GET /v2/acme/pushed/manifests/1.0.0"]
+    );
+
+    // Other content under the same version is refused, and nothing is sent.
+    fs::write(dir.join("documents/db.yaml"), "# changed after release\n").unwrap();
+    let err = publish(registry, "acme/pushed", &dir).unwrap_err();
+    assert!(
+        err.starts_with("acme/pushed 1.0.0 is already published in ")
+            && err.ends_with("a version is published once. Release a new version instead"),
+        "{err}"
+    );
+    assert_eq!(
+        registry.requests("acme/pushed"),
+        ["GET /v2/acme/pushed/manifests/1.0.0"]
+    );
+
+    // Build metadata cannot be in a tag, and comes back as the same version.
+    let built = module(&root, "acme/pushed", "1.1.0+build.5", "built");
+    assert_eq!(
+        publish(registry, "acme/pushed", &built).unwrap().tag,
+        "1.1.0_build.5"
+    );
+    registry.tags("acme/pushed", &["1.0.0", "1.1.0_build.5"]);
+    let report = run(&project, Mode::Update(vec![])).unwrap();
+    assert_eq!(report.lock.modules[0].version, "1.1.0+build.5");
+
+    // A registry that wants a login takes the push with it, and refuses
+    // without it.
+    let secret = module(&root, "acme/private", "2.0.0", "pushed privately");
+    assert!(
+        !publish(private, "acme/private", &secret)
+            .unwrap()
+            .already_published
+    );
+    let locked_out = Registry::start(true);
+    assert_eq!(
+        publish(&locked_out, "acme/private", &secret).unwrap_err(),
+        format!(
+            "the registry {host} did not allow writing to {host}/acme/private: no login for it \
+             was found in the Docker configuration file; run `docker login` for that registry",
+            host = locked_out.host
+        )
     );
 }

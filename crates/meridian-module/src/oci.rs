@@ -5,10 +5,10 @@
 //! distribution specification holds it, so an organisation's existing
 //! registry, with its existing access control, is already a module registry.
 //!
-//! Only reading is implemented here. Everything read is checked against the
-//! digest it was asked for by.
+//! Everything read is checked against the digest it was asked for by, and a
+//! version that is already published is never replaced with other content.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
@@ -46,6 +46,23 @@ pub(crate) struct Repository {
     credentials: Option<(String, String)>,
     /// The `Authorization` header that last worked.
     authorization: RefCell<Option<String>>,
+    /// Whether this is a push, for the message when access is refused.
+    writing: Cell<bool>,
+}
+
+/// One request to a registry.
+enum Call<'a> {
+    Get {
+        accept: &'a str,
+    },
+    Head {
+        accept: &'a str,
+    },
+    Post,
+    Put {
+        content_type: &'a str,
+        body: &'a [u8],
+    },
 }
 
 fn percent_encode(s: &str) -> String {
@@ -178,22 +195,45 @@ impl Repository {
             insecure,
             credentials: docker_credentials(host),
             authorization: RefCell::new(None),
+            writing: Cell::new(false),
         })
     }
 
     fn send(
         &self,
         url: &str,
-        accept: &str,
+        call: &Call<'_>,
         authorization: Option<&str>,
     ) -> Result<Response<Body>, Error> {
-        let mut request = self.agent.get(url).header("Accept", accept);
-        if let Some(value) = authorization {
-            request = request.header("Authorization", value);
-        }
-        request
-            .call()
-            .map_err(|e| Error::new(format!("reaching the registry {}: {e}", self.host)))
+        let auth = authorization.unwrap_or_default();
+        let result = match call {
+            Call::Get { accept } | Call::Head { accept } => {
+                let mut request = match call {
+                    Call::Head { .. } => self.agent.head(url),
+                    _ => self.agent.get(url),
+                }
+                .header("Accept", *accept);
+                if authorization.is_some() {
+                    request = request.header("Authorization", auth);
+                }
+                request.call()
+            }
+            Call::Post => {
+                let mut request = self.agent.post(url);
+                if authorization.is_some() {
+                    request = request.header("Authorization", auth);
+                }
+                request.send_empty()
+            }
+            Call::Put { content_type, body } => {
+                let mut request = self.agent.put(url).content_type(*content_type);
+                if authorization.is_some() {
+                    request = request.header("Authorization", auth);
+                }
+                request.send(*body)
+            }
+        };
+        result.map_err(|e| Error::new(format!("reaching the registry {}: {e}", self.host)))
     }
 
     /// Answers a 401 by logging in the way the registry asked for.
@@ -237,7 +277,10 @@ impl Repository {
             .credentials
             .as_ref()
             .map(|(user, password)| basic(user, password));
-        let mut response = self.send(&url, "application/json", login.as_deref())?;
+        let token_call = Call::Get {
+            accept: "application/json",
+        };
+        let mut response = self.send(&url, &token_call, login.as_deref())?;
         if !response.status().is_success() {
             return Err(self.no_access());
         }
@@ -265,16 +308,21 @@ impl Repository {
             "no login for it was found in the Docker configuration file; run `docker login` \
              for that registry"
         };
+        let doing = if self.writing.get() {
+            "writing to"
+        } else {
+            "reading"
+        };
         Error::new(format!(
-            "the registry {} did not allow reading {}: {hint}",
+            "the registry {} did not allow {doing} {}: {hint}",
             self.host, self.name
         ))
     }
 
-    /// A GET that logs in once if the registry asks.
-    fn get(&self, url: &str, accept: &str) -> Result<Response<Body>, Error> {
+    /// A request that logs in once if the registry asks.
+    fn request(&self, url: &str, call: &Call<'_>) -> Result<Response<Body>, Error> {
         let known = self.authorization.borrow().clone();
-        let response = self.send(url, accept, known.as_deref())?;
+        let response = self.send(url, call, known.as_deref())?;
         if response.status().as_u16() != 401 {
             return Ok(response);
         }
@@ -282,12 +330,16 @@ impl Repository {
             return Err(self.no_access());
         };
         let authorization = self.authorize(&challenge)?;
-        let response = self.send(url, accept, Some(&authorization))?;
+        let response = self.send(url, call, Some(&authorization))?;
         if matches!(response.status().as_u16(), 401 | 403) {
             return Err(self.no_access());
         }
         *self.authorization.borrow_mut() = Some(authorization);
         Ok(response)
+    }
+
+    fn get(&self, url: &str, accept: &str) -> Result<Response<Body>, Error> {
+        self.request(url, &Call::Get { accept })
     }
 
     fn check(&self, response: &Response<Body>, what: &str) -> Result<(), Error> {
@@ -420,6 +472,159 @@ impl Repository {
         }
         Ok(body)
     }
+}
+
+/// The empty JSON object every artifact without a configuration points at.
+const EMPTY_CONFIG: &[u8] = b"{}";
+const EMPTY_CONFIG_MEDIA_TYPE: &str = "application/vnd.oci.empty.v1+json";
+
+impl Repository {
+    /// The digest of the manifest at `reference`, if there is one.
+    fn existing(&self, reference: &str) -> Result<Option<String>, Error> {
+        let url = format!("{}/v2/{}/manifests/{reference}", self.base, self.path);
+        let response = self.get(&url, MANIFEST_MEDIA_TYPE)?;
+        if response.status().as_u16() == 404 {
+            return Ok(None);
+        }
+        let what = format!("the manifest {reference}");
+        self.check(&response, &what)?;
+        let body = self.body(response, MAX_MANIFEST_BYTES, &what)?;
+        Ok(Some(format!("sha256:{}", sha256_hex(&body))))
+    }
+
+    /// Uploads a blob unless the repository already holds it.
+    fn upload(&self, bytes: &[u8]) -> Result<String, Error> {
+        let digest = format!("sha256:{}", sha256_hex(bytes));
+        let what = format!("the layer {digest}");
+        let blob = format!("{}/v2/{}/blobs/{digest}", self.base, self.path);
+        let head = Call::Head {
+            accept: "application/octet-stream",
+        };
+        if self.request(&blob, &head)?.status().is_success() {
+            return Ok(digest);
+        }
+        let start = format!("{}/v2/{}/blobs/uploads/", self.base, self.path);
+        let response = self.request(&start, &Call::Post)?;
+        self.check(&response, &what)?;
+        // The registry says where to send the bytes. It may be a path on
+        // this registry or a full address, which must still be this registry.
+        let location = header(&response, "location").unwrap_or_default();
+        let target = if location.starts_with('/') {
+            format!("{}{location}", self.base)
+        } else if location.starts_with(&format!("{}/", self.base)) {
+            location.to_owned()
+        } else {
+            return Err(Error::new(format!(
+                "the registry {} sent the upload of {} to {location:?}, which is not on that \
+                 registry",
+                self.host, self.name
+            )));
+        };
+        let separator = if target.contains('?') { '&' } else { '?' };
+        let put = Call::Put {
+            content_type: "application/octet-stream",
+            body: bytes,
+        };
+        let response = self.request(
+            &format!("{target}{separator}digest={}", percent_encode(&digest)),
+            &put,
+        )?;
+        self.check(&response, &what)?;
+        Ok(digest)
+    }
+}
+
+/// What [`push`] did.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Pushed {
+    /// The tag the version was published under.
+    pub tag: String,
+    /// The digest of the manifest.
+    pub digest: String,
+    /// The version was already there with exactly this content, so nothing
+    /// was uploaded.
+    pub already_published: bool,
+}
+
+fn json_string(s: &str) -> String {
+    serde_json::Value::String(s.to_owned()).to_string()
+}
+
+/// Publishes a packed module to a registry as `version`.
+///
+/// A version is published once. If the repository already holds that version
+/// with other content the push is refused: consumers who pinned it would keep
+/// the old content while new ones got the new, under one version number.
+pub fn push(
+    repository: &str,
+    insecure: bool,
+    name: &str,
+    version: &Version,
+    description: &str,
+    archive: &[u8],
+) -> Result<Pushed, Error> {
+    let repo = Repository::open(repository, insecure)?;
+    repo.writing.set(true);
+    // A tag cannot hold `+`.
+    let tag = version.to_string().replace('+', "_");
+
+    // Written by hand, key by key, so the same module always gives the same
+    // manifest and therefore the same digest.
+    let mut annotations = format!(
+        "{{\"org.opencontainers.image.title\":{},\"org.opencontainers.image.version\":{}",
+        json_string(name),
+        json_string(&version.to_string())
+    );
+    if !description.is_empty() {
+        annotations.push_str(&format!(
+            ",\"org.opencontainers.image.description\":{}",
+            json_string(description)
+        ));
+    }
+    annotations.push('}');
+    let manifest = format!(
+        "{{\"schemaVersion\":2,\"mediaType\":\"{MANIFEST_MEDIA_TYPE}\",\"artifactType\":\"{ARTIFACT_TYPE}\",\
+         \"config\":{{\"mediaType\":\"{EMPTY_CONFIG_MEDIA_TYPE}\",\"digest\":\"sha256:{}\",\"size\":{}}},\
+         \"layers\":[{{\"mediaType\":\"{LAYER_MEDIA_TYPE}\",\"digest\":\"sha256:{}\",\"size\":{}}}],\
+         \"annotations\":{annotations}}}",
+        sha256_hex(EMPTY_CONFIG),
+        EMPTY_CONFIG.len(),
+        sha256_hex(archive),
+        archive.len()
+    );
+    let digest = format!("sha256:{}", sha256_hex(manifest.as_bytes()));
+
+    match repo.existing(&tag)? {
+        Some(found) if found == digest => {
+            return Ok(Pushed {
+                tag,
+                digest,
+                already_published: true,
+            })
+        }
+        Some(found) => {
+            return Err(Error::new(format!(
+                "{name} {version} is already published in {repository} with different content \
+                 ({found}); a version is published once. Release a new version instead"
+            )))
+        }
+        None => {}
+    }
+
+    repo.upload(EMPTY_CONFIG)?;
+    repo.upload(archive)?;
+    let url = format!("{}/v2/{}/manifests/{tag}", repo.base, repo.path);
+    let put = Call::Put {
+        content_type: MANIFEST_MEDIA_TYPE,
+        body: manifest.as_bytes(),
+    };
+    let response = repo.request(&url, &put)?;
+    repo.check(&response, &format!("the manifest {tag}"))?;
+    Ok(Pushed {
+        tag,
+        digest,
+        already_published: false,
+    })
 }
 
 /// The versions a repository offers: its tags that are SemVer versions,

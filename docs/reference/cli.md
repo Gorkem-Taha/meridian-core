@@ -8,7 +8,7 @@ meridian apply    <files>... [-l SELECTOR] [--data FILE]
 meridian plugins
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
-meridian module   install [--locked] | update [NAME]... | verify | list | pack [--out FILE]
+meridian module   install [--locked] | update [NAME]... | verify | list | pack [--out FILE] | push REPOSITORY
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -210,8 +210,9 @@ the current directory requires.
 | `meridian module verify` | Checks every pinned module against its hash; exits `1` if any differs |
 | `meridian module list` | Lists the pinned modules, their versions and sources |
 | `meridian module pack [--out FILE]` | Writes the module in the current directory as the archive a registry stores |
+| `meridian module push REPOSITORY [--insecure]` | Publishes the module in the current directory to an OCI registry under its version. A version that is already published is never replaced with other content |
 
-Only `install` and `update` use the network. Each command, its output and its
+Only `install`, `update` and `push` use the network. Each command, its output and its
 errors are described in [Modules](modules.md#commands).
 
 ### A deprecated language version

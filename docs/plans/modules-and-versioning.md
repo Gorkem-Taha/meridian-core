@@ -228,6 +228,7 @@ meridian module update [NAME]...     move pinned versions to the newest that sti
 meridian module verify               check every pinned module against its integrity hash
 meridian module list                 the pinned modules, their versions and sources
 meridian module pack [--out FILE]    write this module as the archive a registry stores
+meridian module push REPOSITORY      publish this module to a registry, under its version
 ```
 
 `--locked` is for CI: it fails if the lockfile would have to change. `compile`, `plan`
@@ -235,9 +236,12 @@ and `apply` never fetch. A run that needs a module that is not installed stops a
 to run `meridian module install`, so a run never changes what it runs half way through,
 and never reaches the network unasked.
 
-`meridian module push`, which uploads a packed module to a registry, is the second step.
-Until then `oras push` with the media types above publishes a module. The user-facing
-reference for all of this is [Modules](../reference/modules.md).
+`meridian module push REPOSITORY` publishes the module in the current directory under its
+version. **A version is published once**: pushing other content under a version the
+repository already holds is refused, because consumers who pinned it would keep the old
+content while new ones got the new. Any tool that pushes OCI artifacts with the media
+types above can publish a module too. The user-facing reference for all of this is
+[Modules](../reference/modules.md).
 
 ### 1.9 What installing a module can and cannot do
 
@@ -343,8 +347,8 @@ code and checked by a test, so it cannot drift:
 | Step | Holds |
 |---|---|
 | 1 | This note. `apiVersion` table, messages, per-run deprecation warning, `meridian migrate`, `meridian version`. Protocol negotiation, the SDK check, the compatibility page |
-| 2 | Modules: the crate `meridian-module` (manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity), the `meridian module` commands, `@module:path` |
-| 3 | `meridian module push`; composites and functions resolved from modules, once the language design defines them |
+| 2 | Modules: the crate `meridian-module` (manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity), the `meridian module` commands including `push`, `@module:path` |
+| 3 | Composites and functions resolved from modules, as the language work builds them |
 
 ## 5. Open questions
 

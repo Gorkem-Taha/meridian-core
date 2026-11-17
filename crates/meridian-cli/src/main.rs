@@ -122,6 +122,15 @@ enum ModuleCommand {
         #[arg(short, long, value_name = "FILE")]
         out: Option<PathBuf>,
     },
+    /// Publish this module to an OCI registry, under its version
+    Push {
+        /// The repository to publish to, such as
+        /// registry.example.com/team/module, with no scheme and no tag
+        repository: String,
+        /// Talk plain HTTP. For a registry on a trusted network only
+        #[arg(long)]
+        insecure: bool,
+    },
 }
 
 #[derive(Args)]
@@ -423,6 +432,10 @@ fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
             return Ok(());
         }
         ModuleCommand::Pack { out } => return pack_module(&project, out),
+        ModuleCommand::Push {
+            repository,
+            insecure,
+        } => return push_module(&project, &repository, insecure),
     };
 
     let report = meridian_module::install(&project, mode).map_err(module_failure)?;
@@ -483,6 +496,45 @@ fn pack_module(
     println!("  size:       {} bytes", archive.len());
     println!("  integrity:  {integrity}");
     println!("  media type: {}", meridian_module::LAYER_MEDIA_TYPE);
+    Ok(())
+}
+
+fn push_module(
+    project: &meridian_module::Project<'_>,
+    repository: &str,
+    insecure: bool,
+) -> Result<(), Failure> {
+    let manifest = meridian_module::Manifest::load(project.dir).map_err(module_failure)?;
+    let Some(version) = &manifest.version else {
+        return Err(Failure::Message(format!(
+            "{} has no metadata.version, and a module is published as a version",
+            manifest.name
+        )));
+    };
+    let archive = meridian_module::pack(project.dir).map_err(module_failure)?;
+    let pushed = meridian_module::push(
+        repository,
+        insecure,
+        &manifest.name,
+        version,
+        &manifest.description,
+        &archive,
+    )
+    .map_err(module_failure)?;
+    if pushed.already_published {
+        println!(
+            "{} {version} is already published in {repository}, with this content",
+            manifest.name
+        );
+    } else {
+        println!(
+            "published {} {version} to {repository}:{}",
+            manifest.name, pushed.tag
+        );
+    }
+    println!("  digest:     {}", pushed.digest);
+    let integrity = meridian_module::hash_dir(project.dir).map_err(module_failure)?;
+    println!("  integrity:  {integrity}");
     Ok(())
 }
 
