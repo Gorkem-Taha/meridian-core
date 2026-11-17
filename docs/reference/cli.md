@@ -8,6 +8,10 @@ meridian apply    <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
 meridian plugins
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
+meridian fmt      <paths>... [--check] [--keep-order]
+meridian lint     <paths>... [--data FILE] [--set KEY=VALUE] [--fix] [--strict] [--json]
+meridian schema   [--target TARGET] [-o FILE]
+meridian lsp
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -153,6 +157,52 @@ A language version is `supported`, `deprecated since meridian <release>` or
 speaks, such as `2` or `2 to 3`. `meridian --version` prints the first line
 only. [Compatibility](compatibility.md) explains each.
 
+### `fmt`
+
+Rewrites documents in the one standard layout: two-space indentation, the
+language's own field order, no trailing spaces. It changes how a document is
+laid out and never what it says, and it checks that before writing. `--check`
+changes nothing, lists the files that are not formatted and exits `1` if there
+are any. `--keep-order` leaves fields in the order they were written. `-` reads
+standard input and writes standard output.
+
+A path may be a directory, which is searched for Meridian documents. Full
+description: [The formatter](../tooling/formatter.md).
+
+### `lint`
+
+Reports everything `validate` and `compile` would refuse, for every document
+under the paths given, and then things that compile and are probably mistakes.
+Each document is compiled by its target's plugin in memory; nothing is written
+and no tool is run.
+
+```console
+$ meridian lint stacks/
+stacks/web.yaml:16:15: warning: mode 0644 is read as a number, not as permissions; write it as a quoted string [unquoted-mode]
+stacks/web.yaml:35:21: error: spec.resources[3].dependsOn[0].resource: resource "warm" depends on unknown resource "wbe" [invalid-document]
+1 error, 1 warning, 0 notes
+```
+
+`--fix` applies the fixes that are safe. `--strict` fails on warnings as well
+as errors. `--json` prints one JSON object per finding. `--data` and `--set`
+are as for `compile`; without them every resource is checked as if its `when`
+held. Full
+description: [The linter](../tooling/linter.md); the rules:
+[Lint rules](lint.md).
+
+### `schema`
+
+Prints a JSON Schema (draft 7) of the document language and of the resource
+types of every plugin found, for editors that validate YAML against a schema.
+`--target` writes one target's rules only; `-o` writes to a file. Full
+description: [The JSON Schema](../tooling/json-schema.md).
+
+### `lsp`
+
+Runs the language server on standard input and output. An editor starts it;
+there is nothing to see when it is run by hand. Full description:
+[The language server](../tooling/language-server.md).
+
 ## Options
 
 | Option | Environment | Default | Meaning |
@@ -198,7 +248,9 @@ No version is deprecated today.
 ## Exit status
 
 `0` when everything asked for succeeded. `1` when a document was invalid, did
-not compile, or a tool failed. `2` for a mistake in the command line itself.
+not compile, or a tool failed; when `fmt --check` found a file that is not
+formatted; and when `lint` found an error, or a warning with `--strict`. `2`
+for a mistake in the command line itself.
 
 ## Plugins and their tools
 

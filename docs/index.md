@@ -46,9 +46,20 @@ byte. The reasons, the layout and the order of work are in
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
 
+| Editor and authoring tools | |
+|---|---|
+| [Overview](tooling/index.md) | what the tools are, and why they never disagree with the compiler |
+| [The language server](tooling/language-server.md) | completion, hover documentation, errors as you type, navigation |
+| [Visual Studio Code](tooling/vscode.md) | the extension: install, settings, commands |
+| [Other editors](tooling/other-editors.md) | Neovim, Helix, Emacs, and pre-commit |
+| [The formatter](tooling/formatter.md) | `meridian fmt`: one layout, and the guarantee that it changes nothing else |
+| [The linter](tooling/linter.md) | `meridian lint`: every error in a project, plus probable mistakes |
+| [The JSON Schema](tooling/json-schema.md) | `meridian schema`: validation for editors that only know YAML |
+
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [Lint rules](reference/lint.md) | every rule of `meridian lint`, with an example and what to do |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
