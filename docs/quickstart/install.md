@@ -51,6 +51,7 @@ hand:
 | `ansible` | `ansible-playbook` |
 | `puppet` | `puppet`, or `bolt` to reach another host |
 | `chef` | `chef-client`, or `chef-run` to reach another host |
+| `salt` | `salt-call`, or `salt-ssh` to reach another host |
 | `dsc` | PowerShell (`pwsh`) with the Dsc.PipelineRunner module |
 | `cloud-init` | `cloud-init`, to check the user-data (Linux only; the check can be turned off). `ssh` as well, if an apply is to wait for the machine's first boot |
 | `terraform` | `terraform` (or `tofu`) |

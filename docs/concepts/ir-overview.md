@@ -49,8 +49,9 @@ A resource is one thing the document wants to be true.
 
 What `type` and `params` mean depends on the target's category.
 
-**Configuration management targets** (`ansible`, `puppet`, `chef`, `cloud-init`)
-share six abstract types: `package`, `file`, `service`, `user`, `group` and `exec`. The
+**Configuration management targets** (`ansible`, `puppet`, `chef`, `salt`,
+`cloud-init`) share six abstract types: `package`, `file`, `service`, `user`,
+`group` and `exec`. The
 same resource compiles for any of them, and each target's page has the table of
 what a type and its params become. This is where "write once" is real, because
 these tools manage the same small set of things. `cloud-init` takes the same six

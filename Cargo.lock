@@ -618,6 +618,7 @@ dependencies = [
  "meridian-target-packer",
  "meridian-target-podman",
  "meridian-target-puppet",
+ "meridian-target-salt",
  "meridian-target-terraform",
 ]
 
@@ -809,6 +810,16 @@ version = "0.1.0"
 dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-salt"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]

@@ -109,6 +109,10 @@ fn matrix() -> String {
             &meridian_target_puppet::PuppetRunner::from_env(),
         ),
         row(
+            &meridian_target_salt::Salt,
+            &meridian_target_salt::SaltRunner::from_env(),
+        ),
+        row(
             &meridian_target_terraform::Terraform,
             &meridian_target_terraform::TerraformRunner::from_env(),
         ),

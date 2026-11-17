@@ -31,6 +31,7 @@ meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
 meridian-target-packer = { path = "../../plugins/packer" }
 meridian-target-podman = { path = "../../plugins/podman" }
 meridian-target-puppet = { path = "../../plugins/puppet" }
+meridian-target-salt = { path = "../../plugins/salt" }
 meridian-target-terraform = { path = "../../plugins/terraform" }
 meridian-target-fake = { path = "../meridian-target-fake" }
 
