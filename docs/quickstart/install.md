@@ -227,6 +227,10 @@ such as state and plan encryption, variables, local values and ephemeral resourc
 `main.tf.json` and can be pointed at `tofu` with `MERIDIAN_TERRAFORM`. The
 [OpenTofu page](../targets/opentofu.md#opentofu-or-terraform) compares the two.
 
+The build also produces `meridian-policy-opa`, which `--policy` uses to ask
+[a policy](../reference/policy.md) whether a change may be made. It needs
+`opa`, Open Policy Agent 1.0 or later, and only when you pass `--policy`.
+
 Each tool keeps using its own credentials and configuration. Meridian does not
 store or pass any: if `aws sts get-caller-identity` or `kubectl get nodes` works
 in your shell, the plugin will work too. Each [target's page](../targets/ansible.md)

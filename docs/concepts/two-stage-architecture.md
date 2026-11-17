@@ -52,9 +52,9 @@ first stage has been applied, and Meridian is strict about that:
 
 - Until then, the ResourceSet is **deferred**. It is not compiled against a
   guess.
-- When the first stage is applied, its tool reports the outputs, Meridian keeps
-  them in the state directory, and the ResourceSet is compiled for the real
-  value and applied.
+- When the first stage is applied, its tool reports the outputs, and the
+  ResourceSet is compiled for the real value and applied. The outputs stay
+  with the tool: a later run asks it again.
 - If the first stage fails, later stages do not run.
 
 A ResourceSet for a machine that is already there says so directly, and needs no
@@ -69,15 +69,31 @@ targetHost:
 ## Order within a workflow
 
 Every Infrastructure document in a workflow runs before any ResourceSet,
-whatever order the files are given in. A workflow is simply the documents passed
+whatever order the files are given in, unless a document
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) a value from
+another: a document always runs after the ones it needs, so a cloud-init
+ResourceSet runs before the Infrastructure document that creates the machine
+with its user-data. A workflow is simply the documents passed
 to one `meridian` command, in one file separated by `---` or in several files.
 
 ## What this does not do
 
-Meridian does not hold a lock across stages, and it does not roll back a first
-stage because a second failed. Each tool keeps its own state and its own idea of
-drift: Terraform notices drift when it plans, Ansible and Chef only when they
-run, Puppet and DSC agents on their own schedule. Meridian reports what each
-tool says and does not paper over the difference.
+By default Meridian does not roll back a first stage because a second failed.
+A run stops at the stage that failed, and
+[`apply --resume`](run-safety.md#picking-up-where-a-run-stopped) continues
+from there once the cause is fixed. Asked to with `--on-failure rollback`, it
+[puts back](run-safety.md#putting-a-run-back) what the run changed by applying
+what was applied before; it cannot remove what a first apply created.
+
+Each tool keeps its own state and its own idea of drift: Terraform notices
+drift when it plans, Ansible and Chef only when they run, Puppet and DSC
+agents on their own schedule. [`meridian drift`](run-safety.md#finding-drift)
+asks every tool the same question and reports what each says, without
+papering over the difference: a tool that cannot preview is reported as
+unknown, never as in sync.
+
+What Meridian does across stages, so that a run is safe to repeat and to
+share, is on [running safely](run-safety.md): one run at a time, a record of
+every run, resuming a run that failed, putting one back, and finding drift.
 
 A worked example: [a two-stage workflow](../quickstart/first-two-stage.md).

@@ -98,6 +98,10 @@ impl Runner for TerraformRunner {
         Operations::ALL
     }
 
+    fn accepts_inputs(&self) -> bool {
+        true
+    }
+
     fn plan(
         &self,
         context: &RunContext,

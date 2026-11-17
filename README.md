@@ -71,10 +71,22 @@ Plugins are found beside the `meridian` binary, or in the directories named by `
 or `MERIDIAN_PLUGIN_DIR`. Each tool's working files and Meridian's own run-state live under
 `--state-dir` (`.meridian` by default).
 
+A `plan` or `apply` holds a lock on that state, so two runs cannot collide, and every run is
+recorded: `meridian status` shows the last one step by step, and `meridian apply --resume`
+continues an apply that failed from the stage that failed. `--on-failure rollback` and
+`meridian rollback` put back what an apply changed, and `meridian drift` says whether what was
+applied is still what is there. With `--policy`, a `plan` or `apply` first asks a policy, written
+in Rego for Open Policy Agent, whether each change may be made, and an apply that is denied
+applies nothing ([policy checks](docs/reference/policy.md)). The record can be kept in a shared place with `--backend`. See
+[running safely](docs/concepts/run-safety.md).
+
 A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
 `targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever
 that output turns out to be; until that infrastructure has been applied it is reported as
-deferred. Values a tool marks sensitive are masked wherever Meridian prints.
+deferred. A document can also be handed a value from any other document with `spec.imports`:
+a file it compiles to, such as cloud-init user-data for the machine Terraform creates, or an
+output. It reaches the tool as the tool's own variable, and the documents run in the order
+that needs. Values a tool marks sensitive are masked wherever Meridian prints.
 
 ## Layout
 
@@ -98,6 +110,8 @@ The core is a Cargo workspace under `crates/`:
 - `meridian-orchestrator` — runs a workflow: compiles each document, drives its tool through a
   plugin, hands outputs from one stage to the next, and stops on the first failure
 - `meridian-cli` — the `meridian` command
+- `meridian-policy-opa` — the policy engine for Open Policy Agent, which `--policy` asks whether
+  a change may be made
 - `meridian-target-fake` — a small, complete plugin whose tool is a directory, used by the tests
   and readable as a worked example of the SDK
 - `meridian-plugin-testkit` — what the first-party plugins' tests share

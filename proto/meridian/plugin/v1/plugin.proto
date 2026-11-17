@@ -200,6 +200,12 @@ message DescribeResponse {
   // turn into Meridian documents. A plugin that lists any also serves
   // Importer; a plugin that lists none is never asked to import.
   repeated ImportFormat import_formats = 9;
+  // accepts_inputs says the plugin hands RunContext.inputs to its tool, as
+  // the tool's own variables or parameters. A document that declares
+  // spec.imports is refused for a plugin that does not say so, because the
+  // values would otherwise be dropped without a word. A plugin built before
+  // this field existed reports false, so the protocol version did not change.
+  bool accepts_inputs = 10;
 }
 
 message EmitRequest {

@@ -90,10 +90,7 @@ fn bundle(text: &str) -> Bundle {
 }
 
 fn options(tools: &Tools) -> Options {
-    Options {
-        state_dir: tools.dir.join("state"),
-        data: Data::new(),
-    }
+    Options::new(tools.dir.join("state"))
 }
 
 /// Keeps what the tools printed, as the operator would see it.

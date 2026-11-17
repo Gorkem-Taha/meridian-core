@@ -50,6 +50,39 @@ id and becomes `var.region` or `local.region`.
         value: web-${region}
 ```
 
+### Values from other documents
+
+A value the document
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) from another
+document arrives as a variable's value, under the import's name, so the import
+and the variable share a name. A string is passed as it is; a number, a
+boolean, a list or a map is passed as JSON. The value is never written into
+`main.tf.json`.
+
+```yaml
+spec:
+  target: terraform
+  imports:
+    - name: user_data
+      from: artifact
+      ref: bootstrap
+      file: user-data
+      sensitive: true
+  resources:
+    - id: user_data
+      type: variable
+      params: {type: string, sensitive: true}
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        user_data: ${user_data}
+```
+
+[`examples/workflow/bootstrap-then-machine.yaml`](../../examples/workflow/bootstrap-then-machine.yaml)
+creates a machine with the user-data a cloud-init document compiles to.
+
 ## References
 
 `${web_vm.public_ip}` in a param or an output refers to another resource of the
@@ -169,8 +202,9 @@ and the report is [`web-vm.notes`](../../plugins/terraform/testdata/import/web-v
 | Apply | the same plan, then `terraform apply meridian.tfplan`, then `terraform output -json` |
 | `MERIDIAN_TERRAFORM` | the program to run, when it is not `terraform` on `PATH`; set it to `tofu` for OpenTofu |
 
-What is applied is exactly the plan that was shown. Values handed over from
-earlier stages reach the configuration as `TF_VAR_<name>` input variables.
+What is applied is exactly the plan that was shown. Values the document
+[imports](#values-from-other-documents) reach the configuration
+as `TF_VAR_<name>` input variables.
 Terraform's state stays where the configuration's `backend` puts it; with no
 backend it is a local file in the document's directory under the state
 directory, so keep that directory.

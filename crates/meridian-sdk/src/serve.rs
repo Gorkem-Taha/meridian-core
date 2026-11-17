@@ -126,6 +126,7 @@ async fn serve_async(plugin: Plugin) -> Result<(), ServeError> {
     let emitter = EmitterServer::new(EmitterHandler {
         emitter: Arc::clone(&plugin.emitter),
         operations,
+        accepts_inputs: plugin.runner.as_ref().is_some_and(|r| r.accepts_inputs()),
         importer: plugin.importer.clone(),
         protocol,
     });
@@ -186,6 +187,7 @@ async fn host_is_done() {
 struct EmitterHandler {
     emitter: Arc<dyn Emitter + Send + Sync>,
     operations: Operations,
+    accepts_inputs: bool,
     /// Kept only to describe it: importing is served by its own handler.
     importer: Option<Arc<dyn Importer>>,
     /// The protocol version agreed with the host.
@@ -209,6 +211,7 @@ impl EmitterService for EmitterHandler {
             category: wire::category_to_wire(self.emitter.category()) as i32,
             target_versions: self.emitter.target_versions(),
             operations: Some(wire::operations_to_wire(self.operations)),
+            accepts_inputs: self.accepts_inputs,
             import_formats: wire::import_formats_to_wire(
                 self.importer
                     .as_ref()
