@@ -1,0 +1,112 @@
+# A web server on Kubernetes, packaged as a Helm chart and installed as a
+# release.
+#
+# Every object's type is its apiVersion and kind, and its params are the rest
+# of the manifest. ${values.<path>} reads one of the chart's values,
+# ${release.name} is the name the chart is installed under, and ${id} alone is
+# the name of another object of this document.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-app
+spec:
+  target: helm
+  resources:
+    # Not objects: the chart's default values, the chart itself, and how it
+    # is installed.
+    - id: values
+      type: values
+      params:
+        replicas: 2
+        image:
+          repository: nginx
+          tag: "1.27"
+        port: 8080
+        greeting: Hello from Meridian
+
+    - id: chart
+      type: chart
+      params:
+        version: 1.4.0
+        appVersion: "1.27"
+        description: A small web server.
+
+    - id: release
+      type: release
+      params:
+        namespace: web
+        createNamespace: true
+        wait: true
+        timeout: 5m
+
+    - id: web_config
+      type: v1/ConfigMap
+      params:
+        metadata:
+          name: ${release.name}-config
+        data:
+          index.html: |
+            <h1>${values.greeting}</h1>
+          # Nothing the author writes is read as a template: this reaches the
+          # cluster as it stands.
+          banner.tmpl: "{{ .Site.Title }} is served from port ${values.port}"
+      # Helm has no handlers. The server restarts when this object changes
+      # because a checksum of it is kept on the server's pod template.
+      notifies:
+        - resource: web
+          action: restart
+
+    - id: web
+      type: apps/v1/Deployment
+      params:
+        metadata:
+          name: ${release.name}
+          labels:
+            app.kubernetes.io/name: ${release.name}
+            app.kubernetes.io/version: ${chart.appVersion}
+        spec:
+          replicas: ${values.replicas}
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: ${release.name}
+          template:
+            metadata:
+              labels:
+                app.kubernetes.io/name: ${release.name}
+            spec:
+              containers:
+                - name: nginx
+                  image: ${values.image.repository}:${values.image.tag}
+                  ports:
+                    - containerPort: ${values.port}
+                  volumeMounts:
+                    - name: content
+                      mountPath: /usr/share/nginx/html
+              volumes:
+                - name: content
+                  configMap:
+                    name: ${web_config}
+      # Helm creates a ConfigMap before a Deployment, so this needs nothing
+      # written into the chart.
+      dependsOn:
+        - resource: web_config
+
+    - id: web_svc
+      type: v1/Service
+      params:
+        metadata:
+          name: ${release.name}
+        spec:
+          type: LoadBalancer
+          selector:
+            app.kubernetes.io/name: ${release.name}
+          ports:
+            - port: 80
+              targetPort: ${values.port}
+
+  outputs:
+    # Read from the cluster once the release is installed.
+    - name: web_address
+      value: ${web_svc.status.loadBalancer.ingress[0].ip}
+    - name: web_cluster_url
+      value: http://${web_svc}.${release.namespace}.svc:80/

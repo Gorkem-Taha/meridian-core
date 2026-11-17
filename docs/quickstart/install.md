@@ -20,6 +20,7 @@ meridian
 meridian-target-ansible
 meridian-target-cloud-init
 meridian-target-terraform
+meridian-target-helm
 ...
 ```
 
@@ -57,6 +58,7 @@ hand:
 | `docker` | `docker` with the Compose plugin |
 | `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |
+| `helm` | `helm`; `kustomize` when a document has an overlay; `kubectl` when an output reads from the cluster |
 
 Each tool keeps using its own credentials and configuration. Meridian does not
 store or pass any: if `aws sts get-caller-identity` or `kubectl get nodes` works

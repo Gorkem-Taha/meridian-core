@@ -17,6 +17,7 @@ project's own: one DSL for everything.
 | Docker | <img src="logos/meridian-docker.svg" width="48" alt="Meridian Docker plugin logo"> | Containers |
 | Podman | <img src="logos/meridian-podman.svg" width="48" alt="Meridian Podman plugin logo"> | Containers |
 | Kubernetes | <img src="logos/meridian-kubernetes.svg" width="48" alt="Meridian Kubernetes plugin logo"> | Orchestration |
+| Helm with Kustomize | <img src="logos/meridian-helm.svg" width="48" alt="Meridian Helm plugin logo"> | Orchestration |
 
 ## The system
 
