@@ -1,10 +1,6 @@
 [workspace]
 resolver = "2"
-<<<<<<< HEAD
-members = ["crates/*", "plugins/ansible", "plugins/puppet", "plugins/terraform", "plugins/cloudformation", "plugins/bicep", "plugins/kubernetes", "plugins/docker", "plugins/chef", "plugins/dsc", "plugins/arm"]
-=======
-members = ["crates/*", "plugins/ansible", "plugins/puppet", "plugins/terraform", "plugins/cloudformation", "plugins/bicep", "plugins/kubernetes", "plugins/docker", "plugins/chef", "plugins/dsc", "plugins/podman", "plugins/cloud-init"]
->>>>>>> origin/main
+members = ["crates/*", "plugins/ansible", "plugins/puppet", "plugins/terraform", "plugins/cloudformation", "plugins/bicep", "plugins/kubernetes", "plugins/docker", "plugins/chef", "plugins/dsc", "plugins/podman", "plugins/cloud-init", "plugins/arm"]
 
 [workspace.package]
 version = "0.1.0"

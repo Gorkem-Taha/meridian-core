@@ -23,24 +23,16 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-<<<<<<< HEAD
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `arm` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
-=======
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`) |
->>>>>>> origin/main
+| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `arm`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 | the stages of a first boot | `cloud-init` | nothing written; each resource is placed at the step cloud-init handles it, a file that has to wait is deferred, and a dependency that points backwards through those steps is refused |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
-<<<<<<< HEAD
-Terraform, the plugin does not write it a second time. An ARM template is the
-exception: Resource Manager infers no order from a resource id, so the `arm`
-target writes a `dependsOn` for every reference as well.
-=======
 Terraform or `Volume: ${data}:/srv` does in a Podman unit, the plugin does not
-write it a second time.
->>>>>>> origin/main
+write it a second time. An ARM template is the exception: Resource Manager
+infers no order from a resource id, so the `arm` target writes a `dependsOn`
+for every reference as well.
 
 ## `notifies`: reaction
 
@@ -87,14 +79,9 @@ actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
 Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
-<<<<<<< HEAD
-is accepted. CloudFormation, Bicep and ARM templates have no way to react to a change at
-all, and refuse every notify.
-=======
 is accepted. systemd can propagate a restart between Podman units and nothing
-else, so only `restart` is accepted there. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
->>>>>>> origin/main
+else, so only `restart` is accepted there. CloudFormation, Bicep and ARM
+templates have no way to react to a change at all, and refuse every notify.
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to
