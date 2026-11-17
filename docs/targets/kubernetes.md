@@ -1,0 +1,129 @@
+# Target: `kubernetes`
+
+Compiles an Infrastructure document into Kubernetes manifests and applies them
+with `kubectl`.
+
+## What it does and does not support
+
+| | |
+|---|---|
+| Resource types | Kubernetes' own: API version and kind, such as `apps/v1/Deployment` or `v1/Service`, plus `cluster` for where the manifests go. Custom resources work the same way |
+| `dependsOn` | Orders the manifests in the file, and nothing more. `kubectl` applies them in that order without waiting for one to be ready. A warning says so |
+| `notifies` | Synthetic: the action `restart`, aimed at a Deployment, StatefulSet or DaemonSet. See [Notifications](#notifications) |
+| `runtimeWhen` | No. Refused |
+| `state: absent` | No. Applying manifests never deletes an object; delete it with `kubectl` and remove it from the document |
+| Plan | Yes: a server-side dry run |
+| Outputs | Yes: any path into a live object |
+
+## What a document looks like
+
+A resource's `type` is the object's API version and kind and its `params` are
+the object's fields, exactly as Kubernetes documents them: `metadata`, `spec`,
+`data`. `apiVersion` and `kind` come from the type and cannot be set again.
+
+An object with no `metadata.name` is named after the resource's id, with
+underscores turned into hyphens (`web_config` becomes `web-config`).
+
+One resource may have the type `cluster`. It is not a manifest:
+
+| Param | Meaning |
+|---|---|
+| `context` | the kubeconfig context to use |
+| `namespace` | the namespace for objects that do not set their own |
+| `kubeconfig` | a kubeconfig file other than the default |
+
+## References
+
+Kubernetes does not wire one object's state into another's spec, so inside
+`params` a reference can only be something known at compile time:
+
+| You write | You get |
+|---|---|
+| `${web_config}` or `${web_config.metadata.name}` | the object's name |
+| `${web_config.metadata.namespace}` | its namespace |
+
+Anything else, such as `${web_svc.status.loadBalancer.ingress[0].ip}`, is
+refused in a param with an explanation. It can be read in an output.
+
+## Outputs
+
+An output is read from the cluster after the apply, so it can be any path into
+the live object:
+
+```yaml
+outputs:
+  - name: web_url
+    value: http://${web_svc.status.loadBalancer.ingress[0].ip}
+```
+
+A load balancer's address takes a while to appear. After an apply Meridian waits
+for an output that has no value yet, two minutes by default
+(`MERIDIAN_KUBECTL_OUTPUT_WAIT`, in seconds). An output that never arrives is an
+error, not an empty value. Anything read from a Secret is reported as sensitive.
+
+## Notifications
+
+Kubernetes does not restart pods when a ConfigMap or Secret they use changes.
+For a notify with the action `restart`, Meridian writes a checksum of the
+notifier into an annotation on the workload's pod template,
+`meridian.dev/restart-on-<name>`. When the notifier's content changes, the
+template changes, and the workload's own controller rolls its pods. The compile
+warns that this is how it works, and the annotation is visible in the manifest
+and on the pods.
+
+## Example
+
+[`examples/kubernetes/web.yaml`](../../examples/kubernetes/web.yaml) declares a
+ConfigMap, a Deployment and a Service, and compiles to
+[`web.manifests_yaml`](../../plugins/kubernetes/testdata/web.manifests_yaml). The
+ConfigMap and the part of the Deployment it touches:
+
+```yaml
+- id: web_config
+  type: v1/ConfigMap
+  params:
+    data:
+      nginx.conf: |
+        server { ... }
+  notifies:
+    - resource: web
+      action: restart
+```
+
+```yaml
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-config
+data:
+  nginx.conf: |
+    server { ... }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  template:
+    metadata:
+      annotations:
+        meridian.dev/restart-on-web-config: 3e7aa8895791e35c
+```
+
+## Running
+
+| | |
+|---|---|
+| Plan | `kubectl apply --dry-run=server --filename manifests.yaml` |
+| Apply | `kubectl apply --filename manifests.yaml`, then each output with `kubectl get ... --output jsonpath=...` |
+| `MERIDIAN_KUBECTL` | the program to run, when it is not `kubectl` on `PATH` |
+| `MERIDIAN_KUBECTL_ARGS` | arguments added to every call |
+| `MERIDIAN_KUBECTL_OUTPUT_WAIT` | seconds an apply waits for an output that has no value yet |
+
+One limit of the plan: nothing is stored in a dry run, so objects that go in a
+namespace the same document creates cannot be previewed until the namespace
+exists. Meridian reports that plan as unknown instead of failing it.
+
+The runner has been tested against a stand-in for `kubectl`. It has not yet been
+run against a real cluster.
