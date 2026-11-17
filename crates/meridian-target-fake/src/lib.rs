@@ -77,6 +77,14 @@ impl Emitter for Fake {
                 .files
                 .insert(format!("files/{}", resource.id), content);
         }
+        // A declared output is compiled into the artifact, as a real target
+        // compiles one into its tool's own output block.
+        for output in &graph.outputs {
+            emitted
+                .artifact
+                .files
+                .insert(format!("outputs/{}", output.name), output.value.clone());
+        }
         // The resolved data is echoed so a test can see it arrive intact.
         if !data.is_empty() {
             emitted
@@ -141,6 +149,28 @@ fn outputs_of(state: &BTreeMap<String, Value>, context: &RunContext) -> Vec<Outp
             sensitive: true,
         },
     ];
+    // Declared outputs. `${id.content}` is the content of that file, which is
+    // this tool's one attribute; anything else is taken as written. A name
+    // starting `secret_` is reported as sensitive.
+    for (path, expression) in state {
+        let Some(name) = path.strip_prefix("outputs/") else {
+            continue;
+        };
+        let Value::String(expression) = expression else {
+            continue;
+        };
+        let value = expression
+            .strip_prefix("${")
+            .and_then(|e| e.strip_suffix(".content}"))
+            .and_then(|id| state.get(&format!("files/{id}")))
+            .cloned()
+            .unwrap_or_else(|| Value::from(expression.as_str()));
+        outputs.push(Output {
+            name: name.to_owned(),
+            value,
+            sensitive: name.starts_with("secret_"),
+        });
+    }
     if let Some(greeting) = context.inputs.get("greeting") {
         outputs.push(Output {
             name: "greeting".to_owned(),
@@ -184,6 +214,11 @@ impl Runner for FakeRunner {
         log: &dyn Log,
     ) -> Result<Applied, RunError> {
         let mut state = read_state(&context.work_dir)?;
+        // Tools echo their variables more often than anyone would like. This
+        // one does it on purpose, so a host's masking has something to catch.
+        if !context.inputs.is_empty() {
+            log.err(&format!("inputs: {}", canonical_map(&context.inputs)));
+        }
         let planned = diff(&state, artifact);
         let mut done = Vec::new();
         let save = |state: &BTreeMap<String, Value>| {
@@ -273,22 +308,28 @@ pub fn serve_from_env() -> Result<(), ServeError> {
 /// Builds the plugin binary and returns the directory holding it, for a test
 /// that needs the real process. The build is a no-op when it is up to date.
 ///
-/// A test cannot ask Cargo for another package's binary, so it is built here,
-/// into the same target directory the test itself was built in.
+/// A test cannot ask Cargo for another package's binary through an
+/// environment variable, so it is built here, and Cargo is asked where it put
+/// the result: the layout of a target directory is Cargo's business and has
+/// changed between releases.
 pub fn plugin_dir() -> PathBuf {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        // target/<profile>/deps/<test binary> -> target/<profile>
-        let exe = std::env::current_exe().expect("the test binary has a path");
-        let profile_dir = exe
-            .parent()
-            .and_then(Path::parent)
-            .expect("the test binary is inside a target directory")
-            .to_path_buf();
+        let name = "meridian-target-fake";
         let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
         let mut build = Command::new(cargo);
-        build.args(["build", "--quiet", "--locked", "-p", "meridian-target-fake"]);
-        if profile_dir.file_name().is_some_and(|n| n == "release") {
+        build.args([
+            "build",
+            "--locked",
+            "--message-format=json",
+            "-p",
+            name,
+            "--bin",
+            name,
+        ]);
+        // Built the way the test itself was, so a release test run does not
+        // also compile a debug plugin.
+        if !cfg!(debug_assertions) {
             build.arg("--release");
         }
         let output = build
@@ -300,17 +341,47 @@ pub fn plugin_dir() -> PathBuf {
             "building the fake plugin:\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        let messages = String::from_utf8_lossy(&output.stdout);
+        let built = messages
+            .lines()
+            .filter(|line| line.contains("\"reason\":\"compiler-artifact\""))
+            .filter_map(executable_in)
+            .rfind(|path| path.file_name().is_some_and(|n| n == name))
+            .unwrap_or_else(|| panic!("cargo did not report where it built {name}:\n{messages}"));
+
         // Discovery loads everything named like a plugin, so the binary gets
         // a directory to itself.
-        let dir = profile_dir.join("fake-plugin");
+        let dir = built
+            .parent()
+            .expect("the binary is in a directory")
+            .join("fake-plugin");
         std::fs::create_dir_all(&dir).expect("creating the plugin directory");
-        let name = "meridian-target-fake";
+        // Copied under another name and renamed, so a test process running in
+        // parallel never executes a half-written file.
         let staged = dir.join(format!("{name}.{}", std::process::id()));
-        std::fs::copy(profile_dir.join(name), &staged).expect("copying the plugin binary");
+        std::fs::copy(&built, &staged).expect("copying the plugin binary");
         std::fs::rename(&staged, dir.join(name)).expect("placing the plugin binary");
         dir
     })
     .clone()
+}
+
+/// The `executable` path in one of Cargo's JSON build messages.
+fn executable_in(message: &str) -> Option<PathBuf> {
+    let marker = "\"executable\":\"";
+    let start = message.find(marker)? + marker.len();
+    let rest = &message[start..];
+    let mut path = String::new();
+    let mut chars = rest.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '"' => return Some(PathBuf::from(path)),
+            // JSON escapes a backslash or a quote in a path with a backslash.
+            '\\' => path.push(chars.next()?),
+            c => path.push(c),
+        }
+    }
+    None
 }
 
 /// The plugin binary itself.
