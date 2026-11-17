@@ -16,7 +16,7 @@ its SSH key, and the packages a configuration tool needs to find there.
 | `notifies` | Emulated: each notified action is a command that runs once, after every other command, with a warning. Actions `start`, `stop`, `restart`, `reload` on a service, `run` on an exec ([how](#notifications)) |
 | `runtimeWhen` | No. It is refused: cloud-init evaluates nothing per resource |
 | States | Only what a first boot can do. `absent` on a user, group or package and `latest` on a package are refused ([everything refused](#what-is-refused)) |
-| References (`${...}`) | Not resolved. Text in a param is written out as it stands ([references](#references)) |
+| References (`${...}`) | `${id.param}` is settled from the document when it is compiled; anything else is refused. `$${` is a literal `${` ([references](#references)) |
 | Plan | Yes: `cloud-init schema` checks the user-data, and the plan says whether the seed would change. No machine is contacted |
 | Apply | Writes the user-data and a NoCloud seed on the machine running Meridian. The new machine applies it by itself on its first boot. `apply` can wait for that boot over SSH ([plan and apply](#plan-and-apply)) |
 | Outputs | Yes: `seed_dir` and `user_data_file` ([outputs](#outputs)) |
@@ -489,13 +489,34 @@ runcmd:
 
 ## References
 
-A ResourceSet for this target does not resolve `${...}`. A param is text, and it
-is written into the user-data as it stands, `$${` included. This is the same on
-the `ansible`, `puppet` and `chef` targets.
+A resource for this target is only what the document says: nothing can be read
+from the machine before it has booted. So a reference is settled when the
+document is compiled, the same way as on the `ansible`, `puppet` and `chef`
+targets. `${id.param}` becomes the value the document gives that param on
+resource `id`:
 
-That is usually what you want here, because a `${...}` in a file's content or in
-a command is most often meant for the shell or for the program that reads the
-file:
+```yaml
+- id: app_dir
+  type: file
+  state: directory
+  params:
+    path: /srv/app
+
+- id: unit_env
+  type: file
+  params:
+    path: /etc/default/app
+    content: "APP_HOME=${app_dir.path}\n"    # APP_HOME=/srv/app
+```
+
+Anything else is refused with the rule `invalid-reference`: a resource the
+document does not declare, a param that resource does not set, a bare `${id}`,
+a deeper path, or a function call. A reference does not order the two
+resources; use `dependsOn` for that. The full rules are in
+[the resource types reference](../reference/resource-types.md#references).
+
+A `${...}` meant for the shell, or for the program that reads a file, is
+written `$${...}`, which comes out as a literal `${...}`:
 
 ```yaml
 - id: profile
@@ -503,7 +524,7 @@ file:
   params:
     path: /etc/profile.d/app.sh
     content: |
-      export APP_HOME=${HOME}/app
+      export APP_HOME=$${HOME}/app
 ```
 
 ```yaml
@@ -512,6 +533,9 @@ write_files:
     content: |
       export APP_HOME=${HOME}/app
 ```
+
+Without the second `$` that document is refused, because `HOME` is not a
+resource in it. Nothing is written out unresolved.
 
 The one value this target takes from another document is its host. Write
 `targetHost` with `from: infrastructure` and the host is the named output of an
