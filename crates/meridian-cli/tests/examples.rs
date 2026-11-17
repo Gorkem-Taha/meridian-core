@@ -17,13 +17,23 @@ fn examples() -> Vec<PathBuf> {
         }
         for file in fs::read_dir(&directory).unwrap() {
             let file = file.unwrap().path();
-            if file.extension().is_some_and(|e| e == "yaml") {
+            let is_data = file
+                .file_name()
+                .is_some_and(|name| name.to_string_lossy().ends_with(".data.yaml"));
+            if file.extension().is_some_and(|e| e == "yaml") && !is_data {
                 found.push(file);
             }
         }
     }
     found.sort();
     found
+}
+
+/// The data file an example's conditions read, when it has one: for
+/// `x.yaml` it is `x.data.yaml`, beside it.
+fn data_for(example: &Path) -> Option<PathBuf> {
+    let data = example.with_extension("data.yaml");
+    data.is_file().then_some(data)
 }
 
 /// The targets a file's documents select.
@@ -46,6 +56,11 @@ fn every_example_compiles_with_the_real_plugins() {
 
         let mut command = Command::new(env!("CARGO_BIN_EXE_meridian"));
         command.arg("compile").arg(&file);
+        // An example whose conditions read data keeps that data beside it,
+        // as <the example's name>.data.yaml.
+        if let Some(data) = data_for(&file) {
+            command.arg("--data").arg(data);
+        }
         for target in &targets {
             let binary = plugin_binary(&format!("meridian-target-{target}"));
             command.arg("--plugin-dir").arg(binary.parent().unwrap());

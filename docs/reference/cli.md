@@ -2,10 +2,12 @@
 
 ```
 meridian validate <files>...
-meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
-meridian plan     <files>... [-l SELECTOR] [--data FILE]
-meridian apply    <files>... [-l SELECTOR] [--data FILE]
+meridian compile  <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE] [--out DIR]
+meridian plan     <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
+meridian apply    <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
 meridian plugins
+meridian migrate  <files>... [--to APIVERSION] [--check]
+meridian version
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -93,6 +95,65 @@ dsc
 The category decides which kind of document the plugin is handed, and the
 versions decide which `targetVersion` a document may ask it for.
 
+`sdk` is the SDK release the plugin was built against, and `protocol` is the
+protocol version `meridian` and the plugin agreed on when it started. A plugin
+whose protocol or SDK this `meridian` cannot work with is not listed: the
+command fails and says which side is behind.
+[Compatibility](compatibility.md) has the rules.
+
+### `migrate`
+
+Rewrites documents from an older language version (`apiVersion`) to a newer
+one, in place.
+
+```
+meridian migrate site.yaml modules/*.yaml
+meridian migrate site.yaml --to meridian/v1
+meridian migrate site.yaml --check
+```
+
+- `--to` names the version to move to. Without it, the newest version this
+  build supports.
+- `--check` changes nothing and exits `1` if any file would change. Use it in
+  CI to keep an estate on the current version.
+
+Each file is reported on its own line:
+
+```
+site.yaml: already at meridian/v1
+```
+
+A file is rewritten as text, so comments, key order and layout are kept. Only
+an `apiVersion` at the top level of a document is changed; an `apiVersion`
+inside a resource's `params`, such as a Kubernetes object's, is left alone. A
+file is rewritten whole or not at all.
+
+`migrate` never guesses. Where a change between two versions needs a decision
+only you can make, it lists those decisions for that file, leaves the file as
+it was, and exits `1`. It never moves a document to an older version.
+
+`meridian/v1` is the only language version so far, so today the command
+reports that every Meridian document is already current. It is here now so
+that the release that introduces `meridian/v2` ships with its migration.
+
+### `version`
+
+Shows every version this build carries. One number cannot answer "which
+version of Meridian": the core, the language, the plugin SDK and the plugin
+protocol each move on their own.
+
+```
+meridian 0.1.0
+  language         meridian/v1  supported
+  plugin sdk       0.1.0
+  plugin protocol  2
+```
+
+A language version is `supported`, `deprecated since meridian <release>` or
+`removed in meridian <release>`. `plugin protocol` is the range this build
+speaks, such as `2` or `2 to 3`. `meridian --version` prints the first line
+only. [Compatibility](compatibility.md) explains each.
+
 ### `signing`
 
 Makes signing keys, signs plugin binaries and checks their signatures. It is
@@ -122,6 +183,7 @@ meridian signing verify --trusted-key acme.pub meridian-target-acme
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
 | `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
+| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
 
 ### Running part of a workflow
 
@@ -142,6 +204,17 @@ meridian plan site.yaml --data common.yaml --data prod.yaml
 A resource with `when: "data.env != 'prod'"` is in the plan or not, depending on
 what the data files say `env` is. A condition that reads a key no file sets is
 an error; nothing is guessed.
+
+### A deprecated language version
+
+When a run reads documents written in a deprecated `apiVersion`, it prints one
+warning for the whole run, however many documents there are, and carries on:
+
+```
+warning: 14 documents, the first being "web", use apiVersion "meridian/v1", which is deprecated since meridian 2.0.0 and will stop being read; run `meridian migrate --to meridian/v2` to move to meridian/v2
+```
+
+No version is deprecated today.
 
 ## Exit status
 

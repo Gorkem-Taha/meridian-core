@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use meridian_plugin_host::{Client, Error, Registry, StartOptions};
-use meridian_sdk::PROTOCOL_VERSION;
+use meridian_sdk::{version, PROTOCOL_VERSION, VERSION};
 
 /// Writes an executable script and returns its path.
 fn script(name: &str, body: &str) -> PathBuf {
@@ -99,15 +99,70 @@ fn a_silent_plugin_is_given_up_on_and_killed() {
 fn a_plugin_from_another_protocol_version_is_refused_before_any_call() {
     let path = script(
         "from-the-future",
-        "echo 'MERIDIAN-PLUGIN|99|9.9.9|unix|/tmp/never-dialled'\ncat >/dev/null",
+        "echo 'MERIDIAN-PLUGIN|99|0.1.0|unix|/tmp/never-dialled'\ncat >/dev/null",
     );
     let err = start_err(&path, &quick());
     assert_eq!(err.msg, "protocol mismatch");
     assert_eq!(
         err.cause,
-        "the plugin speaks protocol version 99 and this host implements 2; \
-         rebuild the plugin against a matching SDK"
+        "the plugin speaks protocol version 99 and this host speaks 2; \
+         the plugin is newer than this host: upgrade meridian"
     );
+
+    let path = script(
+        "from-the-past",
+        "echo 'MERIDIAN-PLUGIN|1|0.1.0|unix|/tmp/never-dialled'\ncat >/dev/null",
+    );
+    let err = start_err(&path, &quick());
+    assert_eq!(err.msg, "protocol mismatch");
+    assert_eq!(
+        err.cause,
+        "the plugin speaks protocol version 1 and this host speaks 2; \
+         the plugin is older than this host supports: rebuild it against a current SDK"
+    );
+}
+
+#[test]
+fn a_plugin_built_against_an_sdk_this_host_does_not_ship_is_refused_by_name() {
+    let path = script(
+        "newer-sdk",
+        &format!(
+            "echo 'MERIDIAN-PLUGIN|{PROTOCOL_VERSION}|9.9.9|unix|/tmp/never-dialled'\ncat >/dev/null"
+        ),
+    );
+    let err = start_err(&path, &quick());
+    assert_eq!(err.msg, "SDK mismatch");
+    assert_eq!(
+        err.cause,
+        format!(
+            "the plugin was built against SDK 9.9.9 (9.x), and this host ships SDK {VERSION} \
+             (0.1.x); the plugin's SDK is newer than this host supports: upgrade meridian"
+        )
+    );
+}
+
+#[test]
+fn the_host_offers_the_protocol_versions_it_speaks() {
+    // The plugin picks its version from this offer, so it has to arrive even
+    // when the caller replaced the plugin's whole environment.
+    let path = script(
+        "says-what-it-was-offered",
+        "echo \"offered: [$MERIDIAN_PLUGIN_PROTOCOLS]\" >&2\nexit 3",
+    );
+    let want = format!(
+        "offered: [{}]",
+        version::offer(&version::supported_protocols())
+    );
+    for options in [
+        quick(),
+        StartOptions {
+            env: Some(vec![("PATH".to_owned(), std::env::var("PATH").unwrap())]),
+            ..quick()
+        },
+    ] {
+        let err = start_err(&path, &options);
+        assert!(err.stderr.contains(&want), "{err:?}");
+    }
 }
 
 #[test]

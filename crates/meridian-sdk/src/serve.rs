@@ -19,7 +19,7 @@ use crate::listen::Listening;
 use crate::pb::emitter_server::{Emitter as EmitterService, EmitterServer};
 use crate::pb::runner_server::{Runner as RunnerService, RunnerServer};
 use crate::{
-    pb, wire, Emitter, Log, LogLine, Operations, Runner, HANDSHAKE_MAGIC, PROTOCOL_VERSION, VERSION,
+    pb, version, wire, Emitter, Log, LogLine, Operations, Runner, HANDSHAKE_MAGIC, VERSION,
 };
 
 /// What a plugin binary serves: an emitter, and optionally a runner.
@@ -92,11 +92,17 @@ async fn serve_async(plugin: Plugin) -> Result<(), ServeError> {
 
     // Announce only once the endpoint is listening, so the host can dial the
     // moment it has read the line.
+    //
+    // The version announced is the highest the host offered that this SDK
+    // also speaks. A host that offered nothing predates negotiation, and gets
+    // this SDK's newest, as it always did.
+    let offered = std::env::var(version::PROTOCOLS_ENV).ok();
+    let protocol = version::choose(offered.as_deref(), &version::supported_protocols());
     {
         let mut stdout = std::io::stdout().lock();
         writeln!(
             stdout,
-            "{HANDSHAKE_MAGIC}|{PROTOCOL_VERSION}|{VERSION}|{}|{}",
+            "{HANDSHAKE_MAGIC}|{protocol}|{VERSION}|{}|{}",
             Listening::NETWORK,
             listening.address
         )
@@ -108,6 +114,7 @@ async fn serve_async(plugin: Plugin) -> Result<(), ServeError> {
     let emitter = EmitterServer::new(EmitterHandler {
         emitter: Arc::clone(&plugin.emitter),
         operations,
+        protocol,
     });
     let mut router = tonic::transport::Server::builder().add_service(emitter);
     if let Some(runner) = &plugin.runner {
@@ -161,6 +168,8 @@ async fn host_is_done() {
 struct EmitterHandler {
     emitter: Arc<dyn Emitter + Send + Sync>,
     operations: Operations,
+    /// The protocol version agreed with the host.
+    protocol: u32,
 }
 
 #[tonic::async_trait]
@@ -172,7 +181,7 @@ impl EmitterService for EmitterHandler {
         let mut resource_types = self.emitter.supported_resource_types();
         resource_types.sort();
         Ok(Response::new(pb::DescribeResponse {
-            protocol_version: PROTOCOL_VERSION,
+            protocol_version: self.protocol,
             sdk_version: VERSION.to_owned(),
             name: self.emitter.name().to_owned(),
             resource_types,
