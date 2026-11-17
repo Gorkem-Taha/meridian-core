@@ -463,7 +463,7 @@ fn version_shows_every_version_stream_of_the_build() {
     assert_eq!(
         stdout(&out),
         format!(
-            "meridian {}\n  language         meridian/v1  supported\n  plugin sdk       {}\n  plugin protocol  2\n",
+            "meridian {}\n  language         meridian/v1  supported\n  plugin sdk       {}\n  plugin protocol  2\n  lockfile format  1\n",
             env!("CARGO_PKG_VERSION"),
             meridian_sdk::VERSION
         )

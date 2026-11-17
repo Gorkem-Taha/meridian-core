@@ -29,6 +29,7 @@ The policy behind all of this, including how long a version is supported, is
 | Language versions read | `meridian/v1` |
 | Plugin SDK shipped | `0.1.0` |
 | Plugin protocol versions spoken | 2 |
+| [Lockfile](modules.md#the-lockfile) format written | 1 |
 
 ## Language versions
 
@@ -118,3 +119,14 @@ the plugin was built against SDK 0.2.0 (0.2.x), and this host ships SDK 0.1.0 (0
 The SDK and the protocol are separate numbers on purpose. The SDK gains
 helpers far more often than the messages between `meridian` and a plugin
 change, so most SDK releases leave the protocol where it is.
+
+## Modules
+
+A [module](modules.md) says which releases of `meridian` it works with in its
+manifest's `spec.meridian`, and a release outside that range refuses the module
+by name. A module's documents carry their own `apiVersion`, and are read by
+the rules above like any other document.
+
+`meridian.lock` carries a format number, `lockVersion`. A newer `meridian`
+reads a lockfile written by an older one. An older `meridian` refuses a
+lockfile written in a newer format, and says to upgrade.
