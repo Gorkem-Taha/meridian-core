@@ -1,0 +1,6 @@
+greeting: Hello from Meridian
+image:
+  repository: nginx
+  tag: "1.27"
+port: 8080
+replicas: 2

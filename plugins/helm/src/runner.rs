@@ -1,0 +1,593 @@
+//! The half that installs a chart with `helm`. It sits outside the compile
+//! chain: nothing here is reached by a compile.
+//!
+//! A plan renders the chart and compares the result with the manifest of the
+//! release Helm last installed. An apply installs or upgrades the release.
+//! When the document has a Kustomize overlay, Helm renders the chart,
+//! Kustomize patches what it rendered, and Helm installs the patched objects,
+//! so the result is still one Helm release with a history and a rollback.
+
+use std::collections::BTreeMap;
+use std::fs;
+
+use meridian_sdk::tool::{write_artifact, Tool};
+use meridian_sdk::{
+    decode_value, Applied, Artifact, Change, Log, NoLog, Operations, Output, Plan, RunContext,
+    RunError, Runner, Value,
+};
+use meridian_yaml::Yaml;
+
+use crate::emit::RENDERED_FILE;
+use crate::manifest::{self, Key};
+use crate::path::{self, Step};
+use crate::{template, CHART_DIR, KUSTOMIZE_DIR, RELEASE_PATH};
+
+/// Names the program to run, when it is not `helm` on `PATH`.
+pub const HELM_VARIABLE: &str = "MERIDIAN_HELM";
+/// Extra arguments for every `helm` call, split on whitespace:
+/// `--kube-context prod`.
+pub const HELM_ARGS_VARIABLE: &str = "MERIDIAN_HELM_ARGS";
+/// The command that builds an overlay, when it is not `kustomize build`:
+/// `kubectl kustomize` uses the copy built into kubectl.
+pub const KUSTOMIZE_VARIABLE: &str = "MERIDIAN_KUSTOMIZE";
+/// Names the program that reads outputs, when it is not `kubectl` on `PATH`.
+pub const KUBECTL_VARIABLE: &str = "MERIDIAN_KUBECTL";
+/// Extra arguments for every `kubectl` call, split on whitespace:
+/// `--context prod`.
+pub const KUBECTL_ARGS_VARIABLE: &str = "MERIDIAN_KUBECTL_ARGS";
+
+/// The directory of the work directory that holds the patched objects as a
+/// chart of their own, when the document has an overlay.
+const PATCHED_DIR: &str = "patched";
+
+/// Installs a compiled chart as a release.
+pub struct HelmRunner {
+    pub helm: String,
+    /// Arguments added to every `helm` call, after Meridian's own.
+    pub helm_args: Vec<String>,
+    /// The command that builds an overlay: the program, then its leading
+    /// arguments. The overlay's directory is added as the last one.
+    pub kustomize: Vec<String>,
+    pub kubectl: String,
+    /// Arguments added to every `kubectl` call, after Meridian's own.
+    pub kubectl_args: Vec<String>,
+}
+
+/// The object a resource of the document became.
+struct Target {
+    api_version: String,
+    kind: String,
+    name: String,
+    namespace: String,
+}
+
+enum Part {
+    Text(String),
+    Lookup { resource: String, path: Vec<Step> },
+}
+
+struct OutputSpec {
+    name: String,
+    sensitive: bool,
+    parts: Vec<Part>,
+}
+
+/// What `release.json` says about the installation.
+struct Release {
+    name: String,
+    namespace: String,
+    create_namespace: bool,
+    wait: bool,
+    atomic: bool,
+    timeout: String,
+    chart_name: String,
+    chart_version: String,
+    kustomize: bool,
+    /// By the id the author wrote.
+    resources: BTreeMap<String, Target>,
+    outputs: Vec<OutputSpec>,
+}
+
+impl Release {
+    fn read(text: &str) -> Result<Release, RunError> {
+        Release::parse(text)
+            .ok_or_else(|| RunError::new(format!("{RELEASE_PATH} is not one this plugin compiled")))
+    }
+
+    fn parse(text: &str) -> Option<Release> {
+        let value = decode_value(text.as_bytes()).ok()?;
+        let map = value.as_map()?;
+        let string = |map: &BTreeMap<String, Value>, key: &str| {
+            map.get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned()
+        };
+        let flag = |key: &str| matches!(map.get(key), Some(Value::Bool(true)));
+        let chart = map.get("chart")?.as_map()?;
+
+        let mut resources = BTreeMap::new();
+        for (id, target) in map.get("resources")?.as_map()? {
+            let target = target.as_map()?;
+            resources.insert(
+                id.clone(),
+                Target {
+                    api_version: string(target, "apiVersion"),
+                    kind: string(target, "kind"),
+                    name: string(target, "name"),
+                    namespace: string(target, "namespace"),
+                },
+            );
+        }
+        let mut outputs = Vec::new();
+        for output in map.get("outputs")?.as_list()? {
+            let output = output.as_map()?;
+            let mut parts = Vec::new();
+            for part in output.get("parts")?.as_list()? {
+                let part = part.as_map()?;
+                parts.push(match part.get("text") {
+                    Some(text) => Part::Text(text.as_str()?.to_owned()),
+                    None => Part::Lookup {
+                        resource: string(part, "resource"),
+                        path: path::from_value(part.get("path")?)?,
+                    },
+                });
+            }
+            outputs.push(OutputSpec {
+                name: string(output, "name"),
+                sensitive: matches!(output.get("sensitive"), Some(Value::Bool(true))),
+                parts,
+            });
+        }
+
+        let release = Release {
+            name: string(map, "release"),
+            namespace: string(map, "namespace"),
+            create_namespace: flag("createNamespace"),
+            wait: flag("wait"),
+            atomic: flag("atomic"),
+            timeout: string(map, "timeout"),
+            chart_name: string(chart, "name"),
+            chart_version: string(chart, "version"),
+            kustomize: flag("kustomize"),
+            resources,
+            outputs,
+        };
+        (!release.name.is_empty() && !release.namespace.is_empty()).then_some(release)
+    }
+
+    /// The id of the resource an object was declared by, or the tool's own
+    /// name for an object no resource accounts for.
+    fn resource_of(&self, key: &Key) -> String {
+        let mut candidates = self.resources.iter().filter(|(_, t)| {
+            t.api_version == key.api_version && t.kind == key.kind && t.name == key.name
+        });
+        let found = match (candidates.next(), candidates.next()) {
+            (Some((id, _)), None) => Some(id),
+            // The same object in two namespaces: the namespace decides.
+            (Some(first), Some(second)) => [first, second]
+                .into_iter()
+                .chain(candidates)
+                .find(|(_, t)| t.namespace == key.namespace)
+                .map(|(id, _)| id),
+            _ => None,
+        };
+        found
+            .cloned()
+            .unwrap_or_else(|| format!("{}/{}", key.kind, key.name))
+    }
+}
+
+/// A chart rendered to the objects an apply would install.
+struct Rendered {
+    release: Release,
+    manifests: String,
+    /// The chart to install, relative to the work directory: the compiled
+    /// one, or the patched objects when there is an overlay.
+    chart: &'static str,
+}
+
+/// A rendered chart compared with the release in the cluster.
+struct Preview {
+    rendered: Rendered,
+    changes: Vec<Change>,
+    /// The release's status, or `None` when there is no such release.
+    status: Option<String>,
+}
+
+impl Preview {
+    /// Whether the release is installed, healthy and already what the chart
+    /// describes.
+    fn in_sync(&self) -> bool {
+        self.changes.is_empty() && self.status.as_deref() == Some("deployed")
+    }
+}
+
+fn split(variable: &str) -> Vec<String> {
+    std::env::var(variable)
+        .map(|v| v.split_whitespace().map(str::to_owned).collect())
+        .unwrap_or_default()
+}
+
+impl HelmRunner {
+    /// The runner as the environment configures it.
+    pub fn from_env() -> Self {
+        let program = |variable: &str, default: &str| {
+            std::env::var(variable)
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| default.to_owned())
+        };
+        let mut kustomize = split(KUSTOMIZE_VARIABLE);
+        if kustomize.is_empty() {
+            kustomize = vec!["kustomize".to_owned(), "build".to_owned()];
+        }
+        HelmRunner {
+            helm: program(HELM_VARIABLE, "helm"),
+            helm_args: split(HELM_ARGS_VARIABLE),
+            kustomize,
+            kubectl: program(KUBECTL_VARIABLE, "kubectl"),
+            kubectl_args: split(KUBECTL_ARGS_VARIABLE),
+        }
+    }
+
+    /// One `helm` call about the release.
+    fn helm(&self, context: &RunContext, release: &Release, operation: &[&str]) -> Tool {
+        Tool::new(&self.helm)
+            .args(operation.iter().copied())
+            .args(["--namespace", &release.namespace])
+            .args(self.helm_args.iter().cloned())
+            .dir(&context.work_dir)
+    }
+
+    /// Renders the artifact to the manifests an apply would install, without
+    /// reading or changing a cluster: Helm renders the chart, and Kustomize
+    /// patches the result when the document has an overlay.
+    pub fn render(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &dyn Log,
+    ) -> Result<String, RunError> {
+        Ok(self.rendered(context, artifact, log)?.manifests)
+    }
+
+    fn rendered(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &dyn Log,
+    ) -> Result<Rendered, RunError> {
+        let chart_file = format!("{CHART_DIR}/Chart.yaml");
+        let (Some(_), Some(settings)) = (
+            artifact.files.get(&chart_file),
+            artifact.files.get(RELEASE_PATH),
+        ) else {
+            return Err(RunError::new(format!(
+                "the artifact has no {chart_file} and {RELEASE_PATH}; it was not compiled by this plugin"
+            )));
+        };
+        let release = Release::read(settings)?;
+        write_artifact(&context.work_dir, artifact)?;
+
+        log.out(&format!("release {}: rendering the chart", release.name));
+        let templated = self
+            .helm(context, &release, &["template", &release.name, CHART_DIR])
+            .capture_stdout()
+            .run_ok("helm could not render the chart", log)?
+            .stdout;
+        if !release.kustomize {
+            return Ok(Rendered {
+                release,
+                manifests: templated,
+                chart: CHART_DIR,
+            });
+        }
+
+        // Kustomize only reads files under the overlay's own directory.
+        let write = |path: std::path::PathBuf, text: &str| {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    RunError::new(format!("could not create {}: {e}", parent.display()))
+                })?;
+            }
+            fs::write(&path, text)
+                .map_err(|e| RunError::new(format!("could not write {}: {e}", path.display())))
+        };
+        write(
+            context.work_dir.join(KUSTOMIZE_DIR).join(RENDERED_FILE),
+            &templated,
+        )?;
+        log.out(&format!(
+            "release {}: applying the Kustomize overlay",
+            release.name
+        ));
+        let (program, leading) = self.kustomize.split_first().ok_or_else(|| {
+            RunError::new("no command is configured to build a Kustomize overlay")
+        })?;
+        let patched = Tool::new(program)
+            .args(leading.iter().cloned())
+            .arg(KUSTOMIZE_DIR)
+            .dir(&context.work_dir)
+            .capture_stdout()
+            .run_ok("kustomize could not apply the overlay", log)?
+            .stdout;
+
+        // The patched objects become a chart of their own, so Helm installs
+        // exactly them. They are final: nothing in them is a template, and a
+        // `{{` is escaped to stay one.
+        let dir = context.work_dir.join(PATCHED_DIR);
+        let _ = fs::remove_dir_all(&dir);
+        let about = Yaml::Map(vec![
+            ("apiVersion".to_owned(), Yaml::str("v2")),
+            ("name".to_owned(), Yaml::str(&release.chart_name)),
+            (
+                "description".to_owned(),
+                Yaml::str("What the compiled chart renders, patched by its Kustomize overlay."),
+            ),
+            ("type".to_owned(), Yaml::str("application")),
+            ("version".to_owned(), Yaml::str(&release.chart_version)),
+        ]);
+        write(dir.join("Chart.yaml"), &meridian_yaml::write(&about))?;
+        write(
+            dir.join("templates/manifests.yaml"),
+            &template::literal(&patched),
+        )?;
+        Ok(Rendered {
+            release,
+            manifests: patched,
+            chart: PATCHED_DIR,
+        })
+    }
+
+    /// The release's status as Helm names it, or `None` when it has never
+    /// been installed.
+    fn status(&self, context: &RunContext, release: &Release) -> Result<Option<String>, RunError> {
+        let finished = self
+            .helm(
+                context,
+                release,
+                &["status", &release.name, "--output", "json"],
+            )
+            .capture_stdout()
+            .run(&NoLog)?;
+        if !finished.success() {
+            if finished.stderr.contains("release: not found") {
+                return Ok(None);
+            }
+            return Err(finished.into_error("helm could not read the release"));
+        }
+        let described = decode_value(finished.stdout.trim().as_bytes())
+            .map_err(|e| RunError::new(format!("the release's status could not be read: {e}")))?;
+        let status = described
+            .as_map()
+            .and_then(|m| m.get("info"))
+            .and_then(Value::as_map)
+            .and_then(|info| info.get("status"))
+            .and_then(Value::as_str)
+            .unwrap_or("unknown");
+        Ok(Some(status.to_owned()))
+    }
+
+    fn preview(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &dyn Log,
+    ) -> Result<Preview, RunError> {
+        let rendered = self.rendered(context, artifact, log)?;
+        let release = &rendered.release;
+        let status = self.status(context, release)?;
+        let installed = match status {
+            None => String::new(),
+            Some(_) => {
+                self.helm(context, release, &["get", "manifest", &release.name])
+                    .capture_stdout()
+                    .run_ok("helm could not read what the release holds", &NoLog)?
+                    .stdout
+            }
+        };
+        let changes = manifest::diff(
+            &manifest::objects(&installed),
+            &manifest::objects(&rendered.manifests),
+        )
+        .into_iter()
+        .map(|(action, key)| Change {
+            resource: release.resource_of(&key),
+            action,
+            summary: if key.namespace.is_empty() {
+                format!("{} {}", key.kind, key.name)
+            } else {
+                format!("{} {} in namespace {}", key.kind, key.name, key.namespace)
+            },
+        })
+        .collect();
+        Ok(Preview {
+            rendered,
+            changes,
+            status,
+        })
+    }
+
+    /// Reads one object from the cluster.
+    fn object(
+        &self,
+        context: &RunContext,
+        release: &Release,
+        target: &Target,
+    ) -> Result<Value, RunError> {
+        // A kind alone can name two things once a cluster has custom
+        // resources, so a grouped kind is asked for in full.
+        let resource = match target.api_version.split_once('/') {
+            Some((group, version)) => format!("{}.{version}.{group}", target.kind),
+            None => target.kind.clone(),
+        };
+        let namespace = if target.namespace.is_empty() {
+            &release.namespace
+        } else {
+            &target.namespace
+        };
+        let finished = Tool::new(&self.kubectl)
+            .args(["get", &resource, &target.name])
+            .args(["--namespace", namespace, "--output", "json"])
+            .args(self.kubectl_args.iter().cloned())
+            .dir(&context.work_dir)
+            .capture_stdout()
+            .run_ok(
+                &format!("kubectl could not read the {} {}", target.kind, target.name),
+                &NoLog,
+            )?;
+        decode_value(finished.stdout.trim().as_bytes()).map_err(|e| {
+            RunError::new(format!(
+                "the {} {} could not be read: {e}",
+                target.kind, target.name
+            ))
+        })
+    }
+
+    fn read_outputs(
+        &self,
+        context: &RunContext,
+        release: &Release,
+    ) -> Result<Vec<Output>, RunError> {
+        let mut objects: BTreeMap<&str, Value> = BTreeMap::new();
+        let mut outputs = Vec::with_capacity(release.outputs.len());
+        for spec in &release.outputs {
+            let mut values = Vec::with_capacity(spec.parts.len());
+            for part in &spec.parts {
+                let (resource, path) = match part {
+                    Part::Text(text) => {
+                        values.push(Value::String(text.clone()));
+                        continue;
+                    }
+                    Part::Lookup { resource, path } => (resource, path),
+                };
+                let target = release.resources.get(resource).ok_or_else(|| {
+                    RunError::new(format!(
+                        "output {:?} reads the resource {resource:?}, which {RELEASE_PATH} does not list",
+                        spec.name
+                    ))
+                })?;
+                if !objects.contains_key(resource.as_str()) {
+                    objects.insert(resource, self.object(context, release, target)?);
+                }
+                let found = path::lookup(&objects[resource.as_str()], path).map_err(|missing| {
+                    RunError::new(format!(
+                        "output {:?}: the {} {} has no {missing} yet. A value the cluster fills \
+                         in later, such as a load balancer's address, is there once the release \
+                         is ready; set wait: true on the release to have Helm wait for that",
+                        spec.name, target.kind, target.name
+                    ))
+                })?;
+                values.push(found.clone());
+            }
+            // One reference alone keeps its type; anything longer is text.
+            let value = match (spec.parts.as_slice(), values.as_slice()) {
+                ([Part::Lookup { .. }], [value]) => value.clone(),
+                _ => Value::String(
+                    values
+                        .iter()
+                        .map(|v| template::as_text(v).unwrap_or_else(|| v.canonical()))
+                        .collect(),
+                ),
+            };
+            outputs.push(Output {
+                name: spec.name.clone(),
+                value,
+                sensitive: spec.sensitive,
+            });
+        }
+        Ok(outputs)
+    }
+}
+
+impl Runner for HelmRunner {
+    fn operations(&self) -> Operations {
+        Operations::ALL
+    }
+
+    fn plan(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &dyn Log,
+    ) -> Result<Plan, RunError> {
+        let preview = self.preview(context, artifact, log)?;
+        // A release that is there but not healthy is upgraded again by an
+        // apply even when its objects are the ones the chart describes, and
+        // what that will change in the cluster is not something the manifests
+        // show.
+        let unknown = preview.changes.is_empty() && !preview.in_sync();
+        if let (true, Some(status)) = (unknown, &preview.status) {
+            log.out(&format!(
+                "release {}: its status is {status}, so an apply will upgrade it again",
+                preview.rendered.release.name
+            ));
+        }
+        Ok(Plan {
+            changes: preview.changes,
+            unknown,
+        })
+    }
+
+    fn apply(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &dyn Log,
+    ) -> Result<Applied, RunError> {
+        let preview = self.preview(context, artifact, log)?;
+        let release = &preview.rendered.release;
+        if preview.in_sync() {
+            log.out(&format!("release {}: nothing to change", release.name));
+        } else {
+            log.out(&format!(
+                "release {}: {}",
+                release.name,
+                if preview.status.is_none() {
+                    "installing"
+                } else {
+                    "upgrading"
+                }
+            ));
+            let mut upgrade = self.helm(
+                context,
+                release,
+                &[
+                    "upgrade",
+                    "--install",
+                    &release.name,
+                    preview.rendered.chart,
+                ],
+            );
+            if release.create_namespace {
+                upgrade = upgrade.arg("--create-namespace");
+            }
+            if release.wait {
+                upgrade = upgrade.arg("--wait");
+            }
+            if release.atomic {
+                upgrade = upgrade.arg("--atomic");
+            }
+            if !release.timeout.is_empty() {
+                upgrade = upgrade.args(["--timeout", &release.timeout]);
+            }
+            upgrade.run_ok(
+                "helm could not install the release; `helm status` and `helm history` say what \
+                 state it was left in",
+                log,
+            )?;
+        }
+        Ok(Applied {
+            outputs: self.read_outputs(context, release)?,
+            changes: preview.changes,
+        })
+    }
+
+    fn outputs(&self, context: &RunContext) -> Result<Vec<Output>, RunError> {
+        let settings = fs::read_to_string(context.work_dir.join(RELEASE_PATH)).map_err(|_| {
+            RunError::new("nothing has been applied for this document yet, so it has no outputs")
+        })?;
+        self.read_outputs(context, &Release::read(&settings)?)
+    }
+}
