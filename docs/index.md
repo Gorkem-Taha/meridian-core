@@ -19,11 +19,11 @@ degrades silently. See [the capability model](plans/design-plan.md#8-the-notifie
 
 ## Project status
 
-Early implementation, and changing language. Milestones 1 to 3 and half of milestone 4
-were built in Go: the compiler core, the plugin protocol, and Ansible and Puppet targets.
-On 2026-11-17 the core language was changed to Rust. The Go code remains as the reference
-until the Rust core reproduces its output. The reasons, the layout and the order of work
-are in [design plan §11](plans/design-plan.md#11-system-architecture-rust) and
+Early implementation. The core, the plugin protocol and the plugins are written in Rust.
+The first implementation was in Go; the core language was changed to Rust on 2026-11-17
+and the Go code was removed once the Rust core and plugins reproduced its output byte for
+byte. The reasons, the layout and the order of work are in
+[design plan §11](plans/design-plan.md#11-system-architecture-rust) and
 [§12.1](plans/design-plan.md#121-rust-migration-sequencing).
 
 ## Planning documents

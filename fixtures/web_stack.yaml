@@ -1,5 +1,4 @@
 # The ordinary shape of a configuration document, and one notify action (reload) that not every target can perform.
-# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
 # The plugin contract test compiles it through every shipped target and
 # compares the output with plugins/<target>/testdata. `target` is a placeholder:
 # the test sets it to each target in turn.

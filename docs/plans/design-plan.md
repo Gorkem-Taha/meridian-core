@@ -304,8 +304,8 @@ Each has its own `Capabilities{}` — do not assume DSC v3 inherits DSC classic'
 
 **Decided 2026-11-17 by the project owner, superseding the original choice of Go.** The
 first implementation (milestones 1 to 3 and the Puppet half of milestone 4) was written in
-Go and is still in the repository. It is the reference the Rust core is ported against, and
-it is removed only once the Rust core reproduces its output (§12.1).
+Go. It was the reference the Rust core and plugins were ported against, and it was removed
+once they reproduced its output byte for byte (§12.1).
 
 What the decision keeps, and why the rewrite is affordable:
 
@@ -316,7 +316,7 @@ What the decision keeps, and why the rewrite is affordable:
 - **The specification is the documents, not the code.** The IR schema (§4), data
   resolution (§5), the condition pipeline (§6), the graph rules (§7) and the capability
   model (§8) are stated here independent of language.
-- **The golden files are the acceptance test.** Every fixture in `internal/fixtures` has a
+- **The golden files are the acceptance test.** Every fixture in `fixtures/` has a
   committed expected output per target, including the refusals. A Rust core that feeds the
   same plugins and produces byte-identical artifacts and warnings is correct by the same
   definition the Go core was.
@@ -337,14 +337,14 @@ What it costs, stated up front:
 
 - The working Go core is rewritten rather than extended, so no new target ships until the
   port reaches parity.
-- Two toolchains live in the repository for the length of the migration.
-- The plugin SDK must exist in Rust (`meridian-sdk`) before any first-party plugin can be
-  written in Rust. The Go SDK in `pkg/sdk` stays until the last Go plugin is ported.
+- Two toolchains lived in the repository for the length of the migration.
+- The plugin SDK had to exist in Rust (`meridian-sdk`) before any first-party plugin could
+  be written in Rust. There is no longer a Go SDK; a plugin in another language serves the
+  protocol in `proto/` directly.
 
 ### 11.2 Project layout
 
-The target layout is a Cargo workspace. During the migration the Go tree (`internal/`,
-`pkg/`, `plugins/ansible`, `plugins/puppet`, `go.mod`) sits beside it.
+The layout is a Cargo workspace.
 
 ```
 meridian-core/
@@ -557,14 +557,11 @@ work is resequenced below.
   `graph`, `ast`, and the plugin host last. Each layer is checked against the Go layer's
   own test cases. The pass mark for the whole milestone is the existing golden files: the
   Rust host drives the existing Go Ansible and Puppet plugin binaries and the artifacts,
-  warnings and refusals are byte-identical. Done. The Go tree is deleted once Ansible and
-  Puppet are ported to Rust, since the Go plugins' own tests build their input with
-  `internal/`.
+  warnings and refusals are byte-identical. Done.
 - **R3. Extend the protocol.** Done. Plugin category and type (§11.7), and the `Runner`
   side of the protocol (plan, apply, outputs; §11.4). Ansible and Puppet are labelled
   configuration management. The protocol version is 2. `meridian-sdk` gained the serving
-  half, so a plugin can be written in Rust. The Go SDK reports the category and still
-  serves the compiling half only.
+  half, so a plugin can be written in Rust.
 - **R4. First orchestrated workflow.** The CLI and orchestrator are done; the first real
   tool plugin is next. The `meridian` CLI and a first orchestrator (§11.5)
   that compiles a workflow, runs its stages in dependency order through the plugins, hands

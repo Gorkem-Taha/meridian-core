@@ -1,6 +1,6 @@
 //! The Runner half of the protocol, and a plugin written in Rust.
 //!
-//! The Go plugins only compile, so these tests use `meridian-target-fake`, a
+//! These tests use `meridian-target-fake`, a
 //! plugin written in Rust against `meridian-sdk`. Its tool is a
 //! directory, which makes plan and apply real: a plan is a comparison with
 //! what the last apply left behind.

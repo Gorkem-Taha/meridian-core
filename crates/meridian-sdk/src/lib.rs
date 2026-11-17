@@ -43,6 +43,7 @@
 
 mod run;
 mod serve;
+pub mod tool;
 mod types;
 pub mod wire;
 

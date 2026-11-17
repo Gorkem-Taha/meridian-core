@@ -1,5 +1,4 @@
 # The notify actions a target is most likely to support, restart and run, both triggered by one resource.
-# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
 # The plugin contract test compiles it through every shipped target and
 # compares the output with plugins/<target>/testdata. `target` is a placeholder:
 # the test sets it to each target in turn.

@@ -1,5 +1,4 @@
 # A condition evaluated on the node at apply time. A target with no apply-time conditional cannot compile this.
-# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
 # The plugin contract test compiles it through every shipped target and
 # compares the output with plugins/<target>/testdata. `target` is a placeholder:
 # the test sets it to each target in turn.

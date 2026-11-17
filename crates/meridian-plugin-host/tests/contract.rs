@@ -1,15 +1,10 @@
-//! The contract test: the Rust host driving the real Go plugin binaries.
+//! The contract test: the host driving every shipped plugin's real binary.
 //!
-//! This is the pass mark for the port. A document is read from YAML, validated,
-//! built into a tree and compiled by each shipped target in its own process,
-//! and the bytes that come back are compared with the golden files the Go
-//! implementation recorded in `plugins/<target>/testdata`. Those files are the
-//! Go core's own output, so matching them means an author sees no difference
-//! between the two cores.
-//!
-//! The plugins are built with `go build`, so the test needs a Go toolchain. It
-//! fails without one instead of skipping: a parity test that quietly does not
-//! run proves nothing.
+//! A document is read from YAML, validated, built into a tree and compiled by
+//! each target in its own process, and the bytes that come back are compared
+//! with the golden files in `plugins/<target>/testdata`. Each plugin's own
+//! tests make the same comparison in process; this one proves nothing is lost
+//! or reworded on the way across the boundary.
 
 // A refusal is passed around by value here exactly as the host returns it.
 #![allow(clippy::result_large_err)]
@@ -17,7 +12,6 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
 use meridian_ast::ResourceGraph;
@@ -79,25 +73,17 @@ fn repo_root() -> PathBuf {
 fn plugin_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
-        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("go-plugins");
-        fs::create_dir_all(&dir).expect("creating the plugin build directory");
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("shipped-plugins");
+        fs::create_dir_all(&dir).expect("creating the plugin directory");
         for target in TARGETS {
             let binary = binary_name(target.name);
-            let output = Command::new("go")
-                .arg("build")
-                .arg("-o")
-                .arg(dir.join(&binary))
-                .arg(format!("./plugins/{}/cmd/{binary}", target.name))
-                .current_dir(repo_root())
-                .output()
-                .unwrap_or_else(|e| {
-                    panic!("running `go build` for {binary}: {e}; this test needs a Go toolchain")
-                });
-            assert!(
-                output.status.success(),
-                "building {binary}:\n{}",
-                String::from_utf8_lossy(&output.stderr)
-            );
+            let built =
+                meridian_plugin_testkit::plugin_binary(&format!("{BINARY_PREFIX}{}", target.name));
+            // Copied under another name and renamed, so a test running in
+            // parallel never executes a half-written file.
+            let staged = dir.join(format!("{binary}.staged"));
+            fs::copy(&built, &staged).expect("copying a plugin binary");
+            fs::rename(&staged, dir.join(&binary)).expect("placing a plugin binary");
         }
         dir
     })
@@ -188,7 +174,7 @@ fn compilable(target: &Target) -> meridian_sdk::ResourceGraph {
 }
 
 #[test]
-fn every_fixture_compiles_to_the_bytes_the_go_core_recorded() {
+fn every_fixture_compiles_to_its_golden_files_across_the_boundary() {
     for target in TARGETS {
         let client = start(target);
         for fixture in FIXTURES {
@@ -211,12 +197,18 @@ fn every_fixture_compiles_to_the_bytes_the_go_core_recorded() {
 
             let emitted =
                 result.unwrap_or_else(|e| panic!("{} compiling {fixture}: {e}", target.name));
-            let got: BTreeMap<String, String> = emitted
+            let mut got: BTreeMap<String, String> = emitted
                 .artifact
                 .files
                 .iter()
                 .map(|(path, text)| (golden_name(fixture, path), text.clone()))
                 .collect();
+            if !emitted.warnings.is_empty() {
+                got.insert(
+                    format!("{fixture}.warnings"),
+                    emitted.warnings.iter().map(|w| format!("{w}\n")).collect(),
+                );
+            }
             // Compare the names first, so a missing or extra artifact reads as
             // that and not as a wall of differing text.
             assert_eq!(
@@ -228,15 +220,14 @@ fn every_fixture_compiles_to_the_bytes_the_go_core_recorded() {
             for (name, text) in &got {
                 assert_eq!(text, &want[name], "{}: {name}", target.name);
             }
-            // The Go core's own emitters recorded these, so a warning lost or
-            // reworded on the way across the boundary shows up here.
+            // A warning lost or reworded on the way across the boundary
+            // shows up here.
             let warnings: String = emitted.warnings.iter().map(|w| format!("{w}\n")).collect();
-            let recorded = Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("tests/golden")
-                .join(format!("{}.{fixture}.warnings", target.name));
             assert_eq!(
                 warnings,
-                fs::read_to_string(&recorded).unwrap(),
+                want.get(&format!("{fixture}.warnings"))
+                    .cloned()
+                    .unwrap_or_default(),
                 "{}/{fixture}: warnings",
                 target.name
             );
@@ -258,9 +249,15 @@ fn a_plugin_describes_itself() {
             target.name
         );
         assert_eq!(info.capabilities, target.capabilities, "{}", target.name);
-        // The Go SDK serves the compiling half of the protocol only.
         assert_eq!(info.category, Category::ConfigurationManagement);
-        assert_eq!(info.operations, Operations::COMPILE_ONLY);
+        assert_eq!(
+            info.operations,
+            Operations {
+                plan: true,
+                apply: true,
+                outputs: false
+            }
+        );
         assert_eq!(info.protocol_version, PROTOCOL_VERSION);
         assert_eq!(info.sdk_version, VERSION);
         assert!(info.path.ends_with(&binary_name(target.name)));
@@ -269,7 +266,7 @@ fn a_plugin_describes_itself() {
 
 /// A refusal has to be reportable against the author's own line. The position
 /// leaves the host inside the tree and comes back inside the refusal, across
-/// two languages and a process boundary.
+/// a process boundary.
 #[test]
 fn a_refusal_points_at_the_line_the_author_wrote() {
     let puppet = &TARGETS[1];

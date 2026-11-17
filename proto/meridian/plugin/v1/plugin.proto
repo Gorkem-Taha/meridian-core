@@ -14,8 +14,6 @@ syntax = "proto3";
 
 package meridian.plugin.v1;
 
-option go_package = "github.com/ZanattaMichael/meridian-core/pkg/sdk/pluginpb";
-
 // Position is a point in a source document, carried so a failure raised inside
 // a plugin can still be reported against the line the author wrote.
 message Position {
