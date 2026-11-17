@@ -94,6 +94,7 @@ fn options(tools: &Tools) -> Options {
     Options {
         state_dir: tools.dir.join("state"),
         data: Data::new(),
+        strict_secrets: false,
     }
 }
 

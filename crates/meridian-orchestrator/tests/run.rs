@@ -95,6 +95,7 @@ fn options(test: &str) -> Options {
     Options {
         state_dir,
         data: Data::new(),
+        strict_secrets: false,
     }
 }
 

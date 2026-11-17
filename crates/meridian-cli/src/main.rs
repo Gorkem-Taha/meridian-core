@@ -88,6 +88,11 @@ enum Command {
     /// Show every version this build carries: core, language, SDK and
     /// plugin protocol
     Version,
+    /// Work with the secrets documents declare, without showing any
+    Secret {
+        #[command(subcommand)]
+        command: SecretCommand,
+    },
     /// Fetch, pin and check the modules the project's meridian.yaml requires
     Module {
         #[command(subcommand)]
@@ -218,6 +223,29 @@ struct Workflow {
     /// YAML would type it: true, 3 and null are not text, "3" is
     #[arg(long, value_name = "KEY=VALUE")]
     set: Vec<String>,
+    /// Refuse to run when a secret cannot be locked in memory, instead of
+    /// warning once and going on
+    #[arg(long, env = "MERIDIAN_STRICT_SECRETS")]
+    strict_secrets: bool,
+}
+
+#[derive(Subcommand)]
+enum SecretCommand {
+    /// Say, for every secret the documents declare, where it comes from and
+    /// whether that place would answer, without reading any value
+    Check {
+        /// The documents whose secrets to check
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// Where fetched modules are kept, for a file written @module:path
+        #[arg(
+            long,
+            value_name = "DIR",
+            env = "MERIDIAN_STATE_DIR",
+            default_value = ".meridian"
+        )]
+        state_dir: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -231,6 +259,9 @@ fn main() -> ExitCode {
             println!("{} valid", count(bundle.documents.len(), "document"));
         }),
         Command::Module { command, state_dir } => module(command, &state_dir),
+        Command::Secret {
+            command: SecretCommand::Check { files, state_dir },
+        } => check_secrets(&files, &state_dir),
         Command::Compile { workflow, out } => orchestrate(&workflow, Mode::Compile, out.as_deref()),
         Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None),
         Command::Apply { workflow } => orchestrate(&workflow, Mode::Apply, None),
@@ -799,6 +830,58 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
         .map_err(|e| Failure::Message(e.to_string()))
 }
 
+/// Says where each declared secret comes from and whether that place would
+/// answer. Nothing is fetched: a file is looked at and not read, a command is
+/// found and not run. Fails when a secret that is not optional has no answer.
+fn check_secrets(files: &[PathBuf], state_dir: &Path) -> Result<(), Failure> {
+    use meridian_secret::Probe;
+    let bundle = load(files, state_dir)?;
+    let (mut declared, mut unanswered) = (0, 0);
+    for doc in &bundle.documents {
+        if doc.secrets().is_empty() {
+            continue;
+        }
+        println!("{} ({})", doc.name(), doc.position().file);
+        let width = doc
+            .secrets()
+            .iter()
+            .map(|s| s.name.len())
+            .max()
+            .unwrap_or(0);
+        for secret in doc.secrets() {
+            declared += 1;
+            let probe = secret.source().probe();
+            let state = match (&probe, secret.optional) {
+                (Probe::Present(_), _) => "ok",
+                (Probe::Unknown(_), _) => "not checked",
+                (Probe::Absent(_), true) => "absent, optional",
+                (Probe::Absent(_), false) => "MISSING",
+                (Probe::Refused(_), _) => "REFUSED",
+            };
+            if matches!(state, "MISSING" | "REFUSED") {
+                unanswered += 1;
+            }
+            println!(
+                "  {:width$}  {:5}  {state}: {}",
+                secret.name,
+                secret.from,
+                probe.words()
+            );
+        }
+    }
+    if declared == 0 {
+        println!("no secret is declared");
+    }
+    if unanswered == 0 {
+        Ok(())
+    } else {
+        Err(Failure::Message(format!(
+            "{} would not be found by plan or apply",
+            count(unanswered, "secret")
+        )))
+    }
+}
+
 fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<(), Failure> {
     let bundle = load(&workflow.files, &workflow.state_dir)?;
     let mut selector = Selector::all();
@@ -817,6 +900,7 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
     let options = Options {
         state_dir: workflow.state_dir.clone(),
         data,
+        strict_secrets: workflow.strict_secrets,
     };
     let mut printer = Printer { mode, out };
     let report = run_selected(&bundle, &registry, mode, &options, &selector, &mut printer);

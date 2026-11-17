@@ -2,11 +2,10 @@
 //! stage may do with them afterwards.
 
 use std::collections::BTreeMap;
-use std::path::Path;
 
-use meridian_ir::{Document, Secret, Secrets};
+use meridian_ir::{Document, Secrets};
 use meridian_sdk::Value;
-use meridian_secret::{from_env, from_exec, from_file, FetchError, FileOptions, SecretTable};
+use meridian_secret::{FetchError, SecretTable};
 
 /// Fetches every secret the document declares into `secrets`.
 ///
@@ -15,7 +14,7 @@ use meridian_secret::{from_env, from_exec, from_file, FetchError, FileOptions, S
 /// found reads as null.
 pub(crate) fn fetch(doc: &Document, secrets: &mut Secrets) -> Result<(), String> {
     for secret in doc.secrets() {
-        match fetch_one(secret) {
+        match secret.source().fetch() {
             Ok(value) => secrets.hold(&secret.name, value),
             Err(FetchError::Missing(_)) if secret.optional => secrets.absent(&secret.name),
             Err(e) => {
@@ -27,24 +26,6 @@ pub(crate) fn fetch(doc: &Document, secrets: &mut Secrets) -> Result<(), String>
         }
     }
     Ok(())
-}
-
-fn fetch_one(secret: &Secret) -> Result<meridian_secret::SecretValue, FetchError> {
-    match secret.from.as_str() {
-        "env" => from_env(&secret.key),
-        "file" => from_file(
-            Path::new(&secret.path),
-            FileOptions {
-                allow_wide_mode: secret.allow_wide_mode,
-                keep_trailing_newline: secret.keep_trailing_newline,
-            },
-        ),
-        "exec" => from_exec(&secret.command),
-        // `validate` refuses any other provider before a run starts.
-        other => Err(FetchError::Failed(format!(
-            "{other:?} is not a provider this version has"
-        ))),
-    }
 }
 
 /// Where the first secret in a document's params is: the resource and the
@@ -99,5 +80,18 @@ fn described(value: Value, table: &SecretTable) -> Value {
                 .collect(),
         ),
         other => other,
+    }
+}
+
+/// What to do about memory that cannot be locked.
+pub(crate) const RAISE_THE_LIMIT: &str = "Raise the limit on locked memory (ulimit -l, or \
+                                          LimitMEMLOCK= for a service).";
+
+/// The secrets `names`, as a sentence starts.
+pub(crate) fn named(names: &[String]) -> String {
+    let quoted: Vec<String> = names.iter().map(|n| format!("{n:?}")).collect();
+    match quoted.as_slice() {
+        [one] => format!("the secret {one}"),
+        many => format!("the secrets {}", many.join(", ")),
     }
 }

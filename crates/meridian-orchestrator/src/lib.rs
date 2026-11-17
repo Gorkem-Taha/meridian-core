@@ -166,6 +166,9 @@ pub struct Options {
     /// The data `when` conditions are decided against, also handed to every
     /// target when it compiles.
     pub data: Data,
+    /// Fail a stage whose secrets cannot be locked in memory, instead of
+    /// warning once and going on.
+    pub strict_secrets: bool,
 }
 
 /// The text shown in place of a sensitive value.
@@ -211,6 +214,7 @@ pub fn run_selected(
     };
     let mut report = RunReport::default();
     let mut failed: Option<StageId> = None;
+    let mut warned_unlocked = false;
 
     for stage in stages(bundle, selector, &options.data) {
         let id = stage.id();
@@ -228,8 +232,21 @@ pub fn run_selected(
             && failed.is_none()
             && !document.secrets().is_empty()
             && !matches!(resolution, Ok(Resolution::Skipped { .. }));
+        let mut unlocked = Vec::new();
         if fetches {
-            resolution = match secrets::fetch(&document, &mut secrets) {
+            let fetched = secrets::fetch(&document, &mut secrets).and_then(|()| {
+                unlocked = secrets.unlocked();
+                if options.strict_secrets && !unlocked.is_empty() {
+                    return Err(format!(
+                        "{} could not be locked in memory and may reach swap, and \
+                         --strict-secrets is set. {}",
+                        secrets::named(&unlocked),
+                        secrets::RAISE_THE_LIMIT
+                    ));
+                }
+                Ok(())
+            });
+            resolution = match fetched {
                 Ok(()) => meridian_ir::resolve_with(&document, &options.data, &secrets),
                 Err(why) => Err(meridian_ir::Error {
                     pos: document.position().clone(),
@@ -259,7 +276,21 @@ pub fn run_selected(
             continue;
         }
         observer.stage_started(&id, &target);
-        let stage_report = run.stage(id, target, resolution, &secrets, observer);
+        let mut stage_report = run.stage(id, target, resolution, &secrets, observer);
+        // Said once in a run: the reason is the machine's, not the stage's.
+        if !unlocked.is_empty() && !options.strict_secrets && !warned_unlocked {
+            warned_unlocked = true;
+            stage_report.warnings.push(Warning {
+                target: "secrets".to_owned(),
+                resource: String::new(),
+                msg: format!(
+                    "{} could not be locked in memory and may reach swap. {} \
+                     --strict-secrets makes this an error",
+                    secrets::named(&unlocked),
+                    secrets::RAISE_THE_LIMIT
+                ),
+            });
+        }
         // The stage is over: its secrets are wiped now, not at the end of
         // the run, and so is the filter that held their forms.
         run.masker = Masker::new();
