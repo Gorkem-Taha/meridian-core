@@ -7,13 +7,28 @@
 #![cfg(unix)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use meridian_plugin_testkit::{artifact, scratch, stand_in, KeptLog};
 use meridian_sdk::{Artifact, ChangeAction, RunContext, Runner, Value};
 use meridian_target_opentofu::OpenTofuRunner;
 
 const TMP: &str = env!("CARGO_TARGET_TMPDIR");
+
+/// A scratch directory, and a guard that keeps the other tests of this file
+/// from running until it is dropped.
+///
+/// A stand-in is a script written and then executed. If another thread starts
+/// a process while the script is still open for writing, the new process
+/// briefly holds that handle too, and executing the script in that instant
+/// fails with "text file busy". One test at a time leaves no other thread to
+/// start one.
+fn scratch_alone(name: &str) -> (PathBuf, MutexGuard<'static, ()>) {
+    static ALONE: Mutex<()> = Mutex::new(());
+    let guard = ALONE.lock().unwrap_or_else(PoisonError::into_inner);
+    (scratch(TMP, name), guard)
+}
 
 fn compiled() -> Artifact {
     artifact(&[("main.tofu.json", "{}\n")])
@@ -71,7 +86,7 @@ fn calls(dir: &Path) -> Vec<String> {
 
 #[test]
 fn a_plan_initialises_plans_and_reads_the_saved_plan() {
-    let dir = scratch(TMP, "plan");
+    let (dir, _serial) = scratch_alone("plan");
     let log = KeptLog::default();
     let plan = runner(&dir, HAPPY)
         .plan(&context(&dir), &compiled(), &log)
@@ -100,7 +115,7 @@ fn a_plan_initialises_plans_and_reads_the_saved_plan() {
 
 #[test]
 fn the_tool_runs_in_the_work_directory_without_prompting() {
-    let dir = scratch(TMP, "environment");
+    let (dir, _serial) = scratch_alone("environment");
     runner(&dir, HAPPY)
         .plan(&context(&dir), &compiled(), &KeptLog::default())
         .unwrap();
@@ -119,7 +134,7 @@ fn the_tool_runs_in_the_work_directory_without_prompting() {
 
 #[test]
 fn an_apply_applies_the_plan_it_just_showed_and_reports_outputs() {
-    let dir = scratch(TMP, "apply");
+    let (dir, _serial) = scratch_alone("apply");
     let applied = runner(&dir, HAPPY)
         .apply(&context(&dir), &compiled(), &KeptLog::default())
         .unwrap();
@@ -147,7 +162,7 @@ fn an_apply_applies_the_plan_it_just_showed_and_reports_outputs() {
 
 #[test]
 fn a_plan_with_nothing_to_do_reports_no_changes() {
-    let dir = scratch(TMP, "in-sync");
+    let (dir, _serial) = scratch_alone("in-sync");
     let cases = r#"init) echo ok ;;
 plan) echo 'No changes. Your infrastructure matches the configuration.' ;;
 show) echo '{"resource_changes":[{"address":"aws_instance.web_vm","mode":"managed","type":"aws_instance","name":"web_vm","change":{"actions":["no-op"]}}]}' ;;"#;
@@ -160,7 +175,7 @@ show) echo '{"resource_changes":[{"address":"aws_instance.web_vm","mode":"manage
 
 #[test]
 fn every_kind_of_change_is_told_apart() {
-    let dir = scratch(TMP, "changes");
+    let (dir, _serial) = scratch_alone("changes");
     let cases = r#"init) echo ok ;;
 plan) echo ok ;;
 show) echo '{"resource_changes":[
@@ -194,7 +209,7 @@ show) echo '{"resource_changes":[
 
 #[test]
 fn outputs_are_read_without_planning_anything() {
-    let dir = scratch(TMP, "outputs");
+    let (dir, _serial) = scratch_alone("outputs");
     let err = runner(&dir, HAPPY).outputs(&context(&dir)).unwrap_err();
     assert_eq!(
         err.msg,
@@ -237,7 +252,7 @@ fn a_failed_step_says_which_and_stops_there() {
             5,
         ),
     ] {
-        let dir = scratch(TMP, &format!("failed-{ran}"));
+        let (dir, _serial) = scratch_alone(&format!("failed-{ran}"));
         let err = runner(&dir, cases)
             .apply(&context(&dir), &compiled(), &KeptLog::default())
             .unwrap_err();
@@ -250,7 +265,7 @@ fn a_failed_step_says_which_and_stops_there() {
 
 #[test]
 fn a_failure_names_the_command_that_failed() {
-    let dir = scratch(TMP, "failed-command");
+    let (dir, _serial) = scratch_alone("failed-command");
     let cases = "init) echo ok ;;\nplan) echo 'Error: nope' >&2; exit 3 ;;";
     let err = runner(&dir, cases)
         .plan(&context(&dir), &compiled(), &KeptLog::default())
@@ -263,7 +278,7 @@ fn a_failure_names_the_command_that_failed() {
 
 #[test]
 fn a_plan_that_is_not_json_is_an_error_and_not_an_empty_plan() {
-    let dir = scratch(TMP, "garbled");
+    let (dir, _serial) = scratch_alone("garbled");
     let cases = "init) echo ok ;;\nplan) echo ok ;;\nshow) echo 'Warning: something' ;;";
     let err = runner(&dir, cases)
         .plan(&context(&dir), &compiled(), &KeptLog::default())
@@ -277,7 +292,7 @@ fn a_plan_that_is_not_json_is_an_error_and_not_an_empty_plan() {
 
 #[test]
 fn an_artifact_from_another_plugin_is_refused() {
-    let dir = scratch(TMP, "foreign");
+    let (dir, _serial) = scratch_alone("foreign");
     for foreign in ["playbook.yml", "main.tf.json"] {
         let err = runner(&dir, HAPPY)
             .plan(
@@ -296,7 +311,7 @@ fn an_artifact_from_another_plugin_is_refused() {
 
 #[test]
 fn a_missing_program_says_what_was_looked_for() {
-    let dir = scratch(TMP, "missing");
+    let (dir, _serial) = scratch_alone("missing");
     let runner = OpenTofuRunner {
         program: dir.join("no-such-tofu").to_str().unwrap().to_owned(),
     };
