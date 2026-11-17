@@ -1,0 +1,36 @@
+#cloud-config
+# Compiled by Meridian from the document "bootstrap". Change the document, not this file.
+write_files:
+  - path: /etc/ssh/sshd_config.d/10-meridian.conf
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+    permissions: "0600"
+  - path: /etc/app/env
+    content: |
+      APP_ENV=production
+      APP_PORT=8080
+    owner: deploy:ops
+    permissions: "0640"
+    defer: true
+groups:
+  - ops
+users:
+  - default
+  - name: deploy
+    gecos: Deployment account
+    groups:
+      - ops
+    shell: /bin/bash
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyReplaceWithYourOwnPublicKey00 deploy@example.com
+    sudo: ALL=(ALL) NOPASSWD:ALL
+packages:
+  - python3
+  - python3-venv
+runcmd:
+  - set -e
+  - systemctl enable --now ssh
+  - install -d -m 0750 -o deploy -g ops /srv/app
+  - if [ ! -e /srv/app/venv ]; then ( cd /srv/app && python3 -m venv venv ); fi
+  - systemctl reload ssh

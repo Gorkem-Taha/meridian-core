@@ -27,6 +27,7 @@ about order:
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 | the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not ([helm](../targets/helm.md#ordering)) |
+| the stages of a first boot | `cloud-init` | nothing written; each resource is placed at the step cloud-init handles it, a file that has to wait is deferred, and a dependency that points backwards through those steps is refused |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
 Terraform or `Volume: ${data}:/srv` does in a Podman unit, the plugin does not
@@ -67,6 +68,9 @@ tool's own output, so each one is documented where it happens:
   service. ([docker](../targets/docker.md#notifications))
 - Terraform: `replace_triggered_by` on the notified resource, which replaces it.
   ([terraform](../targets/terraform.md#notifications))
+- cloud-init: the notified action as a command that runs once, after every
+  other command of the first boot. A first boot changes everything, so the
+  reaction is unconditional. ([cloud-init](../targets/cloud-init.md#notifications))
 
 A synthetic notify always comes with a compile warning that says what it will
 look like.
