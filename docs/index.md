@@ -78,7 +78,7 @@ plugins.
 | [Observability, logging & diagnostics](plans/observability.md) | Log schema, plan output, fact provenance, telemetry, audit |
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
-| [Language expansion](plans/language-expansion.md) (proposed) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
+| [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing
 

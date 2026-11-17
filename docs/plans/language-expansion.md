@@ -1,13 +1,14 @@
 # Language expansion: expressions, data, reuse, endpoints, secrets, workflows and run state
 
-**Status: proposed.** This plan is a design for review. Nothing in it is
-implemented yet; the [language reference](../reference/dsl/index.md) stays the
-description of what the `meridian` command accepts today. Each numbered phase in
+**Status: accepted, not yet built.** The owner accepted this design and every
+recommendation in [section 17](#17-decisions-for-the-owner) on 2026-11-17.
+Nothing in it is implemented yet; the
+[language reference](../reference/dsl/index.md) stays the description of what
+the `meridian` command accepts today. Each phase in
 [section 18](#18-delivery-in-phases) lands as its own pull request and moves its
 part of this plan into the reference.
 
 The choices marked **Decision** are the ones the rest of the design hangs on.
-They are collected in [section 17](#17-decisions-for-the-owner).
 
 ## Contents
 
@@ -2008,6 +2009,9 @@ people who operate what it describes.
   that needs them, so nothing degrades silently.
 
 ## 17. Decisions for the owner
+
+All thirteen were accepted as recommended on 2026-11-17. The alternatives are
+kept here as the record of what was weighed.
 
 | | Decision | Recommended | Main alternative |
 |---|---|---|---|
