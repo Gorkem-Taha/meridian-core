@@ -106,7 +106,8 @@ mod tests {
         let twice = |resource: &'static str, property: &'static str, value: &'static str| {
             move |c: &mut Cookbook| c.blocks.push(block(resource, "again", property, value))
         };
-        let table: Vec<(&str, &str, Box<dyn Fn(&mut Cookbook)>)> = vec![
+        type Break = Box<dyn Fn(&mut Cookbook)>;
+        let table: Vec<(&str, &str, Break)> = vec![
             ("empty-cookbook", "", Box::new(|c| c.blocks.clear())),
             (
                 "duplicate-resource",
