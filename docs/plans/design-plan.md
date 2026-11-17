@@ -577,6 +577,11 @@ work is resequenced below.
   (`internal/`, `pkg/`, `plugins/*` in Go, `go.mod`) is removed. User documentation follows
   the [documentation plan](documentation-plan.md), each plugin arriving with a worked
   example.
+  **Status: done for the nine plugins named here.** Each has a runner, a worked example
+  under `examples/` and a page under `docs/targets/`. DSC is one plugin, `dsc`, because
+  DscPipelineRunner drives DSC v2 and v3 through one configuration format; the split in
+  §10 is a setting of that plugin (`engine`), not two targets. Every runner except
+  Ansible's is tested against a stand-in for its tool and has not yet met the real one.
 
 Repo/org structure should stay single-repo (`meridian` or `meridian-core`) until 2-3 plugins have been built and the SDK boundary has proven stable — splitting into a multi-repo plugin org (mirroring Terraform's `terraform-provider-*` pattern) is a later step, not a day-one decision.
 
