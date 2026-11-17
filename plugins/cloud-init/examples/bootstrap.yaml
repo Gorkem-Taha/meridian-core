@@ -1,0 +1,94 @@
+# A machine's first boot: an account to log in with, the packages a later
+# stage needs, a hardened SSH daemon and a first-run command.
+#
+# Compile it with:
+#   meridian compile plugins/cloud-init/examples/bootstrap.yaml --out build
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: bootstrap
+spec:
+  target: cloud-init
+  targetHost:
+    from: inline
+    host: app01.example.com
+  resources:
+    - id: ops_group
+      type: group
+      params:
+        name: ops
+
+    - id: deploy_user
+      type: user
+      params:
+        name: deploy
+        gecos: Deployment account
+        shell: /bin/bash
+        groups: [ops]
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyReplaceWithYourOwnPublicKey00 deploy@example.com
+      dependsOn:
+        - resource: ops_group
+
+    - id: python
+      type: package
+      params:
+        name: python3
+
+    - id: python_venv
+      type: package
+      params:
+        name: python3-venv
+
+    # Owned by a user this document creates, so it is written after the user
+    # exists. Nothing here has to say so.
+    - id: app_env
+      type: file
+      params:
+        path: /etc/app/env
+        content: |
+          APP_ENV=production
+          APP_PORT=8080
+        owner: deploy
+        group: ops
+        mode: "0640"
+
+    - id: sshd_hardening
+      type: file
+      params:
+        path: /etc/ssh/sshd_config.d/10-meridian.conf
+        content: |
+          PasswordAuthentication no
+          PermitRootLogin no
+        mode: "0600"
+      notifies:
+        - resource: sshd
+          action: reload
+
+    - id: sshd
+      type: service
+      params:
+        name: ssh
+        enabled: true
+
+    - id: app_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/app
+        owner: deploy
+        group: ops
+        mode: "0750"
+      dependsOn:
+        - resource: deploy_user
+
+    - id: app_venv
+      type: exec
+      params:
+        command: python3 -m venv venv
+        chdir: /srv/app
+        creates: /srv/app/venv
+      dependsOn:
+        - resource: app_dir
+        - resource: python_venv

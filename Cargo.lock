@@ -690,6 +690,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-cloud-init"
+version = "0.1.0"
+dependencies = [
+ "meridian-ir",
+ "meridian-orchestrator",
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-target-fake",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-cloudformation"
 version = "0.1.0"
 dependencies = [
