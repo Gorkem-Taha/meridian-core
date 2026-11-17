@@ -44,8 +44,11 @@ command-line tools do not accept.
 **How a plugin is reached.** `meridian` starts each plugin as a process and
 talks to it over a private channel. On Linux and macOS that is a Unix socket
 in a directory only you can enter. On Windows it is a named pipe: it refuses
-connections from other machines, only your own account can write to it, and
-nothing is left on disk when the plugin exits. Nothing listens on a network
+connections from other machines, and only your own account, administrators
+and the system can write to it, so no other account can send a plugin a
+request. Another local account can still open the pipe for reading, which
+gets it nothing a plugin says unasked, since a plugin only answers requests.
+Nothing is left on disk when the plugin exits. Nothing listens on a network
 port on any system.
 
 ## Which targets make sense on Windows
