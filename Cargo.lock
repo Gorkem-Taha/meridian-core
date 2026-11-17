@@ -615,6 +615,7 @@ dependencies = [
  "meridian-target-fake",
  "meridian-target-helm",
  "meridian-target-kubernetes",
+ "meridian-target-packer",
  "meridian-target-podman",
  "meridian-target-puppet",
  "meridian-target-terraform",
@@ -782,6 +783,15 @@ dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-yaml",
+]
+
+[[package]]
+name = "meridian-target-packer"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
 ]
 
 [[package]]

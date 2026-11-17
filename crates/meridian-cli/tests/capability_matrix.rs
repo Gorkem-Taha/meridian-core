@@ -97,6 +97,10 @@ fn matrix() -> String {
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
         ),
         row(
+            &meridian_target_packer::Packer,
+            &meridian_target_packer::PackerRunner::from_env(),
+        ),
+        row(
             &meridian_target_podman::Podman,
             &meridian_target_podman::PodmanRunner::from_env(),
         ),

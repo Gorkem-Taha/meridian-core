@@ -25,6 +25,7 @@ about order:
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
 | declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`) |
 | its own rules | `docker` | `depends_on` between services, waiting for the other to be healthy when it declares a healthcheck; everything else Compose already creates first |
+| the stages of a build | `packer` | the order of the provisioners, and post-processors chained into a sequence; a dependency against the fixed shape of a build is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 | the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not ([helm](../targets/helm.md#ordering)) |
 | the stages of a first boot | `cloud-init` | nothing written; each resource is placed at the step cloud-init handles it, a file that has to wait is deferred, and a dependency that points backwards through those steps is refused |
@@ -83,7 +84,8 @@ Puppet with the reason, not turned into a restart. Kubernetes and Helm can roll 
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. systemd can propagate a restart between Podman units and nothing
 else, so only `restart` is accepted there. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
+and refuse every notify. So does Packer: a build runs each step once, on a
+machine it then discards.
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to
