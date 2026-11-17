@@ -102,6 +102,7 @@ tool can really do to that type of resource.
 | | | `exec` | `run` |
 | `dsc` | native | any DSC resource | `refresh` |
 | `docker` | native from a service, synthetic from a config, secret, network or volume | `service` | `restart` |
+| `podman` | native | a unit | `restart` |
 | `kubernetes` | synthetic | a Deployment, StatefulSet or DaemonSet | `restart` |
 | `terraform` | synthetic | a managed resource | `replace` |
 | `cloudformation`, `bicep` | refused | | |

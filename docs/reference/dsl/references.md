@@ -87,7 +87,8 @@ attribute does not exist, the tool says so when it plans.
 | `docker` | the element's name | in an output only: a published port, or a path into the container's inspection | the name placed in the text | refused |
 | `kubernetes` | the object's name | in a param, only `metadata.name` and `metadata.namespace`; in an output, any path into the live object | the value placed in the text | refused |
 | `dsc` | | `${id.Property}`: a property the other resource reported | | |
-| `ansible`, `puppet`, `chef` | see [below](#configuration-management-the-shared-types) | | | |
+| `podman` | the unit's name | in an output: a path into `podman inspect` | the name placed in the text | |
+| `ansible`, `puppet`, `chef` | not read: see [below](#configuration-management-the-shared-types) | | | |
 
 Each target's page has its own table under "References".
 
@@ -112,37 +113,14 @@ flowchart LR
 ## Configuration management: the shared types
 
 `ansible`, `puppet` and `chef` have nothing to read at apply time: a package or
-a file is only what the document says about it. So on these targets a reference
-is settled when the document is compiled, from the document itself.
+a file is only what the document says about it. Today these three targets do
+not read references at all. `${...}` in a param is ordinary text, written to the
+tool's file exactly as it stands, and `$${` is not unescaped either.
 
-| You write | You get |
-|---|---|
-| `${nginx_conf.path}` | the value the document gives the param `path` on the resource `nginx_conf` |
-| the reference as a param's whole value | the value with its type: a list stays a list |
-| the reference inside longer text | the value placed in the text; it must be a single value |
-| `$${` | a literal `${` |
-
-Anything that cannot be settled is refused with `invalid-reference`: a resource
-the document does not declare, a param the resource does not set, a bare
-`${id}`, a deeper path, a function call, a reference back to itself.
-
-This means a literal `${...}` in a file's `content`, such as a shell script,
-must be written `$${...}`.
-
-```yaml
-- id: site_conf
-  type: file
-  params:
-    path: /etc/nginx/conf.d/site.conf
-    content: "server { listen 80; }\n"
-
-- id: check_conf
-  type: exec
-  params:
-    command: "nginx -t -c ${site_conf.path}"
-  dependsOn:
-    - resource: site_conf
-```
+So on these targets, do not rely on `${id.param}` to copy a value from one
+resource to another: repeat the value. A change that settles such references
+from the document at compile time, and refuses the ones it cannot settle, is in
+review; this section changes with it.
 
 ## A worked example
 

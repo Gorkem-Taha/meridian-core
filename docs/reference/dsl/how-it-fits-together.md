@@ -30,7 +30,7 @@ flowchart TB
         direction LR
         CM["configuration management<br/>ansible, puppet, chef, dsc"]
         IAC["infrastructure as code<br/>terraform, cloudformation, bicep"]
-        CON["containerization<br/>docker"]
+        CON["containerization<br/>docker, podman"]
         ORC["container orchestration<br/>kubernetes"]
     end
     PLUG -->|"runs, as you would by hand"| TOOLS["the tools themselves<br/>ansible-playbook, terraform, kubectl, ..."]
@@ -329,7 +329,7 @@ flowchart LR
 | Segment | Kind | Runs | Can hand on outputs | Can receive a host |
 |---|---|---|---|---|
 | Infrastructure as code | `Infrastructure` | first | yes | no |
-| Containerization | `Infrastructure` | first | yes | no |
+| Containerization | `Infrastructure` | first | yes | no (`podman` also takes a ResourceSet, to reach another machine) |
 | Container orchestration | `Infrastructure` | first | yes | no |
 | Configuration management | `ResourceSet` | after every Infrastructure document | no | yes |
 

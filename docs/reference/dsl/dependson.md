@@ -112,11 +112,11 @@ thinks about order:
 flowchart TD
     D["dependsOn in the document"] --> S["Meridian sorts the resources"]
     S --> F["Tool runs a file top to bottom<br/>ansible, chef"]
-    S --> R["Tool orders by declared relationships<br/>puppet, dsc, terraform, cloudformation, bicep"]
+    S --> R["Tool orders by declared relationships<br/>puppet, dsc, terraform, cloudformation, bicep, podman"]
     S --> O["Tool has its own rules<br/>docker"]
     S --> N["Tool does not order<br/>kubernetes"]
     F --> F2["nothing is written:<br/>the resources are emitted in order"]
-    R --> R2["the tool's keyword:<br/>require, dependsOn, depends_on, DependsOn"]
+    R --> R2["the tool's keyword:<br/>require, dependsOn, depends_on, DependsOn, Requires= and After="]
     O --> O2["depends_on between services;<br/>the rest Compose creates first anyway"]
     N --> N2["the order of the manifests,<br/>with a warning that kubectl does not wait"]
 ```
@@ -124,7 +124,7 @@ flowchart TD
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword |
+| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword |
 | its own rules | `docker` | `depends_on` between services |
 | nothing | `kubernetes` | the order of the manifests, with a warning |
 

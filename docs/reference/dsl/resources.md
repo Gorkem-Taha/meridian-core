@@ -112,7 +112,7 @@ message says what to do instead:
 | Target | Why there is no `state` |
 |---|---|
 | `dsc` | a DSC resource carries its desired state in its own properties (`Ensure`, `_exist`); set it in `params` |
-| `terraform`, `cloudformation`, `docker` | the tool removes what the document no longer declares; remove the resource |
+| `terraform`, `cloudformation`, `docker`, `podman` | the tool removes what the document no longer declares; remove the resource |
 | `bicep`, `kubernetes` | the tool never deletes; remove the resource from the document and delete it with the tool |
 
 ## `params`

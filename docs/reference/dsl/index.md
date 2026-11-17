@@ -1,5 +1,7 @@
 # The Meridian language
 
+<img src="../../branding/logos/meridian-core.svg" width="72" alt="Meridian logo">
+
 This is the reference for everything a Meridian document can say: every field,
 what it must hold, and what happens when it does not. It describes what the
 `meridian` command accepts today. Where a field is read but not acted on yet,
@@ -30,7 +32,7 @@ flowchart TD
     CM --> CM1["shared dialect: six types<br/>ansible, puppet, chef"]
     CM --> CM2["native dialect<br/>dsc"]
     IAC --> IAC1["the tool's own types<br/>terraform, cloudformation, bicep"]
-    CON --> CON1["elements of a project<br/>docker"]
+    CON --> CON1["elements of a project<br/>docker, podman"]
     ORC --> ORC1["API objects<br/>kubernetes"]
 ```
 
@@ -359,9 +361,9 @@ Rules:
   the next, declare an [output](#outputs).
 
 The configuration management targets that use the shared resource types
-(`ansible`, `puppet`, `chef`) have nothing to read at apply time, so there a
-reference is settled when the document is compiled: `${id.param}` is the value
-the document gives that param on that resource, and anything else is refused.
+(`ansible`, `puppet`, `chef`) have nothing to read at apply time, and today do
+not read references at all: `${...}` in a param is ordinary text, written to the
+tool's file as it stands.
 
 In depth, with what each target rewrites a reference into:
 [references](references.md).
