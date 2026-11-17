@@ -45,7 +45,7 @@ fn recorded_user_data() -> Vec<PathBuf> {
         .filter(|path| path.extension().is_some_and(|e| e == "user-data"))
         .collect();
     found.sort();
-    assert!(found.len() >= 4, "{found:?}");
+    assert!(found.len() >= 5, "{found:?}");
     found
 }
 

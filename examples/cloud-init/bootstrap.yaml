@@ -2,7 +2,7 @@
 # stage needs, a hardened SSH daemon and a first-run command.
 #
 # Compile it with:
-#   meridian compile plugins/cloud-init/examples/bootstrap.yaml --out build
+#   meridian compile examples/cloud-init/bootstrap.yaml --out build
 apiVersion: meridian/v1
 kind: ResourceSet
 metadata:

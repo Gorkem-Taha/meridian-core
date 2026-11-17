@@ -1,21 +1,41 @@
-# cloud-init
+# Target: `cloud-init`
 
 <img src="../branding/logos/meridian-cloud-init.svg" width="72" alt="Meridian cloud-init plugin logo">
 
-The `cloud-init` target compiles a ResourceSet into **user-data**: the `#cloud-config`
-document a cloud machine reads the first time it boots. Use it for what has to be true
-before anything can reach the machine, such as the account a later stage logs in with,
+Compiles a ResourceSet into **user-data**: the `#cloud-config` document a cloud
+machine reads the first time it boots. Use it for what has to be true before
+anything can reach the machine, such as the account a later stage logs in with,
 its SSH key, and the packages a configuration tool needs to find there.
+
+## What it does and does not support
 
 | | |
 |---|---|
-| Target name | `cloud-init` |
-| Category | configuration management |
-| Can | compile, plan, apply, outputs |
-| Resource types | `exec`, `file`, `group`, `package`, `service`, `user` |
-| Notify | emulated ([how](#notify)) |
-| `runtimeWhen` | not supported |
+| Resource types | `package`, `file`, `service`, `user`, `group`, `exec` ([what each takes here](#resource-reference)) |
+| `dependsOn` | Yes, within [the order of a first boot](#the-order-of-a-first-boot). cloud-init handles files, accounts, packages and commands at fixed steps, so a dependency that points backwards through those steps is refused |
+| `notifies` | Emulated: each notified action is a command that runs once, after every other command, with a warning. Actions `start`, `stop`, `restart`, `reload` on a service, `run` on an exec ([how](#notifications)) |
+| `runtimeWhen` | No. It is refused: cloud-init evaluates nothing per resource |
+| States | Only what a first boot can do. `absent` on a user, group or package and `latest` on a package are refused ([everything refused](#what-is-refused)) |
+| References (`${...}`) | Not resolved. Text in a param is written out as it stands ([references](#references)) |
+| Plan | Yes: `cloud-init schema` checks the user-data, and the plan says whether the seed would change. No machine is contacted |
+| Apply | Writes the user-data and a NoCloud seed on the machine running Meridian. The new machine applies it by itself on its first boot. `apply` can wait for that boot over SSH ([plan and apply](#plan-and-apply)) |
+| Outputs | Yes: `seed_dir` and `user_data_file` ([outputs](#outputs)) |
+| Host | Required. It names the machine in `meta-data` and is where `apply` waits |
 | Plugin binary | `meridian-target-cloud-init` |
+| Needs | `cloud-init` for the check (Linux only; the check can be turned off), and `ssh` only to wait ([settings](#settings)) |
+
+On this page:
+
+- [How cloud-init differs from the other targets](#how-cloud-init-differs-from-the-other-targets)
+- [A first example](#a-first-example) and [a second: a web server](#a-second-example-a-web-server)
+- [What a document compiles to](#what-a-document-compiles-to)
+- [The order of a first boot](#the-order-of-a-first-boot)
+- [Resource reference](#resource-reference): every type, param and state
+- [References](#references)
+- [Notifications](#notifications)
+- [What is refused](#what-is-refused) and [warnings](#warnings)
+- [Plan and apply](#plan-and-apply), [outputs](#outputs) and [settings](#settings)
+- [Troubleshooting](#troubleshooting)
 
 ## How cloud-init differs from the other targets
 
@@ -36,7 +56,7 @@ those three things in detail:
 
 ## A first example
 
-[`plugins/cloud-init/examples/bootstrap.yaml`](../../plugins/cloud-init/examples/bootstrap.yaml)
+[`examples/cloud-init/bootstrap.yaml`](../../examples/cloud-init/bootstrap.yaml)
 gives a new machine an account to log in with, the packages a later stage needs, a
 hardened SSH daemon and a Python environment:
 
@@ -135,7 +155,7 @@ spec:
 Compile it:
 
 ```console
-$ meridian compile plugins/cloud-init/examples/bootstrap.yaml --out build
+$ meridian compile examples/cloud-init/bootstrap.yaml --out build
 bootstrap (ResourceSet, target cloud-init on app01.example.com)
   warning: cloud-init: cloud-init has no module for services, so resource "sshd" compiled to systemctl commands that run at the end of the first boot; the image must use systemd
   warning: cloud-init: cloud-init applies user-data once and never sees a later change, so notify is emulated: every notified action runs once, after all other first-boot commands, whether or not the notifying resource changed anything
@@ -207,6 +227,102 @@ local-hostname: app01.example.com
 `local-hostname` is the document's host. It is left out when the host is an IP address,
 which reaches a machine but does not name it.
 
+## A second example: a web server
+
+[`examples/cloud-init/web-server.yaml`](../../examples/cloud-init/web-server.yaml)
+holds the same three resources as the Ansible, Puppet and Chef web server
+examples, with the target changed: a package, its configuration file, and the
+service the file reloads.
+
+```yaml
+resources:
+  - id: nginx_pkg
+    type: package
+    params:
+      name: nginx
+
+  - id: nginx_conf
+    type: file
+    params:
+      path: /etc/nginx/conf.d/site.conf
+      content: |
+        server {
+          listen 80;
+          root /srv/www;
+        }
+      owner: root
+      mode: "0644"
+    dependsOn:
+      - resource: nginx_pkg
+    notifies:
+      - resource: nginx_svc
+        action: reload
+
+  - id: nginx_svc
+    type: service
+    state: running
+    params:
+      name: nginx
+      enabled: true
+    dependsOn:
+      - resource: nginx_pkg
+```
+
+It compiles to
+([the recorded file](../../plugins/cloud-init/testdata/web-server.user-data)):
+
+```yaml
+#cloud-config
+# Compiled by Meridian from the document "web". Change the document, not this file.
+write_files:
+  - path: /etc/nginx/conf.d/site.conf
+    content: |
+      server {
+        listen 80;
+        root /srv/www;
+      }
+    owner: root
+    permissions: "0644"
+    defer: true
+packages:
+  - nginx
+runcmd:
+  - set -e
+  - systemctl enable --now nginx
+  - systemctl reload nginx
+```
+
+The file depends on the package, so it is deferred and written after nginx is
+installed. Where Ansible would reload nginx only if the file changed, here the
+reload always runs, because on a first boot the file always changes.
+
+## What a document compiles to
+
+Two files, in a directory named after the document:
+
+| File | What it is |
+|---|---|
+| `user-data` | The `#cloud-config` document. Its first line is `#cloud-config`, which is how cloud-init recognises it, and its second is a comment naming the Meridian document it came from |
+| `meta-data` | `instance-id: meridian-<document name>` and, when the host is a name and not an IP address, `local-hostname: <host>` |
+
+`user-data` holds up to five keys, always in this order, and a key with nothing
+under it is left out:
+
+| Key | Holds |
+|---|---|
+| `write_files` | every `file` with content: first the ones written at once, then the deferred ones |
+| `groups` | every `group` |
+| `users` | `default`, then every `user` |
+| `packages` | every `package` |
+| `runcmd` | `set -e`, then every `exec`, `service`, directory and removal in dependency order, then the notified actions |
+
+Resources keep the order the document lists them in wherever dependencies leave
+a choice, so the same document always compiles to the same bytes.
+
+Meridian writes no other cloud-init key. For a key it does not cover, such as
+`apt` sources, `ntp` or `disk_setup`, use an `exec`, or keep that part of the
+user-data outside Meridian.
+
 ## The order of a first boot
 
 ![The five steps of a first boot, in order: write_files, groups and users, packages, deferred write_files, runcmd](images/cloud-init-first-boot.svg)
@@ -268,9 +384,9 @@ State: `present` (the default) only.
 |---|---|---|
 | `path` | required | An absolute path. |
 | `content` | required unless the state is `directory` or `absent` | The whole content of the file. |
-| `owner`, `group` | optional | Compile to cloud-init's single `owner: user:group`. Each defaults to `root`. |
+| `owner`, `group` | optional | Compile to cloud-init's single `owner` value: `owner` alone, `owner:group`, or `root:group` when only the group is given. cloud-init defaults each to `root`. Neither may hold a colon. |
 | `mode` | optional | An octal mode as a string, such as `"0644"`. Compiles to `permissions`. |
-| `encoding` | optional | How `content` is encoded: `b64`, `gzip`, `gz+b64` and the other forms cloud-init reads. |
+| `encoding` | optional | How `content` is encoded. One of `b64`, `base64`, `gz`, `gzip`, `gz+b64`, `gz+base64`, `gzip+b64`, `gzip+base64`, `text/plain`. Left out, the content is plain text. |
 | `append` | optional | `true` adds to the file instead of replacing it. Needed for a second resource with the same path. |
 
 | State | Compiles to |
@@ -281,6 +397,11 @@ State: `present` (the default) only.
 
 A file with no content is refused, because cloud-init would write an empty file over
 whatever is there.
+
+A file in state `directory` or `absent` takes no `content`, `encoding` or `append`.
+A file in state `absent` takes `path` only. A directory is created with its parents,
+and `mode`, `owner` and `group` apply to the last one. A removal takes whatever is at
+the path, a directory and its contents included.
 
 ### `user`
 
@@ -366,7 +487,38 @@ runcmd:
   - if [ ! -e /srv/app/venv ]; then ( cd /srv/app && python3 -m venv venv ); fi
 ```
 
-## Notify
+## References
+
+A ResourceSet for this target does not resolve `${...}`. A param is text, and it
+is written into the user-data as it stands, `$${` included. This is the same on
+the `ansible`, `puppet` and `chef` targets.
+
+That is usually what you want here, because a `${...}` in a file's content or in
+a command is most often meant for the shell or for the program that reads the
+file:
+
+```yaml
+- id: profile
+  type: file
+  params:
+    path: /etc/profile.d/app.sh
+    content: |
+      export APP_HOME=${HOME}/app
+```
+
+```yaml
+write_files:
+  - path: /etc/profile.d/app.sh
+    content: |
+      export APP_HOME=${HOME}/app
+```
+
+The one value this target takes from another document is its host. Write
+`targetHost` with `from: infrastructure` and the host is the named output of an
+Infrastructure document that ran earlier in the same workflow. See
+[waiting for the first boot](#waiting-for-the-first-boot).
+
+## Notifications
 
 cloud-init applies user-data once and never sees a later change, so it has nothing like
 a handler. On that one run, though, every resource does change. Meridian therefore runs
@@ -379,7 +531,13 @@ each notified action once, after every other command, and warns that this is wha
 | `exec` | `run` | the resource's own command again |
 
 Two resources that notify the same action on the same resource share one command.
-Notifying any other type is refused.
+When several actions are notified they run in the order of their names, by action
+and then by resource id, so `reload web` runs before `restart db`. A notified service
+still gets the commands of its own state: a service in state `running` that is
+notified `reload` is started in its place and reloaded at the end.
+
+Notifying any other type, or an action the type does not have, is refused with
+`unsupported-action`.
 
 ## What is refused
 
@@ -397,10 +555,31 @@ Each of these stops the compile with the resource, the rule and the line.
 | two files with one `path`, the second without `append: true` | `duplicate-file-path` | The second would silently replace the first. |
 | two users, groups or packages with one name | `duplicate-user`, `duplicate-group`, `duplicate-package` | |
 | a command with an unclosed quote and no `shell: true` | `invalid-command` | It cannot be split into words. |
-| a param the type does not take here, such as `gid` on a `group` | `unsupported-param` | The message lists the ones accepted. |
+| a param the type does not take here, such as `gid` on a `group`; `mode`, `owner` or `group` on a file in state `absent` | `unsupported-param` | The message lists the ones accepted. |
+| a resource type other than the six | `unsupported-resource-type` | The message lists the six. |
+| a required param left out, such as `name` or `path` | `missing-param` | |
+| a param that is there and empty, such as `command: ""` | `empty-param` | An empty name or command is a mistake, not a request for nothing. |
+| a param of the wrong kind, such as a list where one string is expected | `invalid-param` | The message says what was expected and what was found. |
+| an `encoding` cloud-init does not read | `invalid-encoding` | The message lists the ones accepted. |
+| an `owner` or `group` on a file that holds a colon | `invalid-owner` | cloud-init joins the two with a colon. Give them as separate params. |
+| a user or group name with a space or a colon; a package name with a space | `invalid-name` | It would be read as two values. |
+| notifying a `file`, `package`, `user` or `group`, or an action the type does not have | `unsupported-action` | Only a service or an exec can react. |
+| notifying an id that is not in the document | `unknown-notify-target` | |
+| a document with no host | `missing-host` | The host names the machine in `meta-data`. |
 
-One thing is a warning and not a refusal: user-data larger than 16 KB, which is what
-Amazon EC2 accepts. Other clouds allow more.
+One more rule, `ordering-violated`, guards the plugin itself: it fires if the commands
+would come out in an order that breaks a `dependsOn`. A document cannot cause it. If
+you see it, please report it with the document.
+
+### Warnings
+
+A warning does not stop the compile. There are three:
+
+| Warning | When | What to do |
+|---|---|---|
+| services compiled to `systemctl` commands | the document has a `service` | Make sure the image uses systemd. |
+| notify is emulated | the document has a `notifies` | Nothing, if a reaction that always runs once is acceptable. |
+| user-data is larger than 16 KB | the compiled file is over 16384 bytes | 16 KB is what Amazon EC2 accepts. Other clouds allow more. Move large files out of the document, or set `encoding: gz+b64` on content you have compressed. |
 
 ## Plan and apply
 
@@ -433,6 +612,20 @@ bootstrap (ResourceSet, target cloud-init on app01.example.com)
 Applying a document whose seed is already current changes nothing. User-data that
 cloud-init rejects never becomes the seed, so the seed always holds the last version
 that passed.
+
+### Outputs
+
+| Output | Value |
+|---|---|
+| `seed_dir` | The absolute path of the seed directory, which holds `user-data` and `meta-data`. |
+| `user_data_file` | The absolute path of the `user-data` file inside it. |
+
+Both are paths on the machine that ran Meridian, and `apply` prints them. They
+are known only once an apply has written the seed.
+
+In a workflow the orchestrator hands outputs on from Infrastructure documents
+only, so another document cannot yet read these two with `${...}`. Until it can,
+give the path to the tool that creates the machine yourself, as below.
 
 ### Using the seed
 
@@ -531,8 +724,9 @@ owned by, something created at a later step. See
 ## How this plugin is tested
 
 - Golden files in `plugins/cloud-init/testdata` record the exact bytes compiled from
-  the example above, from a document that uses every key the target can write, and
-  from the shared fixtures in `fixtures/`.
+  both examples above, from a document that uses every key the target can write, and
+  from the shared fixtures in `fixtures/`. The examples are also compiled by the
+  command line's own tests, with every other target's.
 - The compiled commands are run by a real shell in a scratch directory, to prove the
   guards, the quoting and the stop on first failure behave as this page says.
 - The runner is tested against stand-ins for `cloud-init` and `ssh`, and the plugin

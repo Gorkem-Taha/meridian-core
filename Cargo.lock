@@ -608,6 +608,7 @@ dependencies = [
  "meridian-target-ansible",
  "meridian-target-bicep",
  "meridian-target-chef",
+ "meridian-target-cloud-init",
  "meridian-target-cloudformation",
  "meridian-target-docker",
  "meridian-target-dsc",

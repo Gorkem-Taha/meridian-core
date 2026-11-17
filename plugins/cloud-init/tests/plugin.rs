@@ -22,7 +22,7 @@ use meridian_sdk::{
 
 const TMP: &str = env!("CARGO_TARGET_TMPDIR");
 const PACKAGE: &str = "meridian-target-cloud-init";
-const EXAMPLE: &str = "plugins/cloud-init/examples/bootstrap.yaml";
+const EXAMPLE: &str = "examples/cloud-init/bootstrap.yaml";
 
 /// Starts the plugin with settings added to this process's environment, the
 /// way an operator's shell would hand them over.

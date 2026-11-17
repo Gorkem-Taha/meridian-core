@@ -22,6 +22,7 @@ meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
 meridian-target-bicep = { path = "../../plugins/bicep" }
 meridian-target-chef = { path = "../../plugins/chef" }
+meridian-target-cloud-init = { path = "../../plugins/cloud-init" }
 meridian-target-cloudformation = { path = "../../plugins/cloudformation" }
 meridian-target-docker = { path = "../../plugins/docker" }
 meridian-target-dsc = { path = "../../plugins/dsc" }

@@ -23,7 +23,8 @@ const FIXTURES: &[(&str, bool)] = &[
     ("web_stack", true),
 ];
 
-const EXAMPLE: &str = "plugins/cloud-init/examples/bootstrap.yaml";
+const EXAMPLE: &str = "examples/cloud-init/bootstrap.yaml";
+const WEB_SERVER: &str = "examples/cloud-init/web-server.yaml";
 const ALL_FEATURES: &str = "plugins/cloud-init/tests/all_features.yaml";
 
 fn golden() -> PathBuf {
@@ -92,6 +93,12 @@ fn the_documented_example_compiles_to_the_bytes_recorded() {
     assert_golden(&golden(), "bootstrap", &emitted);
 }
 
+#[test]
+fn the_web_server_example_compiles_to_the_bytes_recorded() {
+    let emitted = emit(&graph_from_file(WEB_SERVER, "cloud-init")).unwrap();
+    assert_golden(&golden(), "web-server", &emitted);
+}
+
 /// One document that uses every key this target can write.
 #[test]
 fn every_feature_at_once_compiles_to_the_bytes_recorded() {
@@ -148,8 +155,8 @@ fn every_recorded_user_data_is_a_cloud_config_document() {
         }
     }
     assert_eq!(
-        seen, 4,
-        "two documents of this plugin's and two shared fixtures"
+        seen, 5,
+        "three documents of this plugin's and two shared fixtures"
     );
 }
 
@@ -182,7 +189,13 @@ fn sh(dir: &Path, args: &[&str], script: &str) -> std::process::Output {
 #[test]
 fn every_recorded_command_list_is_a_script_sh_can_read() {
     let dir = meridian_plugin_testkit::scratch(env!("CARGO_TARGET_TMPDIR"), "syntax");
-    for name in ["all_features", "bootstrap", "restart_chain", "web_stack"] {
+    for name in [
+        "all_features",
+        "bootstrap",
+        "restart_chain",
+        "web-server",
+        "web_stack",
+    ] {
         let text = fs::read_to_string(golden().join(format!("{name}.user-data"))).unwrap();
         let out = sh(&dir, &["-n"], &script(&text));
         assert!(
