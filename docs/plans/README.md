@@ -16,6 +16,7 @@ issue — it is closed and is a historical record of how the plan was first stat
 | `observability.md` | #6 |
 | `release-and-versioning.md` | #7 |
 | `security.md` | #8 |
+| `language-expansion.md` | none: accepted by the owner on 2026-11-17 in pull request #59; being built in phases |
 
 A plan that contradicts another plan is a bug in whichever one was written later. Raise
 it as an issue rather than resolving it silently in one file.
