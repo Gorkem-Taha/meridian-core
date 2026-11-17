@@ -1,0 +1,21 @@
+# Written by Meridian from the document "edge-proxy". The next apply overwrites any change made here.
+
+[Unit]
+Description=Reverse proxy on %H
+PartOf=proxy-config-volume.service
+
+[Container]
+AddCapability=NET_BIND_SERVICE
+ContainerName=proxy
+Image=proxy-image.image
+NoNewPrivileges=true
+PublishPort=80:80
+PublishPort=443:443
+Volume=proxy-config.volume:/etc/caddy:ro,Z
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

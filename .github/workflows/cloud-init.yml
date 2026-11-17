@@ -1,0 +1,42 @@
+name: cloud-init
+
+# The cloud-init plugin's golden files, checked by cloud-init itself. The
+# rust workflow already runs the plugin's other tests; this one adds the
+# real tool, which that workflow's machine is not promised to have.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/cloud-init/**'
+      - 'crates/**'
+      - 'fixtures/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/cloud-init.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  schema:
+    name: user-data checked by cloud-init
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install cloud-init
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends cloud-init
+          cloud-init --version
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # MERIDIAN_TEST_REAL_CLOUD_INIT makes a missing cloud-init a failure
+      # instead of a skip, so this job can never pass by checking nothing.
+      - name: Check every recorded user-data with cloud-init schema
+        run: cargo test -p meridian-target-cloud-init --locked --test schema -- --nocapture
+        env:
+          MERIDIAN_TEST_REAL_CLOUD_INIT: "1"

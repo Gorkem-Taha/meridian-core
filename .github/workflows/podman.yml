@@ -1,0 +1,35 @@
+name: podman
+
+# The Podman plugin against the real Podman and systemd. The rust workflow
+# already runs the plugin's own tests against stand-ins.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: real podman and systemd
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: What is installed
+        run: |
+          podman --version
+          systemctl --version | head -n 1
+          sudo -n true
+
+      # Units are installed for the whole machine, through sudo, so the test
+      # does not depend on the runner having a systemd user session.
+      - name: Install, run, change and remove real units
+        run: cargo test -p meridian-target-podman --test real --locked -- --nocapture --test-threads=1
+        env:
+          MERIDIAN_TEST_PODMAN: system
