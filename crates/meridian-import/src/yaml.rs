@@ -23,8 +23,7 @@ pub enum Rules {
     /// YAML 1.2: only `true` and `false` are booleans.
     Yaml12,
     /// YAML 1.1: `yes`, `no`, `on`, `off` and `y`, `n` are booleans as well,
-    /// in any of the three capitalisations that version allows, and a number
-    /// with a leading zero is octal.
+    /// in any of the three capitalisations that version allows.
     Yaml11,
 }
 
@@ -211,16 +210,6 @@ impl<'a> Reader<'a> {
                 "no" | "No" | "NO" | "off" | "Off" | "OFF" | "n" | "N" => return Kind::Bool(false),
                 _ => {}
             }
-            // A leading zero makes a number octal, which is why an unquoted
-            // `mode: 0644` means what its author expects.
-            if raw.len() > 1
-                && raw.starts_with('0')
-                && raw.bytes().all(|b| (b'0'..=b'7').contains(&b))
-            {
-                if let Ok(n) = i64::from_str_radix(raw, 8) {
-                    return Kind::Int(n);
-                }
-            }
         }
         match resolve_plain(raw) {
             Scalar::Null => Kind::Null,
@@ -403,18 +392,17 @@ mod tests {
     }
 
     #[test]
-    fn a_leading_zero_is_octal_only_under_the_older_rules() {
-        let text = "mode: 0644\nquoted: \"0644\"\nzero: 0\nnine: 0689\n";
-        let old = read("f.yml", text, Rules::Yaml11).unwrap();
-        assert_eq!(old[0].get("mode").unwrap().kind, Kind::Int(420));
+    fn a_leading_zero_is_octal_and_a_quoted_one_is_text() {
+        // Which is why an unquoted `mode: 0644` means what its author
+        // expects, in a playbook and in a manifest.
+        let text = "mode: 0644\nquoted: \"0644\"\nzero: 0\n";
+        let read = read("f.yml", text, Rules::Yaml11).unwrap();
+        assert_eq!(read[0].get("mode").unwrap().kind, Kind::Int(420));
         assert_eq!(
-            old[0].get("quoted").unwrap().kind,
+            read[0].get("quoted").unwrap().kind,
             Kind::Str("0644".to_owned())
         );
-        assert_eq!(old[0].get("zero").unwrap().kind, Kind::Int(0));
-        assert_eq!(old[0].get("nine").unwrap().kind, Kind::Int(689));
-        let new = read("f.yml", text, Rules::Yaml12).unwrap();
-        assert_eq!(new[0].get("mode").unwrap().kind, Kind::Int(644));
+        assert_eq!(read[0].get("zero").unwrap().kind, Kind::Int(0));
     }
 
     #[test]
