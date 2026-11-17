@@ -416,3 +416,34 @@ fn parse_value_reads_a_free_form_document() {
         "{err}"
     );
 }
+
+/// The reader refuses a document nested past its limit, and does so on a
+/// stack as small as the smallest it runs on (1 MiB: a Windows main thread).
+#[test]
+fn deep_nesting_is_refused_on_a_small_stack_not_overflowed() {
+    for depth in [70usize, 128, 5_000] {
+        let flow = format!("{}{}", "[".repeat(depth), "]".repeat(depth));
+        let block: String = (0..depth)
+            .map(|i| format!("{}a:\n", " ".repeat(i)))
+            .collect();
+        for text in [flow, block] {
+            let error = std::thread::Builder::new()
+                .stack_size(1 << 20)
+                .spawn(move || {
+                    meridian_ir::parse_value("deep.yaml", text.as_bytes())
+                        .expect_err("nesting this deep is refused")
+                        .to_string()
+                })
+                .unwrap()
+                .join()
+                .expect("the reader returned and did not overflow the stack");
+            assert!(
+                error.contains("nested too deeply") || error.contains("recursion limit"),
+                "depth {depth}: {error}"
+            );
+        }
+    }
+    // What a real document needs is far inside the limit.
+    let text = format!("{}{}", "[".repeat(40), "]".repeat(40));
+    assert!(meridian_ir::parse_value("ok.yaml", text.as_bytes()).is_ok());
+}

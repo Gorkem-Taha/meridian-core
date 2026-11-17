@@ -51,3 +51,12 @@ through in [your first ResourceSet](../quickstart/first-resourceset.md).
 Changes are read from Ansible's own report (`changed:` per task and handler). A
 failed task or an unreachable host fails the stage, with the end of Ansible's
 output.
+
+The runner is tested against a real `ansible-playbook` (ansible-core 2.19) on
+every pull request that touches it, over the `local` connection: a check-mode
+plan that creates nothing, a play checked on disk, a second plan that is in
+sync, drift put right, a handler that runs only when its notifier changed, a
+`runtimeWhen` answered by the host's facts, a command check mode cannot
+preview, and a failed task. Reaching another machine over SSH, and the
+package, service, user and group modules, have only met stand-ins. See
+[Real-tool tests](../contributing/real-tool-tests.md).

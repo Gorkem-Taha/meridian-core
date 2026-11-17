@@ -1,0 +1,80 @@
+name: terraform
+
+# The Terraform plugin against a real terraform, and against OpenTofu's tofu,
+# which the plugin also drives. The rust workflow already runs the plugin's
+# other tests; without MERIDIAN_TEST_REAL_TERRAFORM these ones pass without
+# doing anything, so they are run here, where the tool is installed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/terraform/**'
+      - 'examples/terraform/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/terraform.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  terraform:
+    name: plan and apply with terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # The wrapper script the action can install rewrites terraform's output,
+      # which would break reading its JSON.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.x
+          terraform_wrapper: false
+
+      - name: Show the version under test
+        run: terraform version
+
+      # With the variable set, a terraform that does not run fails the tests,
+      # so this job cannot pass by checking nothing.
+      - name: Test against terraform
+        env:
+          MERIDIAN_TEST_REAL_TERRAFORM: '1'
+          MERIDIAN_TEST_REAL_TERRAFORM_NETWORK: '1'
+        run: cargo test -p meridian-target-terraform --locked --test real -- --nocapture
+
+  tofu:
+    name: the same tests with tofu
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.11.5
+          tofu_wrapper: false
+
+      - name: Show the version under test
+        run: tofu version
+
+      - name: Test against tofu
+        env:
+          MERIDIAN_TEST_REAL_TERRAFORM: '1'
+          MERIDIAN_TEST_REAL_TERRAFORM_NETWORK: '1'
+          MERIDIAN_TERRAFORM: tofu
+        run: cargo test -p meridian-target-terraform --locked --test real -- --nocapture

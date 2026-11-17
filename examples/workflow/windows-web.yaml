@@ -1,0 +1,178 @@
+# A Windows web server on Azure: two Azure tools provision, DSC configures.
+#
+#   1. An ARM template creates the resource groups, at subscription scope.
+#   2. Bicep creates the network and the address inside one of them.
+#   3. DSC, through DscPipelineRunner, turns the machine into a web server.
+#
+# ARM and Bicep both compile to what Azure Resource Manager deploys. They are
+# two documents here because they deploy at two scopes: a template is deployed
+# to one scope, and a resource group cannot be created from inside itself.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: landing-zone
+  labels:
+    scope: subscription
+spec:
+  target: arm
+  resources:
+    - id: deployment
+      type: deployment
+      params:
+        scope: subscription
+        location: australiaeast
+
+    - id: owner
+      type: parameter
+      params:
+        type: string
+        defaultValue: web-team
+
+    - id: network_rg
+      type: Microsoft.Resources/resourceGroups
+      params:
+        apiVersion: "2024-03-01"
+        name: web-network
+        location: australiaeast
+        tags:
+          owner: ${owner}
+
+    - id: workload_rg
+      type: Microsoft.Resources/resourceGroups
+      params:
+        apiVersion: "2024-03-01"
+        name: web-prod
+        location: australiaeast
+        tags:
+          owner: ${owner}
+          network: ${network_rg.name}
+      dependsOn:
+        - resource: network_rg
+
+  outputs:
+    - name: workload_rg
+      value: ${workload_rg.name}
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+  labels:
+    scope: resource-group
+spec:
+  target: bicep
+  resources:
+    - id: target
+      type: deployment
+      params:
+        resourceGroup: web-prod
+
+    - id: web_ip
+      type: Microsoft.Network/publicIPAddresses@2023-09-01
+      params:
+        name: web-ip
+        location: ${resourceGroup().location}
+        sku:
+          name: Standard
+        properties:
+          publicIPAllocationMethod: Static
+          dnsSettings:
+            domainNameLabel: web-${uniqueString(resourceGroup().id)}
+
+    - id: vnet
+      type: Microsoft.Network/virtualNetworks@2023-09-01
+      params:
+        name: web-vnet
+        location: ${resourceGroup().location}
+        properties:
+          addressSpace:
+            addressPrefixes: ["10.0.0.0/16"]
+          subnets:
+            - name: web
+              properties:
+                addressPrefix: 10.0.1.0/24
+
+    - id: nic
+      type: Microsoft.Network/networkInterfaces@2023-09-01
+      params:
+        name: web-nic
+        location: ${resourceGroup().location}
+        properties:
+          ipConfigurations:
+            - name: primary
+              properties:
+                privateIPAllocationMethod: Dynamic
+                publicIPAddress:
+                  id: ${web_ip.id}
+                subnet:
+                  id: ${vnet.properties.subnets[0].id}
+      dependsOn:
+        - resource: web_ip
+        - resource: vnet
+
+  outputs:
+    - name: address
+      value: ${web_ip.properties.dnsSettings.fqdn}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: iis
+  labels:
+    scope: machine
+spec:
+  target: dsc
+  targetHost:
+    from: infrastructure
+    ref: web-vm
+    output: address
+  resources:
+    # How the configuration is run, not a DSC resource. The credential is a
+    # name the runner resolves itself; the secret is never in this file.
+    - id: settings
+      type: runner
+      params:
+        engine: DscV2
+        target: WinRM
+        credential: svcDeploy
+
+    - id: iis
+      type: PSDscResources/WindowsFeature
+      params:
+        Name: Web-Server
+        Ensure: Present
+
+    - id: management
+      type: PSDscResources/WindowsFeature
+      params:
+        Name: Web-Mgmt-Tools
+        Ensure: Present
+      dependsOn:
+        - resource: iis
+
+    - id: site_root
+      type: PSDesiredStateConfiguration/File
+      params:
+        DestinationPath: C:\inetpub\shop
+        Type: Directory
+        Ensure: Present
+      dependsOn:
+        - resource: iis
+
+    - id: index
+      type: PSDesiredStateConfiguration/File
+      params:
+        DestinationPath: C:\inetpub\shop\index.html
+        Contents: "<h1>Hello from DSC</h1>"
+        Ensure: Present
+      dependsOn:
+        - resource: site_root
+
+    - id: w3svc
+      type: PSDscResources/Service
+      params:
+        Name: W3SVC
+        State: Running
+        StartupType: Automatic
+      dependsOn:
+        - resource: iis

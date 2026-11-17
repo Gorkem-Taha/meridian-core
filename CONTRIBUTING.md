@@ -16,7 +16,7 @@ taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 | Fix something small to learn the codebase | issues labelled [`good first issue`](https://github.com/ZanattaMichael/meridian-core/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) |
 | Take on something larger that nobody owns | issues labelled [`help wanted`](https://github.com/ZanattaMichael/meridian-core/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) |
 | Add a tool Meridian does not support yet | [Writing a plugin](docs/contributing/writing-a-plugin.md) |
-| Test a plugin against the real tool | many runners have only met a stand-in for their tool so far; run one for real from its [target page](docs/index.md#user-documentation) and report what happens |
+| Test a plugin against the real tool | [Real-tool tests](docs/contributing/real-tool-tests.md) lists what each target is tested against and what is still unproven: Puppet has no real-tool test of its own yet (OpenVox, which shares its compiler, has), and several runners have never reached a remote machine or a real cloud account |
 | Improve the documentation | edit the page under [`docs/`](docs/index.md) and open a pull request |
 | Report a bug or ask for a feature | [open an issue](https://github.com/ZanattaMichael/meridian-core/issues/new/choose) |
 | Report a security problem | not in an issue: see [`SECURITY.md`](SECURITY.md) |
@@ -40,6 +40,9 @@ cargo test --workspace
 ```
 
 If the tests do not pass on a fresh clone, that is a bug. Please report it.
+
+What kinds of test there are, what each is for and how to add one is in
+[how Meridian is tested](docs/contributing/testing.md).
 
 To try what you built:
 
@@ -156,6 +159,8 @@ for code: complete and current.
   test compiles it.
 - The capability matrix is generated. Record it with
   `UPDATE_GOLDEN=1 cargo test -p meridian-cli --test capability_matrix`.
+- So is the conformance matrix, by `--test conformance`. Read the rows it
+  changes: they are what your change did on every target.
 - Relative links and heading anchors are checked by `tools/check_links.py`.
 
 ## Where the project is going
