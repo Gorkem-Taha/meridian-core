@@ -194,3 +194,23 @@ fn a_notify_orders_as_well_as_refreshes_and_a_dependency_becomes_a_require() {
     assert!(text.contains("require => User['app_user'],"), "{text}");
     assert!(text.contains("creates => '/srv/app/public',"), "{text}");
 }
+
+#[test]
+fn a_reference_is_settled_from_the_document_or_refused_as_openvox() {
+    let text = compile(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        content: hello\n",
+    )
+    .unwrap()
+    .artifact
+    .files[MANIFEST_PATH]
+        .clone();
+    assert!(text.contains("path    => '/srv/app/index.html',"), "{text}");
+
+    let err = compile(
+        "    - id: page\n      type: file\n      params:\n        path: /srv/index.html\n        content: ${nowhere.path}\n",
+    )
+    .expect_err("an unknown resource is refused");
+    assert_eq!(err.rule, "invalid-reference");
+    assert_eq!(err.target, "openvox");
+    assert_eq!(err.resource, "page");
+}

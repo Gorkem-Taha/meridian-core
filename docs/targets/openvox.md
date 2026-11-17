@@ -17,7 +17,7 @@ of Puppet: `puppet apply` on the machine itself, or OpenBolt for another machine
 | Not supported | `action: reload`, `start` or `stop` on a service, and notifying a `package`, `file`, `user` or `group`. A refresh restarts a service and takes no argument, and the other types do nothing on one. The compile refuses these and says why; it does not turn a reload into a restart |
 | `runtimeWhen` | No. A catalog is compiled before it reaches the node, so there is nothing left to evaluate at apply time. Refused |
 | `state: restarted` | No. It is not a state a node can be left in. Notify the service instead |
-| References (`${id}`) | Not interpreted; the text is written as it stands. See [References](#references) |
+| References (`${id.param}`) | Yes, settled at compile time to the value the document declares. Anything that cannot be settled is refused. See [References](#references) |
 | Plan | Yes: the tool's own `--noop` run |
 | Apply | Yes |
 | Outputs | No. OpenVox has nothing to hand to a later stage |
@@ -272,11 +272,44 @@ command.
 
 ### References
 
-This target does not interpret `${id}` or `${id.path}`. A manifest has no way to read
-one resource's attribute from another, so the text reaches the manifest exactly as
-written, inside a string that OpenVox does not interpolate. It is not checked against
-the document's resources either. Write the value itself where you need it, and use
-`dependsOn` to say that one resource needs another.
+A manifest has no way to read one resource's attribute from another at apply time, so a
+reference is settled when the document is compiled. `${id.param}` becomes the value the
+document gives that param on the resource `id`:
+
+```yaml
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: /srv/app
+    - id: index
+      type: file
+      params:
+        path: ${site_root.path}/index.html
+        content: hello
+```
+
+```puppet
+  file { 'index':
+    ensure  => file,
+    content => 'hello',
+    path    => '/srv/app/index.html',
+  }
+```
+
+- A reference that is the whole value of a param keeps the type of what it reads, so
+  `groups: ${app_user.groups}` is a list. Inside longer text it must read a single value.
+- References chain: a param that was itself written with a reference can be read.
+- A reference does not order the two resources. Use `dependsOn` for that.
+- Write a literal `${` by doubling the dollar sign, as a shell script in a file's
+  `content` may need. A lone `$` is left alone, and nothing is interpolated on the node.
+- A reference that cannot be settled is refused with the rule `invalid-reference`: a
+  resource the document does not declare, a param that resource does not set, a bare
+  `${id}`, a path deeper than `${id.param}`, an expression, a resource that refers back
+  to itself, or a `${` that is never closed.
+
+The same rules hold on every target that shares these six types; see
+[the reference](../reference/resource-types.md#references).
 
 ### Outputs
 
@@ -382,6 +415,7 @@ site.yaml:37:11: openvox: resource "nginx_conf" [unsupported-action]: notifies r
 | `empty-param` | a param is present with no value |
 | `unrepresentable-value` | a `null` somewhere inside a value |
 | `unsupported-runtime-condition` | the resource has `runtimeWhen` |
+| `invalid-reference` | a `${...}` that cannot be settled from the document; see [References](#references) |
 | `unsupported-action` | a notify action the notified type cannot perform, or a notified type that cannot be refreshed at all |
 | `duplicate-namevar` | two resources of one type manage the same `name`, `path` or `command`. OpenVox would only find this on the node |
 | `invalid-class-name` | the document name cannot be a class name |

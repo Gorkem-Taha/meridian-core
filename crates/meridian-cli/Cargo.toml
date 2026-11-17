@@ -20,6 +20,7 @@ meridian-sdk = { path = "../meridian-sdk" }
 [dev-dependencies]
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
+meridian-target-arm = { path = "../../plugins/arm" }
 meridian-target-bicep = { path = "../../plugins/bicep" }
 meridian-target-chef = { path = "../../plugins/chef" }
 meridian-target-cloud-init = { path = "../../plugins/cloud-init" }
@@ -28,9 +29,13 @@ meridian-target-docker = { path = "../../plugins/docker" }
 meridian-target-dsc = { path = "../../plugins/dsc" }
 meridian-target-helm = { path = "../../plugins/helm" }
 meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
+meridian-target-opentofu = { path = "../../plugins/opentofu" }
+meridian-target-packer = { path = "../../plugins/packer" }
 meridian-target-podman = { path = "../../plugins/podman" }
+meridian-target-pulumi = { path = "../../plugins/pulumi" }
 meridian-target-openvox = { path = "../../plugins/openvox" }
 meridian-target-puppet = { path = "../../plugins/puppet" }
+meridian-target-salt = { path = "../../plugins/salt" }
 meridian-target-terraform = { path = "../../plugins/terraform" }
 meridian-target-fake = { path = "../meridian-target-fake" }
 

@@ -606,6 +606,7 @@ dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-target-ansible",
+ "meridian-target-arm",
  "meridian-target-bicep",
  "meridian-target-chef",
  "meridian-target-cloud-init",
@@ -615,9 +616,13 @@ dependencies = [
  "meridian-target-fake",
  "meridian-target-helm",
  "meridian-target-kubernetes",
+ "meridian-target-opentofu",
  "meridian-target-openvox",
+ "meridian-target-packer",
  "meridian-target-podman",
+ "meridian-target-pulumi",
  "meridian-target-puppet",
+ "meridian-target-salt",
  "meridian-target-terraform",
 ]
 
@@ -704,6 +709,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-arm"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
 name = "meridian-target-bicep"
 version = "0.1.0"
 dependencies = [
@@ -786,6 +800,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-opentofu"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
 name = "meridian-target-openvox"
 version = "0.1.0"
 dependencies = [
@@ -793,6 +816,15 @@ dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-target-puppet",
+]
+
+[[package]]
+name = "meridian-target-packer"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
 ]
 
 [[package]]
@@ -805,11 +837,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-pulumi"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-puppet"
 version = "0.1.0"
 dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-salt"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]

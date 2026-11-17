@@ -1,0 +1,25 @@
+name: pets
+runtime: yaml
+description: Compiled by Meridian from the document pets. Do not edit.
+config:
+  prefix:
+    default: web
+    type: string
+resources:
+  pet:
+    type: random:index:RandomPet
+    properties:
+      length: 2
+      prefix: ${prefix}
+  password:
+    type: random:index:RandomPassword
+    properties:
+      length: 24
+      special: false
+    options:
+      dependsOn:
+        - ${pet}
+outputs:
+  pet_name: ${pet.id}
+  greeting: hello from ${pet.id} on ${pulumi.stack}
+  password: ${password.result}

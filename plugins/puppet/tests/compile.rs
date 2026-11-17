@@ -179,3 +179,53 @@ fn a_title_with_a_quote_is_refused() {
     graph.edges.clear();
     assert_eq!(emit(&graph).unwrap_err().rule, "quoted-title");
 }
+
+#[test]
+fn a_reference_becomes_the_value_the_other_resource_declares() {
+    let text = manifest(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n        mode: \"0755\"\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        mode: ${root.mode}\n        content: \"served from ${root.path}, costs $${PRICE} or $5\"\n",
+    );
+    assert!(text.contains("path    => '/srv/app/index.html',"), "{text}");
+    assert!(text.contains("mode    => '0755',"), "{text}");
+    assert!(
+        text.contains("content => 'served from /srv/app, costs ${PRICE} or $5',"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_whole_value_reference_keeps_its_type_and_references_chain() {
+    let text = manifest(
+        "    - id: a\n      type: user\n      params:\n        name: app\n        uid: 1200\n        groups: [x, y]\n    - id: b\n      type: user\n      params:\n        name: ${a.name}2\n        uid: ${a.uid}\n        groups: ${a.groups}\n    - id: c\n      type: group\n      params:\n        name: ${b.name}\n",
+    );
+    assert!(text.contains("name   => 'app2',"), "{text}");
+    assert!(text.contains("uid    => 1200,"), "{text}");
+    assert!(text.contains("groups => ['x', 'y'],"), "{text}");
+    assert!(
+        text.contains("group { 'c':\n    ensure => present,\n    name   => 'app2',"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_reference_that_cannot_be_settled_is_refused() {
+    let page = |value: &str| {
+        refusal(&format!(
+            "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: /srv/app/index.html\n        content: \"{value}\"\n"
+        ))
+    };
+    for (value, says) in [
+        ("${nowhere.path}", "does not declare"),
+        ("${root}", "not which of its params"),
+        ("${root.owner}", "does not set"),
+        ("${root.path.x}", "nothing deeper"),
+        ("${upper(root.path)}", "no expression language"),
+        ("${page.content}", "refers back to itself"),
+        ("${root.path", "never closed"),
+    ] {
+        let err = page(value);
+        assert_eq!(err.rule, "invalid-reference", "{value}");
+        assert_eq!(err.resource, "page", "{value}");
+        assert!(err.msg.contains(says), "{value}: {}", err.msg);
+    }
+}

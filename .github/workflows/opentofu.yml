@@ -1,0 +1,46 @@
+name: opentofu
+
+# The OpenTofu plugin against a real tofu. The rust workflow already runs the
+# plugin's other tests; without OpenTofu installed these ones pass without
+# doing anything, so they are run here, where it is.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/opentofu/**'
+      - 'examples/opentofu/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/opentofu.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: plan and apply with tofu
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # The wrapper script the action can install rewrites tofu's output, which
+      # would break reading its JSON.
+      - uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: 1.11.5
+          tofu_wrapper: false
+
+      - name: Show the version under test
+        run: tofu version
+
+      - name: Test against tofu
+        env:
+          MERIDIAN_TEST_TOFU: tofu
+          MERIDIAN_TEST_TOFU_NETWORK: '1'
+        run: cargo test -p meridian-target-opentofu --locked --test real -- --nocapture
