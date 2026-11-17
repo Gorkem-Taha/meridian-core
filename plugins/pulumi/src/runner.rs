@@ -185,9 +185,12 @@ impl PulumiRunner {
             }
         }
         if !preview.success() {
+            // What went wrong is among the diagnostics when Pulumi got far
+            // enough to write them. When it did not, or wrote none, whatever
+            // it printed instead is the only account there is.
             let said = match read {
-                Ok(preview) => preview.diagnostics.join("\n"),
-                Err(_) => preview.stdout.clone(),
+                Ok(preview) if !preview.diagnostics.is_empty() => preview.diagnostics.join("\n"),
+                _ => tail(&preview.stdout).to_owned(),
             };
             let mut err = preview.into_error("pulumi preview failed");
             if !said.trim().is_empty() {
@@ -283,6 +286,24 @@ fn local_backend(work_dir: &Path) -> String {
     format!("file://{}", dir.display().to_string().replace('\\', "/"))
 }
 
+/// How much of a failed preview's output a failure carries.
+const TAIL_BYTES: usize = 8 * 1024;
+
+/// The end of a text, cut at a line where it can be.
+fn tail(text: &str) -> &str {
+    if text.len() <= TAIL_BYTES {
+        return text;
+    }
+    let mut start = text.len() - TAIL_BYTES;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    match text[start..].find('\n') {
+        Some(newline) => &text[start + newline + 1..],
+        None => &text[start..],
+    }
+}
+
 fn unreadable(what: &str, detail: impl std::fmt::Display) -> RunError {
     RunError::new(format!("pulumi's {what} could not be read: {detail}"))
 }
@@ -370,7 +391,10 @@ fn read_preview(json: &str) -> Result<Preview, RunError> {
         let text = |key: &str| diagnostic.get(key).and_then(Value::as_str).unwrap_or("");
         let message = text("message").trim();
         let severity = text("severity");
-        if message.is_empty() || !matches!(severity, "warning" | "error") {
+        // "debug" and "info" are a running commentary. Everything else is
+        // something going wrong: "warning", "error", and "info#err", which is
+        // how a provider's or the program's own error output is labelled.
+        if message.is_empty() || matches!(severity, "" | "debug" | "info") {
             continue;
         }
         let about = urn_name(text("urn"));
@@ -453,6 +477,8 @@ mod tests {
         ],"diagnostics":[
           {"message":"using a deprecated property\n","severity":"warning","urn":"urn:pulumi:dev::web-vm::aws:ec2/instance:Instance::web_vm"},
           {"message":"debugging detail","severity":"debug"},
+          {"message":"chatter","severity":"info"},
+          {"message":"the program wrote to stderr","severity":"info#err"},
           {"message":"no credentials","severity":"error"}
         ],"changeSummary":{"create":2}}"#;
         let preview = read_preview(json).unwrap();
@@ -471,6 +497,7 @@ mod tests {
             preview.diagnostics,
             [
                 "warning: web_vm: using a deprecated property",
+                "info#err: the program wrote to stderr",
                 "error: no credentials"
             ]
         );
@@ -514,6 +541,15 @@ mod tests {
         assert!(read_outputs("{}", "{}").unwrap().is_empty());
         assert!(read_outputs("", "").unwrap().is_empty());
         assert!(read_outputs("{}", "not json").is_err());
+    }
+
+    #[test]
+    fn a_long_output_is_cut_to_its_end_at_a_line() {
+        assert_eq!(tail("short\n"), "short\n");
+        let long = format!("{}\nlast line\n", "x".repeat(TAIL_BYTES));
+        assert_eq!(tail(&long), "last line\n");
+        let unbroken = "é".repeat(TAIL_BYTES);
+        assert!(tail(&unbroken).len() <= TAIL_BYTES);
     }
 
     #[test]

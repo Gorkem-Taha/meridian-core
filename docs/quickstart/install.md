@@ -19,6 +19,7 @@ That produces the `meridian` command and one binary per plugin, all in
 meridian
 meridian-target-ansible
 meridian-target-terraform
+meridian-target-pulumi
 ...
 ```
 

@@ -71,8 +71,9 @@ actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
 Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
-is accepted. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
+is accepted. CloudFormation, Bicep and Pulumi have no way to react to a change at all,
+and refuse every notify ([pulumi](../targets/pulumi.md#notifications) says what
+to write instead).
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to

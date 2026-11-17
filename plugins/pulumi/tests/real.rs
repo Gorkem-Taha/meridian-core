@@ -249,6 +249,11 @@ fn what_pulumi_refuses_comes_back_as_its_own_words() {
         .expect_err("pulumi should refuse the program");
     assert_eq!(err.msg, "pulumi preview failed", "{err}");
     assert!(err.exit_code.is_some_and(|code| code != 0), "{err}");
+    // Printed so the workflow's log shows what a real refusal looks like.
+    eprintln!(
+        "--- pulumi's refusal ---\n{err}\n--- log ---\n{}",
+        log.text().join("\n")
+    );
     assert!(
         err.output.contains("NoSuchThing"),
         "the failure does not say what was wrong:\n{err}"

@@ -278,6 +278,17 @@ fn a_preview_that_fails_without_json_keeps_what_was_printed() {
 }
 
 #[test]
+fn a_preview_that_fails_with_json_but_no_diagnostics_keeps_the_json() {
+    let dir = scratch(TMP, "failed-silent");
+    let cases = "\"stack select\") echo ok ;;\n\"preview \"*) echo '{\"steps\":[],\"error\":\"no such type\"}'; exit 1 ;;";
+    let err = runner(&dir, cases)
+        .plan(&context(&dir), &compiled(), &KeptLog::default())
+        .unwrap_err();
+    assert_eq!(err.msg, "pulumi preview failed");
+    assert_eq!(err.output, "{\"steps\":[],\"error\":\"no such type\"}\n");
+}
+
+#[test]
 fn a_preview_that_succeeds_with_nonsense_is_an_error() {
     let dir = scratch(TMP, "nonsense");
     let cases = "\"stack select\") echo ok ;;\n\"preview \"*) echo 'Previewing update' ;;";

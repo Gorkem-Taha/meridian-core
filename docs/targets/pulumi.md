@@ -6,7 +6,7 @@
 [Pulumi YAML](https://www.pulumi.com/docs/iac/languages-sdks/yaml/) program and runs it
 with the `pulumi` command line. The plugin's category is **infrastructure as code**.
 
-## What this target does and does not support
+## What it does and does not support
 
 | | |
 |---|---|
@@ -19,7 +19,7 @@ with the `pulumi` command line. The plugin's category is **infrastructure as cod
 | `dependsOn` | Yes, between resources. Left out where a reference already implies the order. |
 | Outputs, handed to later stages | Yes. Secret outputs are marked sensitive and masked. |
 | Plan, apply and outputs | Yes: `pulumi preview`, `pulumi up`, `pulumi stack output`. |
-| `notifies` | **No.** Refused at compile time. See [What is refused](#what-is-refused). |
+| `notifies` | **No.** Refused at compile time. See [Notifications](#notifications). |
 | `runtimeWhen` | **No.** Refused at compile time. |
 | `state: absent` | **No.** Refused: remove the resource from the document instead. |
 | Expressions inside `${}` | **No.** Pulumi YAML reads a name and its properties there, nothing computed. Use Pulumi's `fn::` functions. |
@@ -264,6 +264,34 @@ order, so the compiled program reads the way a Pulumi author would have written 
 Only resources can be ordered by hand. A function call runs when its arguments are
 known and configuration is read before anything runs, so a `dependsOn` to or from
 either is refused unless a reference already implies it.
+
+## Notifications
+
+`notifies` is refused on this target, with the rule `unsupported-action`. Nothing in a
+Pulumi YAML program makes one resource react to a change in another: there are no
+handlers, and the `replaceOnChanges` option watches only a resource's own properties.
+Meridian does not fake a reaction it cannot guarantee, so the plugin claims neither a
+native nor a synthetic notify in the
+[capability matrix](../reference/capability-matrix.md).
+
+What Pulumi does offer is replacement when a resource's own input changes. Pass the
+value that changes into a property of the resource that must react, and name that
+property in `replaceOnChanges`:
+
+```yaml
+- id: cert
+  type: aws:acm:Certificate
+  params:
+    domainName: example.com
+
+- id: listener
+  type: aws:lb:Listener
+  params:
+    loadBalancerArn: ${lb.arn}
+    certificateArn: ${cert.arn}       # the listener reads the certificate
+    resourceOptions:
+      replaceOnChanges: [certificateArn]   # and is replaced when it changes
+```
 
 ## The stack and its state
 
