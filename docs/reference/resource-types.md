@@ -109,6 +109,38 @@ runs in its place in the order, and once more when it is notified.
     creates: /var/cache/app/warm
 ```
 
+## References
+
+On these targets a resource has nothing to read during the apply: all it has is
+what the document says. So `${id.param}` inside a param is settled when the
+document is compiled. It becomes the value the document gives that param on the
+resource `id`.
+
+```yaml
+- id: site_root
+  type: file
+  state: directory
+  params:
+    path: /srv/app
+
+- id: index
+  type: file
+  params:
+    path: ${site_root.path}/index.html   # /srv/app/index.html
+    content: hello
+```
+
+A reference that is the whole value of a param keeps the type of what it reads,
+so `groups: ${app_user.groups}` is a list. Inside longer text it must read a
+single value. A reference does not order the two resources; use `dependsOn` for
+that.
+
+A reference that cannot be settled is refused with the rule `invalid-reference`:
+a resource the document does not declare, a param that resource does not set, a
+bare `${id}`, or anything that is not `${id.param}`. Write `$${` for a literal
+`${`, as a shell script in a file's `content` may need. `runtimeWhen` is not
+touched: it is the tool's own language.
+
 ## What every resource can carry
 
 | Field | Meaning | Where |
