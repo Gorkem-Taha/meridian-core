@@ -120,7 +120,7 @@ esac"#
     let sudo = stand_in(
         dir,
         "sudo",
-        &format!(r#"echo "$@" >> "{d}/sudo.calls"; shift; exec "$@""#),
+        &format!(r#"printf '%s\n' "$*" >> "{d}/sudo.calls"; shift; exec "$@""#),
     );
     let path = |p: PathBuf| p.to_str().unwrap().to_owned();
     PodmanRunner {
