@@ -120,6 +120,9 @@ compare the output byte for byte with the golden files in `plugins/<name>/testda
 Refusals are golden files too, because the wording an operator reads is output like any
 other. Set `UPDATE_GOLDEN=1` to record them after a deliberate change. The runners are
 tested against stand-ins for the tools, so the suite needs nothing installed but Rust.
+Seventeen of the eighteen targets are also tested against the tool itself, each in a
+workflow of its own: [Real-tool tests](docs/contributing/real-tool-tests.md) lists what
+each one runs and what it cannot prove.
 
 ## Contributing
 

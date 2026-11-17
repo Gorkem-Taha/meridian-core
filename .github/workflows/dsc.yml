@@ -1,0 +1,183 @@
+name: dsc
+
+# The DSC plugin against a real PowerShell, the real DscPipelineRunner from
+# the PowerShell Gallery, and both DSC engines.
+#
+# linux    the plugin's own runner (plugins/dsc/tests/real.rs) drives DSC v3
+#          (the dsc command) for real, with a resource that ships with the
+#          tests. DSC v2 (Invoke-DscResource) does not work on Linux.
+# windows  real Windows resources, a machine environment variable and
+#          registry values, through both engines. Meridian does not build on
+#          Windows yet, so the documents are compiled on Linux and the
+#          Windows runner runs the compiled projects with the same
+#          Invoke-DscRunner calls the plugin makes.
+#
+# The rust workflow already runs the plugin's other tests; without
+# MERIDIAN_TEST_REAL_DSC the real ones pass without doing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/dsc/**'
+      - 'examples/dsc/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/dsc.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DSC_VERSION: 3.3.0
+
+jobs:
+  linux:
+    name: real DscPipelineRunner and DSC v3 on Linux
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Install DscPipelineRunner
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Dsc.PipelineRunner, Datum.InvokeCommand -Scope CurrentUser -Force
+          Get-Module -ListAvailable Dsc.PipelineRunner, Datum, Datum.InvokeCommand, powershell-yaml, PSDesiredStateConfiguration |
+            Format-Table Name, Version
+          # The test resource ships with the tests.
+          $modules = Join-Path $env:GITHUB_WORKSPACE 'plugins/dsc/tests/modules'
+          "PSModulePath=$modules$([IO.Path]::PathSeparator)$env:PSModulePath" >> $env:GITHUB_ENV
+
+      - name: Install the dsc command
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/dsc"
+          gh release download "v$DSC_VERSION" --repo PowerShell/DSC \
+            --pattern "DSC-$DSC_VERSION-x86_64-linux.tar.gz" --dir "$RUNNER_TEMP"
+          tar -xzf "$RUNNER_TEMP/DSC-$DSC_VERSION-x86_64-linux.tar.gz" -C "$RUNNER_TEMP/dsc"
+          echo "$RUNNER_TEMP/dsc" >> "$GITHUB_PATH"
+
+      - name: Show the versions under test
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          dsc --version
+          dsc resource list --adapter Microsoft.DSC/PowerShell 'MeridianTestDsc/*'
+
+      # With the variables set, a PowerShell that cannot load the module, or
+      # a dsc that does not run, fails the tests, so this job cannot pass by
+      # checking nothing.
+      - name: Test against DscPipelineRunner
+        env:
+          MERIDIAN_TEST_REAL_DSC: '1'
+          # Invoke-DscResource (DSC v2) does not work on Linux, so only DSC v3
+          # is asked for here. The windows job covers DSC v2.
+          MERIDIAN_TEST_REAL_DSC_V3: '1'
+        run: cargo test -p meridian-target-dsc --locked --test real -- --nocapture --test-threads=1
+
+  compile:
+    name: compile the Windows documents
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Compile
+        run: |
+          cargo build --locked -p meridian-cli -p meridian-target-dsc
+          target/debug/meridian compile \
+            plugins/dsc/tests/documents/windows-v2.yaml \
+            plugins/dsc/tests/documents/windows-v3.yaml \
+            --out compiled
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dsc-windows-projects
+          path: compiled
+          if-no-files-found: error
+          retention-days: 3
+
+  windows:
+    name: real Windows resources through DSC v2 and v3
+    needs: compile
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dsc-windows-projects
+          path: compiled
+
+      - name: Install DscPipelineRunner and the resources
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Dsc.PipelineRunner, Datum.InvokeCommand, PSDscResources -Scope CurrentUser -Force
+          Get-Module -ListAvailable Dsc.PipelineRunner, Datum, Datum.InvokeCommand, powershell-yaml, PSDesiredStateConfiguration, PSDscResources |
+            Format-Table Name, Version
+
+      - name: Install the dsc command
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $archive = "DSC-$env:DSC_VERSION-x86_64-pc-windows-msvc.zip"
+          gh release download "v$env:DSC_VERSION" --repo PowerShell/DSC --pattern $archive --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'the dsc release could not be downloaded' }
+          $target = Join-Path $env:RUNNER_TEMP 'dsc'
+          Expand-Archive -LiteralPath (Join-Path $env:RUNNER_TEMP $archive) -DestinationPath $target
+          $target >> $env:GITHUB_PATH
+
+      - name: Show the versions under test
+        shell: pwsh
+        run: |
+          $PSVersionTable.PSVersion.ToString()
+          [System.Environment]::OSVersion.VersionString
+          dsc --version
+
+      - name: Start from nothing
+        shell: pwsh
+        run: |
+          [Environment]::SetEnvironmentVariable('MERIDIAN_REAL_DSC', $null, 'Machine')
+          Remove-Item -Path 'HKLM:\SOFTWARE\MeridianReal', 'HKCU:\Software\MeridianReal' -Recurse -Force -ErrorAction SilentlyContinue
+
+      - name: DSC v2, an environment variable and a registry value
+        shell: pwsh
+        run: |
+          ./plugins/dsc/tests/windows/Test-CompiledProject.ps1 -Project compiled/windows-v2 -Drifted setting, marker
+          $value = [Environment]::GetEnvironmentVariable('MERIDIAN_REAL_DSC', 'Machine')
+          if ($value -ne 'one') { throw "the machine's MERIDIAN_REAL_DSC is '$value', not 'one'" }
+          $stage = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\MeridianReal' -Name stage).stage
+          if ($stage -ne 'one') { throw "HKLM\SOFTWARE\MeridianReal\stage is '$stage', not 'one'" }
+
+      - name: DSC v3, a registry value
+        shell: pwsh
+        run: |
+          ./plugins/dsc/tests/windows/Test-CompiledProject.ps1 -Project compiled/windows-v3 -Drifted marker
+          $stage = (Get-ItemProperty -Path 'HKCU:\Software\MeridianReal' -Name stage).stage
+          if ($stage -ne 'one') { throw "HKCU\Software\MeridianReal\stage is '$stage', not 'one'" }
+
+      - name: Clean up
+        if: always()
+        shell: pwsh
+        run: |
+          [Environment]::SetEnvironmentVariable('MERIDIAN_REAL_DSC', $null, 'Machine')
+          Remove-Item -Path 'HKLM:\SOFTWARE\MeridianReal', 'HKCU:\Software\MeridianReal' -Recurse -Force -ErrorAction SilentlyContinue

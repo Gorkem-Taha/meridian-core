@@ -24,7 +24,7 @@ flowchart TD
 | Conformance tests | `crates/meridian-cli/tests/conformance.rs` | `cargo test -p meridian-cli --test conformance` |
 | Robustness tests | `crates/meridian-cli/tests/robustness.rs` | `cargo test -p meridian-cli --test robustness` |
 | Examples | `crates/meridian-cli/tests/examples.rs` | `cargo test -p meridian-cli --test examples` |
-| Real tools | a workflow per tool under `.github/workflows/` | in CI; each target's page says how |
+| Real tools | a workflow per tool under `.github/workflows/` | in CI; [Real-tool tests](real-tool-tests.md) lists what each one runs and how to run it yourself |
 
 Everything except the real-tool workflows runs with `cargo test --workspace`,
 needs no tool installed, and takes a few minutes.

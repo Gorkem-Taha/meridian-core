@@ -1,0 +1,33 @@
+# Real Windows resources through DSC v2 (Invoke-DscResource): a machine
+# environment variable and a registry value. Compiled on Linux and run on a
+# Windows runner by the dsc workflow.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: windows-v2
+spec:
+  target: dsc
+  targetVersion: "2"
+  targetHost:
+    from: inline
+    host: localhost
+  resources:
+    - id: setting
+      type: PSDscResources/Environment
+      params:
+        Name: MERIDIAN_REAL_DSC
+        Value: one
+        Ensure: Present
+        Path: false
+        Target: [Machine]
+
+    - id: marker
+      type: PSDscResources/Registry
+      params:
+        Key: HKEY_LOCAL_MACHINE\SOFTWARE\MeridianReal
+        ValueName: stage
+        ValueData: [one]
+        ValueType: String
+        Ensure: Present
+      dependsOn:
+        - resource: setting

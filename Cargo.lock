@@ -925,6 +925,7 @@ dependencies = [
 name = "meridian-target-terraform"
 version = "0.1.0"
 dependencies = [
+ "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",
 ]
