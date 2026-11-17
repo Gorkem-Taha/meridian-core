@@ -25,6 +25,7 @@ start with the [design plan](docs/plans/design-plan.md).
 | [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
+| [`podman`](docs/targets/podman.md) | containerization | Quadlet units | `systemctl` and `podman`, over `ssh` for another host |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
 
 What each can and cannot express is in the generated

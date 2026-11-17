@@ -1,0 +1,40 @@
+# Two containers sharing one pod: they share a network namespace, so the
+# sidecar reaches the application on localhost. Needs Podman 5.0 or later,
+# which is when Quadlet learnt .pod units; an older Podman is refused when
+# the document is planned, before anything is changed.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: metrics-pod
+spec:
+  target: podman
+  resources:
+    - id: metrics
+      type: pod
+      params:
+        PodName: metrics
+        PublishPort: "9090:9090"
+
+    - id: app-image
+      type: image
+      params:
+        Image: quay.io/prometheus/prometheus:v3.1.0
+
+    - id: prometheus
+      type: container
+      params:
+        Image: ${app-image}
+        Pod: ${metrics}
+        Exec: --config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle
+
+    - id: exporter
+      type: container
+      params:
+        Image: quay.io/prometheus/node-exporter:v1.8.2
+        Pod: ${metrics}
+        # Passed to `podman run` as written, for anything Quadlet has no key for.
+        PodmanArgs: --pid=host
+
+  outputs:
+    - name: pod_name
+      value: ${metrics.name}

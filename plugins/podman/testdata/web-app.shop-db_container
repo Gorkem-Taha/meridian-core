@@ -1,0 +1,18 @@
+# Written by Meridian from the document "web-app". The next apply overwrites any change made here.
+
+[Container]
+ContainerName=shop-db
+Environment=POSTGRES_DB=shop
+Environment=POSTGRES_PASSWORD=s3cr3t%%and$$more
+Environment=POSTGRES_USER=shop
+HealthCmd=pg_isready -U shop
+HealthInterval=10s
+Image=docker.io/library/postgres:17
+Network=shop-net.network
+Volume=shop-data.volume:/var/lib/postgresql/data
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target

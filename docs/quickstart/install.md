@@ -55,6 +55,7 @@ hand:
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
 | `docker` | `docker` with the Compose plugin |
+| `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |
 
 Each tool keeps using its own credentials and configuration. Meridian does not

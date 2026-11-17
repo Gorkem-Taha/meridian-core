@@ -66,6 +66,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |
+| `podman` | a kind of Quadlet unit | `container` |
 | `dsc` | module and resource | `PSDscResources/Service` |
 
 What Meridian adds for these targets is everything around the resource: one
