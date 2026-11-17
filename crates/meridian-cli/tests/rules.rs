@@ -73,7 +73,7 @@ fn the_example_passes_for_a_node_that_keeps_the_rules() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
         stdout(&out),
-        "rules: config/rules.yaml (9 rules)\n\
+        "rules: config/rules.yaml (8 rules)\n\
          layers, least specific first:\n  \
          common.yaml            organization\n  \
          environment/prod.yaml  environment\n  \

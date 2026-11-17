@@ -44,19 +44,35 @@ of YAML files into one file per node, and its capability policy says what
 each layer of that tree may use. Its ideas about where a policy lives and how
 a layer gets an owner carry over directly.
 
-| DscPipelineRunner | Meridian compile rules |
+| DscPipelineRunner `Policy.yml` | Meridian `rules.yaml` |
 |---|---|
-| Layers are listed in `Datum.yml` under `ResolutionPrecedence`, and each file has `parameters`, `variables` and `resources` | Layers are listed in `hierarchy.yaml`. The shipped rule sets protect the keys `variables`, `secrets` and `credentials` |
-| `Policy.yml` sits beside `Datum.yml`. It is a file of its own, outside the hierarchy, so **no layer can add to it or override it** | `rules.yaml` sits beside `hierarchy.yaml`. It is never a layer and never merged, and a hierarchy that lists it as a layer is refused |
-| A layer is decided by **where a file is**, never by what it says. A file no layer claims may do nothing | Groups claim layers by path pattern. A layer no group claims is refused |
-| Every violation is listed, and offending values are not logged | Every violation is listed. A refusal names the rule, layer, group and key, and never a value |
+| Sits beside `Datum.yml`. It is a file of its own, outside the hierarchy, so **no layer can add to it or override it** | Sits beside `hierarchy.yaml`. It is never a layer and never merged, and a hierarchy that lists it as a layer is refused |
+| `Layers` give files owners by path. A layer is decided by **where a file is**, never by what it says, and the first layer whose paths match owns the file | `layers` (groups) give layers owners by path, first match first |
+| Each layer lists its `Capabilities`; `Default: Deny` decides what it does not list | Each group lists its `capabilities`; `default: deny` decides what it does not list |
+| A file no layer claims may do nothing, whatever `Default` says | The same |
+| Something several layers contributed to is allowed only what every one of them is allowed | Each layer is held to its own group for every key it sets |
+| Every violation is listed, nothing runs, and offending values are not logged | Every violation is listed, nothing is compiled, and a refusal never holds a value |
 | `-RequirePolicy` fails a run that has no policy, and `-PolicyPath` takes the policy from somewhere contributors cannot write | `--require-rules` and `--rules FILE` |
-| `variables` cannot take a name the runner reserves or replace a variable the agent already has; between layers they merge deeply, so the most specific file wins | `use: [protect-variables, protect-secrets]` makes the less specific layer's variables, secrets and credentials hold against every more specific layer |
 
-What Meridian adds is that the policy is **declarative and yours to write**:
-six kinds of rule, each over key patterns and layer groups, so the same engine
-that keeps a node from changing the organization's region can also require
-every team layer to name an owner, or forbid a floating image tag.
+The capabilities themselves differ, because what is layered differs. A
+DscPipelineRunner layer file holds resources, so its policy governs what
+resources may use: `Targets`, `Engines`, `ExecutionScripts` and
+`DatumScriptBlocks`. A Meridian hierarchy layer holds data, so the capability
+is `keys`: which keys a layer may set. The
+[reference](../reference/compile-rules.md#from-dscpipelinerunner) puts the two
+files side by side.
+
+`Policy.yml` says what a layer may *use*. It does not stop a team's file from
+changing a variable the platform set: DscPipelineRunner merges `variables`
+deeply and the most specific file wins. Compile rules add that as a second
+part of the same file.
+
+So a rules file has two parts. **Capabilities** are the `Policy.yml` model:
+what each group of layers may set at all. **Rules** are what Meridian adds:
+six kinds of declarative rule over key patterns and groups, so the same file
+that keeps a team out of `secrets` can also keep a node from changing the
+organization's region, require every team layer to name an owner, or forbid a
+floating image tag.
 
 ## Where the rules sit
 
@@ -93,17 +109,31 @@ to that file (by name, through `..`, or through a symbolic link) is an error.
 
 ## Ownership: groups
 
-A rule usually needs to say *whose* values are protected and *who* is
-constrained. Groups give layers owners:
+Groups give layers owners, and say what each owner may set:
 
 ```yaml
+default: deny
 layers:
   - name: organization
     paths: [common.yaml]
+    capabilities:
+      keys: ["**"]
   - name: environment
     paths: ["environment/*"]
+    capabilities:
+      keys: [variables, registry]
   - name: team
     paths: ["role/**", "node/**"]
+    capabilities:
+      keys: [variables, packages, web]
+```
+
+With `default: deny`, a group may set the keys it lists and nothing else, and
+a group that lists none may set nothing. A team layer that declares a secret
+is refused before any rule is looked at:
+
+```
+[meridian/capabilities] layer "node/web01.yaml" (team) sets "secrets.database.path", which team is not allowed to set: it may set only variables, packages, web
 ```
 
 The first group whose pattern matches a layer's path owns it. Ownership is
@@ -113,9 +143,10 @@ protection by folder) are what tie a folder to a team, and the groups mirror
 them. Nothing written inside a layer can change its group.
 
 Values given on the command line with `--data` are merged last and win, so
-they are checked as the most specific layers, in a group of their own called
-`(command line)`. A protected value cannot be changed from the command line
-either.
+they are checked by every rule as the most specific layers, in a group of
+their own called `(command line)`. A protected value cannot be changed from
+the command line either. Capabilities do not apply to them: the command line
+belongs to whoever runs the pipeline, not to a group of layers.
 
 ## The rules
 
@@ -127,6 +158,9 @@ either.
 | `required` | a key must be set, in every layer of a group or in the merged result | every team layer names an owner |
 | `forbidden-value` | a key may not hold certain values | no `:latest` image tags, no plain HTTP |
 | `merge-strategy` | a key may only be merged with certain strategies | `variables` must merge deeply |
+
+Rules come after capabilities and are independent of them: being allowed to
+set `variables` does not make a team allowed to change the organization's.
 
 Three sets ship with Meridian and are switched on by name with `use:`:
 `protect-variables`, `protect-secrets` and `protect-all`. They are ordinary
@@ -230,6 +264,9 @@ to declarations unchanged once they exist.
 
 ## Limits
 
+- Capabilities cover keys. Which targets, tools or scripts a layer's
+  documents may use, as `Policy.yml` governs for DscPipelineRunner resources,
+  has nothing to attach to until documents can be layered.
 - The rules are not a sandbox. They check what layers say, not what a tool
   does with the result.
 - The rules file is in the configuration repository unless you keep it

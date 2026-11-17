@@ -47,9 +47,12 @@ use std::fmt;
 
 use meridian_resolve::{Hierarchy, LoadError, Loader, Resolved, Scope};
 
-pub use eval::{evaluate, Layer, MergeKind, MergePlan, Origin, Stack, Violation, UNCLAIMED_RULE};
+pub use eval::{
+    evaluate, Layer, MergeKind, MergePlan, Origin, Stack, Violation, CAPABILITY_RULE,
+    UNCLAIMED_RULE,
+};
 pub use files::{check_files, Checked, Files, RULES_FILE};
-pub use model::{Check, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED};
+pub use model::{Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED};
 pub use parse::RULES_VERSION;
 pub use pattern::{KeyPattern, PathGlob};
 

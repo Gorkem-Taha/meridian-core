@@ -4,7 +4,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::model::{shipped, Check, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED};
+use crate::model::{
+    shipped, Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED,
+};
 use crate::pattern::{KeyPattern, PathGlob};
 use crate::Error;
 use meridian_ir::Value;
@@ -24,7 +26,7 @@ fn from_value(value: &Value) -> Result<Rules, String> {
     let top = fields(
         value,
         "rules file",
-        &["rulesVersion", "layers", "use", "rules"],
+        &["rulesVersion", "default", "layers", "use", "rules"],
     )?;
     match top.get("rulesVersion") {
         Some(Value::Int(RULES_VERSION)) => {}
@@ -41,10 +43,24 @@ fn from_value(value: &Value) -> Result<Rules, String> {
         }
     }
 
-    let mut rules = Rules::default();
+    let default = match top.get("default") {
+        None | Some(Value::Null) => DefaultAccess::Allow,
+        Some(Value::String(s)) if s == "allow" => DefaultAccess::Allow,
+        Some(Value::String(s)) if s == "deny" => DefaultAccess::Deny,
+        Some(other) => {
+            return Err(format!(
+                "default: expected \"allow\" or \"deny\", found {}",
+                other.canonical()
+            ))
+        }
+    };
+    let mut rules = Rules {
+        default,
+        ..Rules::default()
+    };
     for (i, item) in list(top.get("layers"), "layers")?.iter().enumerate() {
         let at = format!("layers[{i}]");
-        let map = fields(item, &at, &["name", "paths"])?;
+        let map = fields(item, &at, &["name", "paths", "capabilities"])?;
         let name = required_string(map, "name", &at)?;
         if name.is_empty() || name.starts_with('(') {
             return Err(format!(
@@ -62,7 +78,31 @@ fn from_value(value: &Value) -> Result<Rules, String> {
             .iter()
             .map(|p| PathGlob::parse(p).map_err(|e| format!("{at}.paths: {e}")))
             .collect::<Result<_, _>>()?;
-        rules.groups.push(Group { name, paths });
+        let keys = match map.get("capabilities") {
+            None | Some(Value::Null) => None,
+            Some(value) => {
+                let at = format!("{at}.capabilities");
+                let caps = fields(value, &at, &["keys"])?;
+                match caps.get("keys") {
+                    None | Some(Value::Null) => None,
+                    // An empty list is meaningful: the group may set nothing.
+                    Some(value) => Some(
+                        strings(Some(value), &format!("{at}.keys"))?
+                            .iter()
+                            .map(|k| KeyPattern::parse(k).map_err(|e| format!("{at}.keys: {e}")))
+                            .collect::<Result<_, _>>()?,
+                    ),
+                }
+            }
+        };
+        rules.groups.push(Group { name, paths, keys });
+    }
+
+    if rules.default == DefaultAccess::Deny && rules.groups.is_empty() {
+        return Err(
+            "default: deny needs groups under `layers`: with none, no layer could set anything"
+                .to_owned(),
+        );
     }
 
     for (i, name) in strings(top.get("use"), "use")?.iter().enumerate() {

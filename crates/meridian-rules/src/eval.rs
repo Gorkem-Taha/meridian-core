@@ -6,7 +6,7 @@ use std::fmt;
 use meridian_ir::Value;
 use meridian_resolve::Data;
 
-use crate::model::{Check, Rule, Rules, COMMAND_LINE, UNCLAIMED};
+use crate::model::{Check, DefaultAccess, Rule, Rules, COMMAND_LINE, UNCLAIMED};
 use crate::pattern::{display_path, glob, KeyPattern};
 use crate::Error;
 
@@ -150,6 +150,9 @@ impl fmt::Display for Violation {
 /// The id of the built-in check that every layer has an owner.
 pub const UNCLAIMED_RULE: &str = "meridian/unclaimed-layer";
 
+/// The id of the built-in check of each group's `capabilities`.
+pub const CAPABILITY_RULE: &str = "meridian/capabilities";
+
 /// Checks every rule and returns every violation, in a fixed order: by rule
 /// as the file lists them, then by layer from least to most specific, then
 /// by key. An `Err` means the rules could not be evaluated at all.
@@ -187,6 +190,8 @@ pub fn evaluate(rules: &Rules, stack: &Stack<'_>) -> Result<Vec<Violation>, Erro
             }
         }
     }
+
+    ev.capabilities(&mut out);
 
     for rule in &rules.rules {
         match &rule.check {
@@ -271,6 +276,59 @@ impl Evaluation<'_> {
                 .map(str::to_owned),
             key: display_path(key),
             text,
+        }
+    }
+
+    /// What each group may set: its `capabilities.keys`, or the file's
+    /// default when it does not list them. Checked layer by layer, so a value
+    /// several layers contribute to must be allowed to every one of them.
+    fn capabilities(&self, out: &mut Vec<Violation>) {
+        for (i, layer) in self.stack.layers.iter().enumerate() {
+            // The command line is the operator's, not a layer of the
+            // hierarchy; an unclaimed layer has been refused already.
+            if layer.origin == Origin::CommandLine {
+                continue;
+            }
+            let Some(group) = self.rules.group(&layer.path) else {
+                continue;
+            };
+            let why = match (&group.keys, self.rules.default) {
+                (None, DefaultAccess::Allow) => continue,
+                (None, DefaultAccess::Deny) => {
+                    "it lists no `capabilities.keys`, and the default is deny".to_owned()
+                }
+                (Some(keys), _) if keys.is_empty() => "it may set no keys".to_owned(),
+                (Some(keys), _) => format!(
+                    "it may set only {}",
+                    keys.iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            };
+            let allowed = group.keys.as_deref().unwrap_or(&[]);
+            let mut leaves = Vec::new();
+            for (key, value) in &layer.data {
+                collect_leaves(&mut vec![key.clone()], value, &mut leaves);
+            }
+            for (path, _) in leaves {
+                if selects(allowed, &path) {
+                    continue;
+                }
+                out.push(Violation {
+                    rule: CAPABILITY_RULE.to_owned(),
+                    check: "capabilities",
+                    layer: Some(layer.path.clone()),
+                    group: Some(group.name.clone()),
+                    key: display_path(&path),
+                    text: format!(
+                        "{} sets {:?}, which {} is not allowed to set: {why}",
+                        self.name(i),
+                        display_path(&path),
+                        group.name
+                    ),
+                });
+            }
         }
     }
 

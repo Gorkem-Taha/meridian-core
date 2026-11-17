@@ -18,6 +18,21 @@ pub const COMMAND_LINE: &str = "(command line)";
 pub struct Group {
     pub name: String,
     pub paths: Vec<PathGlob>,
+    /// The keys the group's layers may set: its `capabilities.keys`. `None`
+    /// when the group does not list the capability, which leaves it to the
+    /// file's default.
+    pub keys: Option<Vec<KeyPattern>>,
+}
+
+/// What a group may do with a capability it does not list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DefaultAccess {
+    /// Anything. The default when the file does not say, so that a rules
+    /// file enforces only what it asks for.
+    #[default]
+    Allow,
+    /// Nothing.
+    Deny,
 }
 
 /// What a rule checks.
@@ -78,6 +93,8 @@ pub struct Rule {
 /// first.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Rules {
+    /// What a group may do with a capability it does not list.
+    pub default: DefaultAccess,
     pub groups: Vec<Group>,
     pub rules: Vec<Rule>,
 }
@@ -86,11 +103,13 @@ impl Rules {
     /// The group owning the layer at `path`: the first whose patterns match,
     /// or [`UNCLAIMED`].
     pub fn group_of(&self, path: &str) -> &str {
+        self.group(path).map_or(UNCLAIMED, |g| g.name.as_str())
+    }
+
+    pub(crate) fn group(&self, path: &str) -> Option<&Group> {
         self.groups
             .iter()
             .find(|g| g.paths.iter().any(|p| p.matches(path)))
-            .map(|g| g.name.as_str())
-            .unwrap_or(UNCLAIMED)
     }
 
     pub(crate) fn group_names(&self) -> BTreeSet<&str> {

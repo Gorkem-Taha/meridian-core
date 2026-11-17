@@ -669,6 +669,160 @@ rules:
 }
 
 // ---------------------------------------------------------------------------
+// Capabilities: DscPipelineRunner's Policy.yml, for keys
+// ---------------------------------------------------------------------------
+
+/// The shape of DscPipelineRunner's `Example Policy Configuration/Policy.yml`:
+/// a default of deny, a platform group that may do anything, and a teams
+/// group that may do what it lists.
+const POLICY: &str = r#"rulesVersion: 1
+default: deny
+layers:
+  - name: platform
+    paths: ["Platform/**"]
+    capabilities:
+      keys: ["**"]
+  - name: teams
+    paths: ["Projects/**"]
+    capabilities:
+      keys: [variables.Owner, packages]
+"#;
+
+#[test]
+fn a_group_may_set_only_the_keys_it_is_allowed() {
+    let got = deep(
+        &rules(POLICY),
+        &[
+            ("Platform/Baseline.yaml", "variables: {Region: eu}\nsecrets: {db: {from: vault}}\npackages: [curl]"),
+            (
+                "Projects/Present/WebTeam.yaml",
+                "variables: {Owner: web, Region: us}\npackages: [nginx]\nsecrets: {db: {from: env}}",
+            ),
+        ],
+    );
+    assert_eq!(
+        got,
+        [
+            "[meridian/capabilities] layer \"Projects/Present/WebTeam.yaml\" (teams) sets \"secrets.db.from\", \
+             which teams is not allowed to set: it may set only variables.Owner, packages",
+            "[meridian/capabilities] layer \"Projects/Present/WebTeam.yaml\" (teams) sets \"variables.Region\", \
+             which teams is not allowed to set: it may set only variables.Owner, packages",
+        ]
+    );
+    // What the team is allowed passes, and the platform may set anything.
+    let got = deep(
+        &rules(POLICY),
+        &[
+            (
+                "Platform/Baseline.yaml",
+                "variables: {Region: eu}\nsecrets: {db: {from: vault}}",
+            ),
+            (
+                "Projects/Present/WebTeam.yaml",
+                "variables: {Owner: web}\npackages: [nginx]",
+            ),
+        ],
+    );
+    assert_eq!(got, Vec::<String>::new());
+}
+
+#[test]
+fn a_capability_a_group_does_not_list_follows_the_default() {
+    let unlisted = "layers:\n  - {name: platform, paths: [\"Platform/**\"], capabilities: {keys: [\"**\"]}}\n  - {name: teams, paths: [\"Projects/**\"]}\n";
+    let layers = [
+        ("Platform/Baseline.yaml", "a: 1"),
+        ("Projects/x.yaml", "b: 1"),
+    ];
+    assert_eq!(
+        deep(&rules(&format!("rulesVersion: 1\ndefault: deny\n{unlisted}")), &layers),
+        ["[meridian/capabilities] layer \"Projects/x.yaml\" (teams) sets \"b\", which teams is not allowed \
+          to set: it lists no `capabilities.keys`, and the default is deny"]
+    );
+    for allow in ["default: allow\n", ""] {
+        assert_eq!(
+            deep(
+                &rules(&format!("rulesVersion: 1\n{allow}{unlisted}")),
+                &layers
+            ),
+            Vec::<String>::new()
+        );
+    }
+    // An empty list is not the same as no list: it allows nothing, whatever
+    // the default.
+    let none = rules(
+        "rulesVersion: 1\nlayers:\n  - {name: teams, paths: [\"**\"], capabilities: {keys: []}}\n",
+    );
+    assert_eq!(
+        deep(&none, &[("Projects/x.yaml", "b: 1")]),
+        ["[meridian/capabilities] layer \"Projects/x.yaml\" (teams) sets \"b\", which teams is not allowed \
+          to set: it may set no keys"]
+    );
+}
+
+#[test]
+fn adversarial_capabilities_cannot_be_reached_round() {
+    let r = rules(POLICY);
+    // Writing above an allowed key is not writing the allowed key.
+    for attempt in [
+        "variables: null",
+        "variables: {}",
+        "variables: [Owner]",
+        "variables: {Owner: {x: 1}, owner: me}",
+    ] {
+        let got = deep(&r, &[("Projects/x.yaml", attempt)]);
+        assert_eq!(got.len(), 1, "{attempt}: {got:?}");
+        assert!(
+            got[0].starts_with("[meridian/capabilities]"),
+            "{attempt}: {got:?}"
+        );
+    }
+    // A file outside every group may do nothing, whatever the default says.
+    let open = rules(&POLICY.replace("default: deny", "default: allow"));
+    let got = deep(&open, &[("Elsewhere/x.yaml", "packages: [nginx]")]);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(got[0].starts_with("[meridian/unclaimed-layer]"), "{got:?}");
+    // Nothing a layer says about itself changes its group or what it may do.
+    let got = deep(
+        &r,
+        &[(
+            "Projects/x.yaml",
+            "layer: platform\ncapabilities: {keys: [\"**\"]}\ndefault: allow",
+        )],
+    );
+    assert_eq!(got.len(), 3, "{got:?}");
+    // The narrower group listed first owns the file, as in Policy.yml.
+    let first = rules(&POLICY.replace(
+        "paths: [\"Platform/**\"]",
+        "paths: [\"Platform/**\", \"Projects/Trusted/**\"]",
+    ));
+    assert_eq!(
+        deep(&first, &[("Projects/Trusted/x.yaml", "secrets: {a: 1}")]),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn capabilities_and_rules_are_both_held() {
+    // Allowed to set the key, and still not allowed to change the platform's value.
+    let r = rules(&format!("{POLICY}use: [protect-all]\n"));
+    let got = deep(
+        &r,
+        &[
+            (
+                "Platform/Baseline.yaml",
+                "packages: [curl]\nvariables: {Owner: platform}",
+            ),
+            ("Projects/x.yaml", "variables: {Owner: web}"),
+        ],
+    );
+    assert_eq!(
+        got,
+        ["[meridian/protect-all] layer \"Projects/x.yaml\" (teams) changes \"variables.Owner\", which layer \
+          \"Platform/Baseline.yaml\" (platform) set"]
+    );
+}
+
+// ---------------------------------------------------------------------------
 // final
 // ---------------------------------------------------------------------------
 
@@ -1058,6 +1212,10 @@ fn a_rules_file_that_does_not_mean_something_is_refused() {
         ("", "rules.yaml: rules file: expected a mapping, found null"),
         ("rules: []", "rules.yaml: rulesVersion: required (write `rulesVersion: 1`)"),
         ("rulesVersion: 2", "rules.yaml: rulesVersion: this Meridian reads version 1, found 2"),
+        ("rulesVersion: 1\ndefault: Deny", "rules.yaml: default: expected \"allow\" or \"deny\", found \"Deny\""),
+        ("rulesVersion: 1\ndefault: deny", "rules.yaml: default: deny needs groups under `layers`: with none, no layer could set anything"),
+        ("rulesVersion: 1\nlayers: [{name: a, paths: [x], capabilities: {targets: [ssh]}}]", "rules.yaml: layers[0].capabilities: unknown field \"targets\""),
+        ("rulesVersion: 1\nlayers: [{name: a, paths: [x], capabilities: {keys: [\"a*\"]}}]", "rules.yaml: layers[0].capabilities.keys: the key pattern \"a*\" mixes `*` with other characters in the segment \"a*\"; a segment is a key, `*` or `**` (quote a key that contains a star)"),
         ("rulesVersion: 1\nrule: []", "rules.yaml: rules file: unknown field \"rule\""),
         ("rulesVersion: 1\nuse: [protect-everything]", "rules.yaml: use[0]: there is no shipped rule set \"protect-everything\" (there are: protect-variables, protect-secrets, protect-all)"),
         ("rulesVersion: 1\nuse: [protect-all, protect-all]", "rules.yaml: use[1]: \"protect-all\" is listed twice"),

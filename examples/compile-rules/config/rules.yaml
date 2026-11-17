@@ -6,16 +6,29 @@
 # decides what every layer may do.
 rulesVersion: 1
 
-# Who owns which layer. Ownership is where a file is, never what it says.
-# The first group whose pattern matches a layer's path owns it, and a layer
-# no group claims may set nothing.
+# What a group may do with a capability it does not list. Deny is the safe
+# choice.
+default: deny
+
+# Who owns which layer, and what each may set. Ownership is where a file is,
+# never what it says. The first group whose pattern matches a layer's path
+# owns it, and a layer no group claims may set nothing.
 layers:
+  # The platform team: the baseline every node gets.
   - name: organization
     paths: [common.yaml]
+    capabilities:
+      keys: ["**"]                  # any key
   - name: environment
     paths: ["environment/*"]
+    capabilities:
+      keys: [variables, registry]
+  # Application teams: their roles and their own node files. Secrets and
+  # credentials are not listed, so the default (deny) applies to them.
   - name: team
     paths: ["role/**", "node/**"]
+    capabilities:
+      keys: [variables, packages, web]
 
 # The rule sets that ship with Meridian. These two are the rule
 # DscPipelineRunner is known for: a more specific layer may not change a
@@ -25,13 +38,6 @@ use:
   - protect-secrets
 
 rules:
-  # Only the organization says where secrets and credentials come from.
-  - id: secrets-belong-to-the-organization
-    rule: restrict
-    keys: [secrets, credentials]
-    allow: [organization]
-    message: Ask the platform team to add it to common.yaml.
-
   # The region is decided once. Not even repeating it is allowed, so a copy
   # that would silently go stale cannot exist.
   - id: region-is-final

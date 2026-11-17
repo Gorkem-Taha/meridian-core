@@ -14,7 +14,7 @@ test runs it through the real command.
 - [The files](#the-files)
 - [The hierarchy file](#the-hierarchy-file)
 - [The rules file](#the-rules-file)
-- [Groups](#groups)
+- [Groups](#groups) and their [capabilities](#capabilities)
 - [Key patterns](#key-patterns)
 - [Shipped rule sets](#shipped-rule-sets)
 - [Rules](#rules): [`no-override`](#no-override), [`final`](#final),
@@ -100,14 +100,21 @@ strictness: lenient
 
 ```yaml
 rulesVersion: 1
+default: deny
 
 layers:
   - name: organization
     paths: [common.yaml]
+    capabilities:
+      keys: ["**"]
   - name: environment
     paths: ["environment/*"]
+    capabilities:
+      keys: [variables, registry]
   - name: team
     paths: ["role/**", "node/**"]
+    capabilities:
+      keys: [variables, packages, web]
 
 use:
   - protect-variables
@@ -122,12 +129,15 @@ rules:
 | Field | Required | Value |
 |---|---|---|
 | `rulesVersion` | yes | `1` |
-| `layers` | no | the [groups](#groups): who owns which layer |
+| `default` | no | `allow` or `deny`: what a group may do with a [capability](#capabilities) it does not list. Left out: `allow`. Use `deny` |
+| `layers` | no | the [groups](#groups): who owns which layer, and what each may set |
 | `use` | no | names of [shipped rule sets](#shipped-rule-sets) to switch on |
 | `rules` | no | your own [rules](#rules) |
 
 Nothing is in force that the file does not ask for. A rules file with only
-`rulesVersion: 1` checks nothing.
+`rulesVersion: 1` checks nothing. The file has two parts that work together:
+**groups with capabilities** say what each layer may set at all, and **rules**
+say what a layer may do to a value another layer set.
 
 Every rule has these fields, and then its own:
 
@@ -146,20 +156,27 @@ because a rule that silently does nothing is worse than no rule. See
 ## Groups
 
 ```yaml
+default: deny
 layers:
   - name: organization
     paths: [common.yaml]
+    capabilities:
+      keys: ["**"]
   - name: team
     paths: ["role/**", "node/**"]
+    capabilities:
+      keys: [variables, packages, web]
 ```
 
-A group is a named set of layers. Rules use group names to say whose values
-are protected and who is constrained.
+A group is a named set of layers. It says what those layers may set, and
+rules use group names to say whose values are protected and who is
+constrained.
 
 | Field | Value |
 |---|---|
 | `name` | the group's name, unique. Names in brackets are Meridian's own |
 | `paths` | patterns matched against a layer's path as the hierarchy expands it, such as `node/web01.yaml` |
+| `capabilities` | what the group's layers may use; see [capabilities](#capabilities) |
 
 In a path pattern, `*` and `?` match within one path element, and `**` as a
 whole element matches any number of elements, including none. Matching is
@@ -189,6 +206,46 @@ line](#the-command-line-as-a-layer), and `(unclaimed)`.
 
 Groups are optional. A rules file without `layers` can still use every rule
 that does not name a group, and its refusals name layers by path alone.
+
+### Capabilities
+
+A group's capabilities are what its layers are allowed to use. This is
+DscPipelineRunner's `Policy.yml` in Meridian: each layer lists what it may do,
+and `default` decides everything it does not list.
+
+| Capability | Value | Governs |
+|---|---|---|
+| `keys` | a list of [key patterns](#key-patterns) | the keys a layer of the group may set. An empty list allows none |
+
+| `default` | A group that lists `capabilities.keys` | A group that does not |
+|---|---|---|
+| `deny` | may set only those keys | may set nothing |
+| `allow` (or left out) | may set only those keys | may set anything |
+
+```
+[meridian/capabilities] layer "node/rogue.yaml" (team) sets "secrets.database.path", which team is not allowed to set: it may set only variables, packages, web
+[meridian/capabilities] layer "Projects/x.yaml" (teams) sets "b", which teams is not allowed to set: it lists no `capabilities.keys`, and the default is deny
+```
+
+- **Each layer is held to its own group.** A value several layers
+  contribute to must be allowed to every one of them, so a team that sets a
+  key under a mapping the organization owns is judged as the team.
+- **Writing above an allowed key is not writing the allowed key.** A group
+  that may set `variables.Owner` may not write `variables: null`.
+- **A layer no group claims may set nothing, whatever `default` says.**
+- **`default: deny` needs groups.** With none, no layer could set anything,
+  so the file is refused.
+- Capabilities are checked before the rules and reported first. Being
+  allowed to set a key does not excuse breaking a rule about it: a team that
+  may set `variables` still may not change the organization's, under
+  `protect-variables`.
+- Values given on the command line belong to whoever runs the command and
+  not to a group, so capabilities do not apply to them. Every rule still
+  does; see [the command line as a layer](#the-command-line-as-a-layer).
+
+`keys` is the capability there is today, because data is what is layered
+today. Which targets a layer's documents may compile for is the same idea,
+and belongs here once documents can be layered.
 
 ## Key patterns
 
@@ -481,7 +538,7 @@ your pipeline compiles:
 
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=web01
-rules: config/rules.yaml (9 rules)
+rules: config/rules.yaml (8 rules)
 layers, least specific first:
   common.yaml            organization
   environment/prod.yaml  environment
@@ -508,12 +565,12 @@ the rules by themselves; run `rules check` before them in a pipeline. See
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=rogue
 error: compile rules: 9 violations; nothing was compiled
+  - [meridian/capabilities] layer "node/rogue.yaml" (team) sets "credentials", which team is not allowed to set: it may set only variables, packages, web
+  - [meridian/capabilities] layer "node/rogue.yaml" (team) sets "secrets.database.path", which team is not allowed to set: it may set only variables, packages, web
   - [meridian/protect-variables] layer "node/rogue.yaml" (team) changes "variables.OrganizationName", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.type", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.user", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) changes "secrets.database.path", which layer "common.yaml" (organization) set
-  - [secrets-belong-to-the-organization] layer "node/rogue.yaml" (team) sets "credentials", which only organization may set. Ask the platform team to add it to common.yaml
-  - [secrets-belong-to-the-organization] layer "node/rogue.yaml" (team) sets "secrets.database.path", which only organization may set. Ask the platform team to add it to common.yaml
   - [region-is-final] layer "node/rogue.yaml" (team) sets "variables.Region", which is final once set, and layer "common.yaml" (organization) set it
   - [team-layers-name-an-owner] layer "node/rogue.yaml" (team) does not set "variables.Owner", which every layer of team must set
   - [no-floating-tags] layer "node/rogue.yaml" (team) sets "web.image" to a value the rule forbids (matches[0])
@@ -544,6 +601,9 @@ These are errors in the file itself, reported before any layer is looked at.
 | `use[0]: there is no shipped rule set "..."` | a misspelt name under `use` |
 | `layers[1].name: the group "a" is declared twice` | two groups with one name |
 | `layers[0].paths: the group "a" claims no layers` | a group without `paths` |
+| `layers[0].capabilities: unknown field "targets"` | a capability that does not exist |
+| `default: expected "allow" or "deny", found "Deny"` | the value is lower case |
+| `default: deny needs groups under `layers`: ...` | `default: deny` in a file that declares no groups |
 | `rules[0].id: required`, `rules[1].id: the id "a" is used twice` | every rule needs its own id |
 | `rules[0].rule: unknown rule "locked"` | not one of the six kinds |
 | `rules[0]: a final rule does not take the field "allow"` | a field that belongs to another kind of rule |
@@ -570,68 +630,102 @@ decides what every layer may do.
 
 ## From DscPipelineRunner
 
-A DscPipelineRunner layer file has `parameters`, `variables` and `resources`
-at the top, layers are listed most specific first in `Datum.yml`, and
-`variables` merge deeply. The same shape in Meridian, with the organization's
-variables made to hold:
+DscPipelineRunner's
+[`Policy.yml`](https://github.com/ZanattaMichael/Dsc.PipelineRunner/blob/main/Example%20Policy%20Configuration/Policy.yml)
+says what each layer of a configuration may use. It sits beside `Datum.yml`,
+outside the hierarchy, so no layer can add to it or override it. `rules.yaml`
+is the same file for Meridian, and reads the same way:
 
-| DscPipelineRunner `Datum.yml` | Meridian |
+<table>
+<tr><th>DscPipelineRunner <code>Policy.yml</code></th><th>Meridian <code>rules.yaml</code></th></tr>
+<tr><td>
+
+```yaml
+PolicyVersion: 1
+Default: Deny
+Layers:
+  - Name: Platform
+    Paths:
+      - Datum.yml
+      - Platform/**
+      - Composites/**
+    Capabilities:
+      Targets: [ '*' ]
+      Engines: [ '*' ]
+      ExecutionScripts: true
+      DatumScriptBlocks: true
+  - Name: Teams
+    Paths:
+      - Projects/**
+    Capabilities:
+      Targets: [ Local, WinRM ]
+      Engines: [ DscV2, DscV3 ]
+```
+
+</td><td>
+
+```yaml
+rulesVersion: 1
+default: deny
+layers:
+  - name: platform
+    paths:
+      - "Platform/**"
+    capabilities:
+      keys: ["**"]
+
+
+
+  - name: teams
+    paths:
+      - "Projects/**"
+    capabilities:
+      keys: [variables, packages]
+
+use: [protect-variables]
+```
+
+</td></tr>
+</table>
+
+| `Policy.yml` | `rules.yaml` | Same? |
+|---|---|---|
+| A file of its own beside `Datum.yml`, never merged | a file of its own beside `hierarchy.yaml`, never merged; a hierarchy that lists it as a layer is refused | yes |
+| `PolicyVersion: 1` | `rulesVersion: 1` | yes |
+| `Default: Deny` or `Allow`, for a capability a layer does not list | `default: deny` or `allow` | yes, written in lower case. Left out, it is `allow` |
+| `Layers`, ordered; the first whose `Paths` match a file owns it | `layers`, ordered; the first whose `paths` match owns the layer | yes |
+| `Paths` have no file extension, are not case-sensitive, and `*` crosses folders | `paths` include the extension, are case-sensitive, and only `**` crosses folders | no: write `Projects/**`, or `Projects/*.yaml` |
+| A file no layer claims may do nothing, whatever `Default` says | the same | yes |
+| A layer is decided by where a file is, never by what it says | the same | yes |
+| Something several layers contributed to is allowed only what every one of them is allowed | each layer is held to its own group for every key it sets | yes |
+| `Capabilities`: `Targets`, `Engines`, `ExecutionScripts`, `DatumScriptBlocks` | `capabilities`: `keys` | the capabilities differ; see below |
+| Read strictly: an unknown key is an error | the same | yes |
+| Every violation is listed and nothing runs | every violation is listed and nothing is compiled | yes |
+| `-PolicyPath`, `-RequirePolicy` | `--rules`, `--require-rules` | yes |
+| `<node>.provenance.json` lists each layer and its owner | `meridian rules check` prints each layer and its group | printed, not written to a file |
+
+**What differs, and why.** `Policy.yml`'s capabilities are about what a
+layer's *resources* may use: which Target they run through, which engine, and
+whether they may carry scripts. A DscPipelineRunner layer file holds
+resources, so those are what there is to govern. A Meridian hierarchy layer
+holds *data*, and documents (which carry the target and the resources) are
+not layered, so the capability there is to govern is which keys a layer may
+set. Targets and engines per layer have nothing to attach to yet. They belong
+in `capabilities` beside `keys` when documents can be layered.
+
+`Policy.yml` does not stop a team's file from changing a variable the
+platform set: DscPipelineRunner merges `variables` deeply and the most
+specific file wins. In Meridian that is a rule, and
+`use: [protect-variables]` in the file above adds it.
+
+The hierarchy file for the same configuration:
+
+| DscPipelineRunner `Datum.yml` | Meridian `hierarchy.yaml` |
 |---|---|
 | `ResolutionPrecedence`, most specific first | `hierarchy`, **least** specific first: reverse the list |
 | `Projects\$($Node.Project)` | `Projects/%{Project}.yaml`, with `--set Project=...` |
 | `lookup_options: variables: merge_hash_array: deep` | `keys: variables: strategy: deep-merge` |
 | `lookup_options: resources: merge_hash_array: UniqueKeyValTuples`, `tuple_keys: [name]` | `keys: resources: strategy: unique-array-merge`, `dedupKey: name`. The first layer to declare a name keeps its entry; entries are not merged |
-| `Policy.yml` beside `Datum.yml` | `rules.yaml` beside `hierarchy.yaml` |
-| `Layers: - Name: Platform`, `Paths: [ 'Platform/**' ]` | `layers: - name: platform`, `paths: ["Platform/**"]`. Paths include the file extension and are exact about case |
-| `-RequirePolicy`, `-PolicyPath` | `--require-rules`, `--rules` |
-
-```yaml
-# hierarchy.yaml
-hierarchy:
-  - OrganizationPolicies/Organization.yaml
-  - ProjectPolicies/Project.yaml
-  - Projects/%{Project}.yaml
-keys:
-  variables: {strategy: deep-merge}
-```
-
-```yaml
-# rules.yaml
-rulesVersion: 1
-layers:
-  - name: platform
-    paths: ["OrganizationPolicies/**", "ProjectPolicies/**"]
-  - name: teams
-    paths: ["Projects/**"]
-rules:
-  # A project file may add variables of its own. It may not change one the
-  # platform set, and it may not declare a secret at all.
-  - id: platform-variables-hold
-    rule: no-override
-    keys: [variables]
-    setBy: [platform]
-    appliesTo: [teams]
-  - id: secrets-are-the-platform-s
-    rule: restrict
-    keys: [secrets]
-    allow: [platform]
-  - id: variables-merge-deep
-    rule: merge-strategy
-    keys: [variables]
-    allow: [deep-merge]
-```
-
-With `OrganizationName: Contoso` in `Organization.yaml`, a
-`Projects/Magenta.yaml` that sets `ProjectDescription` passes, and one that
-sets `OrganizationName: Fabrikam` is refused:
-
-```
-[platform-variables-hold] layer "Projects/Magenta.yaml" (teams) changes "variables.OrganizationName", which layer "OrganizationPolicies/Organization.yaml" (platform) set
-```
-
-DscPipelineRunner's capability policy (which targets, engines and scripts a
-layer may use) is about resources and not about data, and is not part of
-compile rules.
 
 ## Using the rules from Rust
 
