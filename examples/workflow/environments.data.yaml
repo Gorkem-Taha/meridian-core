@@ -1,0 +1,8 @@
+# What every environment shares, with the values of a development environment.
+# Give it to every command that reads examples/workflow/environments.yaml.
+env: dev
+replicas: 1
+high_availability: false
+load_test: true
+features:
+  tls: false
