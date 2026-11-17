@@ -131,22 +131,27 @@ impl ChefRunner {
 /// `* file[nginx_conf] action create`, followed by a `- ` line for each thing
 /// it changed, or closed with `(up to date)` or `(skipped due to only_if)`
 /// when it changed nothing.
+/// Other bullets under a resource are Chef's why-run assumptions.
 fn read_report(stdout: &str) -> Vec<Change> {
     let mut changes: Vec<Change> = Vec::new();
     let mut current: Option<(String, String)> = None;
     for line in stdout.lines() {
         let line = line.trim();
         if let Some(step) = line.strip_prefix("* ") {
-            current = None;
-            let Some((resource, action)) = step.split_once(" action ") else {
+            // A resource's header is `type[name] action <action>`. In why-run
+            // mode Chef also writes its assumptions as bullets under the
+            // resource they belong to ("* Parent directory /srv/app does not
+            // exist."); those say nothing about which resource is current.
+            let header = step.split_once(" action ").and_then(|(resource, action)| {
+                let name = resource
+                    .split_once('[')
+                    .and_then(|(_, rest)| rest.strip_suffix(']'))?;
+                Some((name, action))
+            });
+            let Some((name, action)) = header else {
                 continue;
             };
-            let name = resource
-                .split_once('[')
-                .and_then(|(_, rest)| rest.strip_suffix(']'));
-            if let (Some(name), false) = (name, action.contains('(')) {
-                current = Some((name.to_owned(), action.trim().to_owned()));
-            }
+            current = (!action.contains('(')).then(|| (name.to_owned(), action.trim().to_owned()));
         } else if line.starts_with("- ") {
             let Some((name, action)) = current.take() else {
                 continue;
@@ -233,6 +238,32 @@ impl Runner for ChefRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What chef-client really prints in why-run mode for a file whose
+    /// directory the same run would create: its assumptions come first, as
+    /// bullets of their own, and the change after them.
+    #[test]
+    fn a_why_run_assumption_does_not_hide_the_change_that_follows_it() {
+        // As Cinc Client 18 prints it: an assumption is a bullet of its own
+        // under the resource, before or instead of the change.
+        let report = "\
+Recipe: meridian_site::default
+  * group[team] action create
+    - Would create group meridian-team
+  * group[deploy:meridian-team] action modify
+    * Cannot modify group[deploy:meridian-team] - group does not exist!
+    * Group group[deploy:meridian-team] does not exist. Unless it would have been created earlier in this run, this attempt to modify it would fail.
+    - Would modify group meridian-team
+    - Would add missing member(s): meridian-deploy
+  * service[scheduler] action enable
+    * Service status not available. Assuming a prior action would have installed the service.
+    * Assuming status of not running.
+     (up to date)
+  * apt_package[tool] action install (up to date)
+";
+        let shown: Vec<String> = read_report(report).iter().map(|c| c.to_string()).collect();
+        assert_eq!(shown, ["update team: create", "update deploy: modify"]);
+    }
 
     #[test]
     fn changes_are_read_from_the_report() {

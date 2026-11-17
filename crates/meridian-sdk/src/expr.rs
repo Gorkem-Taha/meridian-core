@@ -178,6 +178,9 @@ fn resolve_text(
                 Value::Int(i) => out.push_str(&i.to_string()),
                 Value::Uint(u) => out.push_str(&u.to_string()),
                 Value::Float(f) => out.push_str(&f.to_string()),
+                // A plugin is never sent a secret this way; if one were here it
+                // would still be written as its mask.
+                Value::Secret(_) => out.push_str(meridian_value::SENSITIVE),
                 Value::Null | Value::List(_) | Value::Map(_) => {
                     return Err(format!(
                         "${{{expr}}} is not a single value, so it cannot be placed inside \

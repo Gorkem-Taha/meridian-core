@@ -308,3 +308,304 @@ fn check_expressions(value: &Value, resource: &str, pos: &Position) -> Result<()
         _ => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Entry, Parameter, Settings};
+
+    fn text(s: &str) -> Value {
+        Value::String(s.to_owned())
+    }
+
+    fn at_line() -> Position {
+        Position {
+            line: 21,
+            ..Position::default()
+        }
+    }
+
+    fn entry(id: &str, name: &str) -> Entry {
+        Entry {
+            id: id.to_owned(),
+            r#type: "Microsoft.Storage/storageAccounts".to_owned(),
+            api_version: "2023-01-01".to_owned(),
+            name: name.to_owned(),
+            resource_id: String::new(),
+            body: [("location".to_owned(), text("westeurope"))].into(),
+            depends: Default::default(),
+            depends_on: Vec::new(),
+            pos: at_line(),
+        }
+    }
+
+    fn parameter(name: &str, r#type: &str) -> Parameter {
+        Parameter {
+            name: name.to_owned(),
+            definition: [("type".to_owned(), text(r#type))].into(),
+            pos: at_line(),
+        }
+    }
+
+    fn template() -> Template {
+        Template {
+            document: "site".to_owned(),
+            settings: Settings {
+                name: "site".to_owned(),
+                scope: Scope::ResourceGroup,
+                resource_group: "rg-site".to_owned(),
+                location: String::new(),
+                subscription: String::new(),
+                mode: "Incremental".to_owned(),
+            },
+            parameters: vec![parameter("size", "string")],
+            entries: vec![entry("store", "store1"), entry("logs", "logs1")],
+            outputs: vec![(
+                "endpoint".to_owned(),
+                "[reference('store1').primaryEndpoints.blob]".to_owned(),
+                Position::default(),
+            )],
+        }
+    }
+
+    fn to_subscription(t: &mut Template) {
+        t.settings.scope = Scope::Subscription;
+        t.settings.resource_group.clear();
+        t.settings.location = "westeurope".to_owned();
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Template);
+        let table: &[(&str, &str, Break)] = &[
+            ("invalid-deployment-name", "", |t| t.settings.name.clear()),
+            ("invalid-deployment-name", "", |t| {
+                t.settings.name = "my site".to_owned()
+            }),
+            ("invalid-deployment-name", "", |t| {
+                t.settings.name = "a".repeat(65)
+            }),
+            ("missing-param", "", |t| t.settings.resource_group.clear()),
+            ("invalid-param", "", |t| {
+                t.settings.resource_group = "rg site".to_owned()
+            }),
+            ("invalid-param", "", |t| {
+                t.settings.resource_group = "rg-site.".to_owned()
+            }),
+            ("invalid-param", "", |t| {
+                t.settings.resource_group = "a".repeat(91)
+            }),
+            ("invalid-param", "", |t| {
+                t.settings.location = "westeurope".to_owned()
+            }),
+            ("missing-param", "", |t| {
+                to_subscription(t);
+                t.settings.location.clear();
+            }),
+            ("invalid-param", "", |t| {
+                to_subscription(t);
+                t.settings.resource_group = "rg-site".to_owned();
+            }),
+            ("invalid-param", "", |t| {
+                to_subscription(t);
+                t.settings.mode = "Complete".to_owned();
+            }),
+            ("invalid-param", "", |t| {
+                t.settings.mode = "incremental".to_owned()
+            }),
+            ("invalid-param", "", |t| t.settings.mode.clear()),
+            ("empty-template", "", |t| t.entries.clear()),
+            ("template-too-large", "", |t| {
+                t.entries = (0..=MAX_RESOURCES)
+                    .map(|i| entry(&format!("r{i}"), &format!("r{i}")))
+                    .collect();
+            }),
+            ("template-too-large", "", |t| {
+                t.parameters = (0..=MAX_PARAMETERS)
+                    .map(|i| parameter(&format!("p{i}"), "string"))
+                    .collect();
+            }),
+            ("template-too-large", "", |t| {
+                t.outputs = (0..=MAX_OUTPUTS)
+                    .map(|i| (format!("o{i}"), "x".to_owned(), Position::default()))
+                    .collect();
+            }),
+            ("unsupported-param", "size", |t| {
+                t.parameters[0]
+                    .definition
+                    .insert("description".to_owned(), text("x"));
+            }),
+            ("invalid-param", "size", |t| {
+                t.parameters[0]
+                    .definition
+                    .insert("type".to_owned(), Value::Int(1));
+            }),
+            ("missing-param", "size", |t| {
+                t.parameters[0].definition.clear()
+            }),
+            ("invalid-param", "size", |t| {
+                t.parameters[0]
+                    .definition
+                    .insert("type".to_owned(), text("number"));
+            }),
+            ("invalid-expression", "size", |t| {
+                t.parameters[0]
+                    .definition
+                    .insert("defaultValue".to_owned(), text("[concat('a', ]"));
+            }),
+            ("duplicate-resource", "logs", |t| {
+                t.entries[1].name = "STORE1".to_owned()
+            }),
+            ("invalid-expression", "store", |t| {
+                t.entries[0].name = "[concat('a', ]".to_owned();
+            }),
+            // An expression is found however deep in the body it sits.
+            ("invalid-expression", "logs", |t| {
+                t.entries[1].body.insert(
+                    "properties".to_owned(),
+                    Value::Map(
+                        [(
+                            "rules".to_owned(),
+                            Value::List(vec![text("ok"), text("[concat('a', ]")]),
+                        )]
+                        .into(),
+                    ),
+                );
+            }),
+            ("duplicate-output", "", |t| {
+                t.outputs
+                    .push(("Endpoint".to_owned(), "x".to_owned(), Position::default()));
+            }),
+            ("invalid-expression", "", |t| {
+                t.outputs[0].1 = "[concat('a', ]".to_owned()
+            }),
+        ];
+
+        assert_eq!(validate(&template()), Ok(Vec::new()));
+        for (i, (rule, resource, break_it)) in table.iter().enumerate() {
+            let mut broken = template();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule, "row {i}");
+            assert_eq!(err.resource, *resource, "row {i}: {rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 21, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Template);
+        let table: &[(&str, Change)] = &[
+            ("a deployment to a subscription", to_subscription),
+            ("mode Complete on a resource group", |t| {
+                t.settings.mode = "Complete".to_owned();
+            }),
+            ("names at their limits", |t| {
+                t.settings.name = "a".repeat(64);
+                t.settings.resource_group = "a".repeat(90);
+            }),
+            ("a name with letters beyond ASCII", |t| {
+                t.settings.resource_group = "rg-café_(1)".to_owned();
+            }),
+            ("exactly as many of each as a template holds", |t| {
+                t.entries = (0..MAX_RESOURCES)
+                    .map(|i| entry(&format!("r{i}"), &format!("r{i}")))
+                    .collect();
+                t.parameters = (0..MAX_PARAMETERS)
+                    .map(|i| parameter(&format!("p{i}"), "string"))
+                    .collect();
+                t.outputs = (0..MAX_OUTPUTS)
+                    .map(|i| (format!("o{i}"), "x".to_owned(), Position::default()))
+                    .collect();
+            }),
+            ("one name on two types", |t| {
+                t.entries[1].name = "store1".to_owned();
+                t.entries[1].r#type = "Microsoft.Network/virtualNetworks".to_owned();
+            }),
+            ("one name twice under a condition", |t| {
+                t.entries[1].name = "store1".to_owned();
+                t.entries[1]
+                    .body
+                    .insert("condition".to_owned(), Value::Bool(false));
+            }),
+            ("one name twice in a copy loop", |t| {
+                t.entries[1].name = "store1".to_owned();
+                t.entries[1].body.insert("copy".to_owned(), text("x"));
+            }),
+            ("a parameter type in another case", |t| {
+                t.parameters[0]
+                    .definition
+                    .insert("type".to_owned(), text("SecureString"));
+            }),
+            ("no parameters and no outputs", |t| {
+                t.parameters.clear();
+                t.outputs.clear();
+            }),
+        ];
+        for (what, change) in table {
+            let mut t = template();
+            change(&mut t);
+            assert_eq!(validate(&t), Ok(Vec::new()), "{what}");
+        }
+    }
+
+    #[test]
+    fn every_parameter_type_and_key_is_accepted() {
+        for parameter_type in PARAMETER_TYPES {
+            let mut t = template();
+            t.parameters = vec![parameter("p", parameter_type)];
+            assert_eq!(validate(&t), Ok(Vec::new()), "{parameter_type}");
+        }
+        let mut t = template();
+        for key in PARAMETER_KEYS {
+            if *key != "type" {
+                t.parameters[0]
+                    .definition
+                    .insert((*key).to_owned(), Value::Int(1));
+            }
+        }
+        assert_eq!(validate(&t), Ok(Vec::new()));
+    }
+
+    /// A secret's default written into the document is kept, with a warning;
+    /// one that is an expression, or empty, is not a written secret.
+    #[test]
+    fn a_secret_written_into_the_document_warns() {
+        let with_default = |parameter_type: &str, default: Value| {
+            let mut t = template();
+            let mut p = parameter("password", parameter_type);
+            p.definition.insert("defaultValue".to_owned(), default);
+            t.parameters = vec![p];
+            validate(&t).expect("a warning is not a refusal")
+        };
+        let written: &[(&str, Value)] = &[
+            ("securestring", text("hunter2")),
+            ("SecureString", text("hunter2")),
+            ("secureObject", Value::Map(Default::default())),
+            ("secureObject", Value::List(Vec::new())),
+        ];
+        for (parameter_type, default) in written {
+            let warnings = with_default(parameter_type, default.clone());
+            assert_eq!(warnings.len(), 1, "{parameter_type} {default:?}");
+            assert_eq!(warnings[0].resource, "password");
+            assert_eq!(warnings[0].target, NAME);
+        }
+        let quiet: &[(&str, Value)] = &[
+            ("securestring", text("")),
+            ("securestring", text("[newGuid()]")),
+            ("string", text("hunter2")),
+            ("securestring", Value::Null),
+        ];
+        for (parameter_type, default) in quiet {
+            assert!(
+                with_default(parameter_type, default.clone()).is_empty(),
+                "{parameter_type} {default:?}"
+            );
+        }
+        assert!(is_secure("SECURESTRING") && is_secure("secureobject") && !is_secure("string"));
+    }
+}

@@ -241,3 +241,188 @@ fn check_condition(state: &State) -> Result<(), CompileError> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use meridian_sdk::{Position, Value};
+
+    fn state(module: &'static str, function: &'static str, id: &str) -> State {
+        State {
+            id: id.to_owned(),
+            module,
+            function,
+            args: vec![("name".to_owned(), Value::String("nginx".to_owned()))],
+            resource_id: id.to_owned(),
+            pos: Position {
+                line: 13,
+                ..Position::default()
+            },
+            ..State::default()
+        }
+    }
+
+    fn to(module: &'static str, id: &str) -> Reference {
+        Reference {
+            module,
+            id: id.to_owned(),
+        }
+    }
+
+    fn sls() -> Sls {
+        Sls {
+            name: "web".to_owned(),
+            host: "web01".to_owned(),
+            states: vec![
+                state("pkg", "installed", "pkg"),
+                State {
+                    require: vec![to("pkg", "pkg")],
+                    ..state("file", "managed", "conf")
+                },
+            ],
+            reactions: vec![State {
+                watch: vec![to("file", "conf")],
+                ..state("service", "running", "svc")
+            }],
+        }
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Sls);
+        let table: &[(&str, &str, Break)] = &[
+            ("missing-name", "", |s| s.name.clear()),
+            ("invalid-sls-name", "", |s| s.name = "web.prod".to_owned()),
+            ("invalid-sls-name", "", |s| s.name = "web prod".to_owned()),
+            ("invalid-sls-name", "", |s| s.name = "web/prod".to_owned()),
+            ("reserved-sls-name", "", |s| s.name = "top".to_owned()),
+            ("missing-host", "", |s| s.host.clear()),
+            ("invalid-host", "", |s| s.host = "web01,web02".to_owned()),
+            ("invalid-host", "", |s| s.host = "web 01".to_owned()),
+            ("invalid-host", "", |s| s.host = "web01\n".to_owned()),
+            ("empty-id", "pkg", |s| s.states[0].id = " ".to_owned()),
+            ("multiline-id", "pkg", |s| {
+                s.states[0].id = "a\nb".to_owned()
+            }),
+            ("reserved-id", "pkg", |s| {
+                s.states[0].id = "include".to_owned()
+            }),
+            ("reserved-id", "pkg", |s| {
+                s.states[0].id = "extend".to_owned()
+            }),
+            ("reserved-id", "pkg", |s| {
+                s.states[0].id = "exclude".to_owned()
+            }),
+            ("duplicate-state-id", "again", |s| {
+                let mut twin = state("pkg", "installed", "again");
+                twin.id = "pkg".to_owned();
+                s.states.push(twin);
+            }),
+            // A state and a reaction share one set of IDs.
+            ("duplicate-state-id", "svc", |s| {
+                s.reactions[0].id = "conf".to_owned()
+            }),
+            ("missing-function", "pkg", |s| s.states[0].function = ""),
+            ("missing-function", "pkg", |s| s.states[0].module = ""),
+            ("missing-name", "pkg", |s| s.states[0].args.clear()),
+            ("missing-requisite", "conf", |s| {
+                s.states[1].require = vec![to("pkg", "gone")];
+            }),
+            // The ID exists, but as a state of another module.
+            ("missing-requisite", "conf", |s| {
+                s.states[1].require = vec![to("service", "pkg")];
+            }),
+            ("missing-requisite", "svc", |s| {
+                s.reactions[0].watch = vec![to("file", "gone")];
+            }),
+            ("missing-requisite", "conf", |s| {
+                s.states[1].onchanges = vec![to("cmd", "gone")];
+            }),
+            ("self-requisite", "conf", |s| {
+                s.states[1].require = vec![to("file", "conf")];
+            }),
+            ("invalid-runtime-condition", "pkg", |s| {
+                s.states[0].when = "  ".to_owned()
+            }),
+            ("invalid-runtime-condition", "pkg", |s| {
+                s.states[0].when = "a\nb".to_owned();
+            }),
+            ("conditional-reaction", "svc", |s| {
+                s.reactions[0].when = "grains['os'] == 'Debian'".to_owned();
+            }),
+            ("unbound-reaction", "svc", |s| s.reactions[0].watch.clear()),
+        ];
+
+        assert_eq!(validate(&sls()), Ok(()));
+        for (i, (rule, resource, break_it)) in table.iter().enumerate() {
+            let mut broken = sls();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule, "row {i}");
+            assert_eq!(err.resource, *resource, "row {i}: {rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 13, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    /// A runtime condition is written inside a Jinja `if` tag, so no
+    /// delimiter that would end the tag may appear in it.
+    #[test]
+    fn a_condition_holds_no_jinja_delimiter() {
+        for delimiter in JINJA_DELIMITERS {
+            let mut s = sls();
+            s.states[0].when = format!("grains['os'] {delimiter} 'x'");
+            let err = validate(&s).expect_err(delimiter);
+            assert_eq!(err.rule, "invalid-runtime-condition", "{delimiter}");
+            assert!(err.msg.contains(delimiter), "{delimiter}");
+        }
+        for good in [
+            "grains['os_family'] == 'Debian'",
+            "salt['file.file_exists']('/etc/x')",
+            "{'a': 1}['a'] % 2 == 1",
+        ] {
+            let mut s = sls();
+            s.states[0].when = good.to_owned();
+            assert_eq!(validate(&s), Ok(()), "{good}");
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Sls);
+        let table: &[(&str, Change)] = &[
+            ("a name with a hyphen and an underscore", |s| {
+                s.name = "web-prod_1".to_owned();
+            }),
+            ("a name that only starts like the top file", |s| {
+                s.name = "topology".to_owned()
+            }),
+            ("a fully qualified minion ID", |s| {
+                s.host = "web01.example.com".to_owned()
+            }),
+            ("a reaction bound by onchanges alone", |s| {
+                let r = &mut s.reactions[0];
+                r.onchanges = std::mem::take(&mut r.watch);
+            }),
+            ("a state that requires a reaction", |s| {
+                s.states[1].require.push(to("service", "svc"));
+            }),
+            ("an ID that only holds a reserved word", |s| {
+                s.states[0].id = "include_pkg".to_owned();
+                s.states[1].require = vec![to("pkg", "include_pkg")];
+            }),
+            ("a file with no states", |s| {
+                s.states.clear();
+                s.reactions.clear();
+            }),
+        ];
+        for (what, change) in table {
+            let mut s = sls();
+            change(&mut s);
+            assert_eq!(validate(&s), Ok(()), "{what}");
+        }
+    }
+}

@@ -1,0 +1,212 @@
+# A cluster, its platform services and an application, as one workflow of
+# three Infrastructure documents:
+#
+#   1. Terraform creates the network and the Kubernetes cluster.
+#   2. Helm installs the platform's own chart: namespaces' quota and the
+#      shared configuration every team's workload reads.
+#   3. The Kubernetes target applies the application's objects.
+#
+# Infrastructure documents run in the order they are given, so the cluster
+# exists before anything is installed on it. The second and third documents
+# name the cluster by its kubeconfig context; they do not read an output.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: cluster
+  labels:
+    layer: cloud
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: eu-west-1
+
+    - id: vpc
+      type: aws_vpc
+      params:
+        cidr_block: 10.40.0.0/16
+
+    - id: subnet_a
+      type: aws_subnet
+      params:
+        vpc_id: ${vpc.id}
+        cidr_block: 10.40.1.0/24
+        availability_zone: eu-west-1a
+
+    - id: subnet_b
+      type: aws_subnet
+      params:
+        vpc_id: ${vpc.id}
+        cidr_block: 10.40.2.0/24
+        availability_zone: eu-west-1b
+
+    - id: cluster_role
+      type: aws_iam_role
+      params:
+        name: shop-cluster
+        assume_role_policy: |
+          {"Version": "2012-10-17", "Statement": [{"Effect": "Allow",
+            "Principal": {"Service": "eks.amazonaws.com"},
+            "Action": "sts:AssumeRole"}]}
+
+    - id: cluster_policy
+      type: aws_iam_role_policy_attachment
+      params:
+        role: ${cluster_role.name}
+        policy_arn: arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
+
+    - id: eks
+      type: aws_eks_cluster
+      params:
+        name: shop
+        role_arn: ${cluster_role.arn}
+        vpc_config:
+          - subnet_ids: ["${subnet_a.id}", "${subnet_b.id}"]
+      # The role must be allowed to manage the cluster before the cluster is
+      # created, and nothing in the params says so.
+      dependsOn:
+        - resource: cluster_policy
+
+  outputs:
+    - name: cluster_endpoint
+      value: ${eks.endpoint}
+    - name: cluster_name
+      value: ${eks.name}
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: platform
+  labels:
+    layer: platform
+spec:
+  target: helm
+  resources:
+    - id: values
+      type: values
+      params:
+        team: shop
+        cpuLimit: "8"
+        memoryLimit: 16Gi
+        logLevel: info
+
+    - id: chart
+      type: chart
+      params:
+        version: 0.3.0
+        description: What every workload of a team shares.
+
+    - id: release
+      type: release
+      params:
+        namespace: shop
+        createNamespace: true
+        wait: true
+
+    - id: quota
+      type: v1/ResourceQuota
+      params:
+        metadata:
+          name: ${release.name}-quota
+        spec:
+          hard:
+            limits.cpu: ${values.cpuLimit}
+            limits.memory: ${values.memoryLimit}
+
+    - id: shared
+      type: v1/ConfigMap
+      params:
+        metadata:
+          name: ${release.name}-shared
+        data:
+          TEAM: ${values.team}
+          LOG_LEVEL: ${values.logLevel}
+      dependsOn:
+        - resource: quota
+
+  outputs:
+    - name: shared_config
+      value: ${shared}
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: shop
+  labels:
+    layer: application
+spec:
+  target: kubernetes
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: shop
+        namespace: shop
+
+    - id: shop_config
+      type: v1/ConfigMap
+      params:
+        data:
+          app.conf: |
+            listen = 8080
+            workers = 4
+      # A Deployment does not notice that a ConfigMap it mounts changed. This
+      # makes it roll.
+      notifies:
+        - resource: shop_app
+          action: restart
+
+    - id: shop_app
+      type: apps/v1/Deployment
+      params:
+        metadata:
+          labels:
+            app: shop
+        spec:
+          replicas: 3
+          selector:
+            matchLabels:
+              app: shop
+          template:
+            metadata:
+              labels:
+                app: shop
+            spec:
+              containers:
+                - name: shop
+                  image: ghcr.io/example/shop:2.3.0
+                  ports:
+                    - containerPort: 8080
+                  envFrom:
+                    - configMapRef:
+                        name: platform-shared
+                  volumeMounts:
+                    - name: config
+                      mountPath: /etc/shop
+              volumes:
+                - name: config
+                  configMap:
+                    name: ${shop_config}
+      dependsOn:
+        - resource: shop_config
+
+    - id: shop_svc
+      type: v1/Service
+      params:
+        spec:
+          type: LoadBalancer
+          selector:
+            app: shop
+          ports:
+            - port: 80
+              targetPort: 8080
+      dependsOn:
+        - resource: shop_app
+
+  outputs:
+    - name: shop_url
+      value: http://${shop_svc.status.loadBalancer.ingress[0].ip}

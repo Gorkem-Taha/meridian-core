@@ -1,0 +1,11 @@
+# Production. Given after environments.data.yaml, so each key here replaces
+# the same key there, whole.
+env: prod
+replicas: 3
+high_availability: true
+load_test: false
+features:
+  tls: true
+certificate: /etc/ssl/certs/shop.pem
+audit:
+  enabled: true

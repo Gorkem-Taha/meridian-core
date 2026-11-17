@@ -307,6 +307,8 @@ fn scalar(
         Value::Uint(n) => n.to_string(),
         Value::Float(n) => n.to_string(),
         Value::String(s) => rewrite(s, names, linked).map_err(Failed::Reference)?,
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => meridian_sdk::SENSITIVE.to_owned(),
         Value::List(_) | Value::Map(_) => unreachable!("render handles collections"),
     };
     if text.contains(['\n', '\r']) {

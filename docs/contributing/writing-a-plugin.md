@@ -250,6 +250,10 @@ would reject, two resources claiming one thing, a required pairing. The aim is
 that a document the tool would refuse is refused here instead, before anything
 runs, with the author's line number.
 
+Each rule has a row in the table at the end of the file, which breaks it once
+and checks the refusal; see
+[a table for every validation rule](testing.md#a-table-for-every-validation-rule).
+
 ### emit.rs
 
 Serialises the model to files, and does nothing else. It cannot fail, because
@@ -369,9 +373,11 @@ about what the tool says.
 
 **Real-tool tests** are welcome but not required for a first pull request. If
 you add one, gate it behind an environment variable and give it its own
-workflow file, as [`cloud-init.yml`](../../.github/workflows/cloud-init.yml)
-and [`podman.yml`](../../.github/workflows/podman.yml) do. A plugin that has
-only been tested against a stand-in must say so on its documentation page.
+workflow file, as [`terraform.yml`](../../.github/workflows/terraform.yml)
+and [`kubernetes.yml`](../../.github/workflows/kubernetes.yml) do.
+[Real-tool tests](real-tool-tests.md) gives the shape one should have and lists
+the existing ones. A plugin that has only been tested against a stand-in must
+say so on its documentation page.
 
 ## Step 7: documentation
 
@@ -397,11 +403,37 @@ Then list the new target where users look for targets. Each is one line:
 | [`docs/concepts/ir-overview.md`](../concepts/ir-overview.md) and [`dependencies.md`](../concepts/dependencies.md) | the target, where the others of its category are listed |
 | the page for its category under [`docs/reference/dsl/`](../reference/dsl/index.md) | a row for the target, saying how the language reads on it |
 | `crates/meridian-cli/tests/capability_matrix.rs` | a `row(...)` for the plugin, and a dev-dependency on it in `crates/meridian-cli/Cargo.toml` |
+| `crates/meridian-cli/tests/support/mod.rs` | the plugin's emitter in `emitters()`, which enrols it in the [conformance tests](#the-conformance-tests) |
 
 The capability matrix itself is generated. After adding the row, record it:
 
 ```
 UPDATE_GOLDEN=1 cargo test -p meridian-cli --test capability_matrix
+```
+
+### The conformance tests
+
+`crates/meridian-cli/tests/conformance.rs` holds every target to the rules that
+are the same for all of them. Once your emitter is in `emitters()`, each of your
+examples under `examples/<name>/` is used to check that:
+
+- the example compiles to the same files twice, at relative paths;
+- a `runtimeWhen` on any of its resources is compiled into the output or
+  refused as `unsupported-runtime-condition`, and never dropped. This includes
+  a settings resource, if your target has one;
+- if your target declares no notify, a `notifies` between any two resources is
+  refused;
+- a type you do not map is refused as `unsupported-resource-type`;
+- the types you declare are sorted, and you declare a category.
+
+A target that shares the six configuration management types also goes into
+`SHARED_DIALECT` in the same file, which adds a column for it to the generated
+[conformance matrix](../reference/conformance-matrix.md). Record that page the
+same way, and read the new column: a row marked *same* must match the other
+targets.
+
+```
+UPDATE_GOLDEN=1 cargo test -p meridian-cli --test conformance
 ```
 
 ## Step 8: check everything and open the pull request

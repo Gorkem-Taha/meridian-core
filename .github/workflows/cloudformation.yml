@@ -1,0 +1,80 @@
+name: cloudformation
+
+# The CloudFormation plugin against the real aws command line and LocalStack,
+# an emulator of AWS that runs in a container on the runner and creates what
+# a stack asks for. No AWS account and no secret is involved. The rust
+# workflow already runs the plugin's other tests; without
+# MERIDIAN_TEST_REAL_CLOUDFORMATION these ones pass without doing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/cloudformation/**'
+      - 'examples/cloudformation/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/cloudformation.yml'
+
+permissions:
+  contents: read
+
+# A newer push to the same pull request replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  real:
+    name: change sets against LocalStack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # LocalStack accepts any credentials; the aws command insists on some.
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # Built before the emulator starts, so a compile error costs nothing.
+      - name: Build the tests
+        run: cargo test -p meridian-target-cloudformation --locked --test real --no-run
+
+      # A pinned version: it needs no account or token, and the behaviour
+      # under test does not move with LocalStack's releases.
+      - name: Start LocalStack
+        run: |
+          docker run --detach --name localstack --publish 4566:4566 \
+            --env SERVICES=cloudformation,sqs,sns,ssm,sts \
+            localstack/localstack:4.14.0
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://localhost:4566/_localstack/health > /dev/null; then
+              break
+            fi
+            sleep 2
+          done
+          curl --silent --show-error --fail http://localhost:4566/_localstack/health
+
+      - name: Show the versions under test
+        run: |
+          aws --version
+          curl --silent http://localhost:4566/_localstack/info || true
+
+      # With the variable set, a service that cannot be reached fails the
+      # tests, so this job cannot pass by checking nothing.
+      - name: Test against LocalStack
+        env:
+          MERIDIAN_TEST_REAL_CLOUDFORMATION: '1'
+          MERIDIAN_AWS_ARGS: --endpoint-url http://localhost:4566
+        run: cargo test -p meridian-target-cloudformation --locked --test real -- --nocapture --test-threads=1
+
+      - name: Show LocalStack's log when something failed
+        if: failure()
+        run: docker logs localstack 2>&1 | tail -150

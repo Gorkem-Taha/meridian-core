@@ -42,7 +42,7 @@ pub fn parse(name: &str, data: &[u8]) -> Result<Vec<Document>, ErrorList> {
         }
     };
 
-    let (roots, json) = load_roots(name, text, true)?;
+    let (roots, json) = load_roots(name, text, true).map_err(|e| unquoted_hint(e, text))?;
     if roots.is_empty() {
         return Err(Error::new(Position::document(name, 0), "", "no documents found").into());
     }
@@ -101,6 +101,20 @@ pub fn parse_value(name: &str, data: &[u8]) -> Result<Value, ErrorList> {
     d.errs.finish(value)
 }
 
+/// YAML reads `: ` and ` #` inside an unquoted value as its own syntax, and
+/// an expression often holds one (`a ? b : c`). The YAML error alone does
+/// not say that, so a line that holds an interpolation gets the way out.
+fn unquoted_hint(mut e: Error, text: &str) -> Error {
+    let line = e.pos.line.checked_sub(1).and_then(|i| text.lines().nth(i));
+    if line.is_some_and(meridian_expr::has_interpolation) {
+        e.msg.push_str(
+            "; this line holds an interpolation, and YAML reads a colon followed by a space \
+             inside an unquoted value as its own: put the whole value in double quotes",
+        );
+    }
+    e
+}
+
 fn json_error(name: &str, e: &serde_json::Error) -> Error {
     let pos = Position {
         file: name.to_owned(),
@@ -126,7 +140,17 @@ fn load_roots(name: &str, text: &str, array_is_stream: bool) -> Result<(Vec<Node
     if !matches!(first, Some(b'{' | b'[')) {
         return Ok((node::load_yaml(name, text)?, false));
     }
-    match serde_json::from_str::<serde_json::Value>(text) {
+    let parsed = serde_json::from_str::<serde_json::Value>(text);
+    // JSON is held to the limit YAML is held to, so a document is not too
+    // deep in one spelling and fine in the other.
+    if parsed.as_ref().is_ok_and(node::json_too_deep) {
+        return Err(Error::new(
+            Position::document(name, 0),
+            "",
+            "document is nested too deeply",
+        ));
+    }
+    match parsed {
         Ok(serde_json::Value::Array(items)) if array_is_stream => {
             Ok((items.into_iter().map(node::from_json).collect(), true))
         }
@@ -330,11 +354,25 @@ impl Decoder<'_> {
                 let f = self.fields(
                     top.get("spec"),
                     "spec",
-                    &["target", "targetVersion", "imports", "resources", "outputs"],
+                    &[
+                        "target",
+                        "targetVersion",
+                        "when",
+                        "variables",
+                        "conditions",
+                        "secrets",
+                        "imports",
+                        "resources",
+                        "outputs",
+                    ],
                 );
                 let spec = InfrastructureSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
+                    when: self.string(f.get("when"), "spec.when"),
+                    variables: self.value_map(f.get("variables"), "spec.variables"),
+                    conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                     outputs: self.outputs(f.get("outputs"), &pos),
@@ -353,6 +391,10 @@ impl Decoder<'_> {
                     &[
                         "target",
                         "targetVersion",
+                        "when",
+                        "variables",
+                        "conditions",
+                        "secrets",
                         "targetHost",
                         "imports",
                         "resources",
@@ -361,6 +403,10 @@ impl Decoder<'_> {
                 let spec = ResourceSetSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
+                    when: self.string(f.get("when"), "spec.when"),
+                    variables: self.value_map(f.get("variables"), "spec.variables"),
+                    conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     target_host: self.target_host(f.get("targetHost"), &pos),
                     imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
@@ -386,6 +432,16 @@ impl Decoder<'_> {
             name: self.string(f.get("name"), "metadata.name"),
             labels,
         }
+    }
+
+    /// `spec.conditions`: each name with its expression, as text.
+    fn conditions(&mut self, node: Option<&Node>) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        for (key, value) in self.entries(node, "spec.conditions") {
+            let text = self.string(Some(value), &join("spec.conditions", key));
+            out.insert(key.to_owned(), text);
+        }
+        out
     }
 
     /// The entries of a free-form mapping, with a repeated key reported.
@@ -479,12 +535,13 @@ impl Decoder<'_> {
             let deps_path = join(&path, "dependsOn");
             for (j, dep) in self.list(f.get("dependsOn"), &deps_path).iter().enumerate() {
                 let p = format!("{deps_path}[{j}]");
-                let d = self.fields(Some(dep), &p, &["resource", "ifMissing"]);
+                let d = self.fields(Some(dep), &p, &["resource", "ifMissing", "when"]);
                 depends_on.push(Dependency {
                     resource: self.string(d.get("resource"), &join(&p, "resource")),
                     if_missing: IfMissing::from_text(
                         &self.string(d.get("ifMissing"), &join(&p, "ifMissing")),
                     ),
+                    when: self.string(d.get("when"), &join(&p, "when")),
                     pos: self.at_or(dep, &pos),
                 });
             }
@@ -497,7 +554,11 @@ impl Decoder<'_> {
                 .enumerate()
             {
                 let p = format!("{notifies_path}[{j}]");
-                let d = self.fields(Some(n), &p, &["resource", "on", "action", "ifMissing"]);
+                let d = self.fields(
+                    Some(n),
+                    &p,
+                    &["resource", "on", "action", "ifMissing", "when"],
+                );
                 notifies.push(Notification {
                     resource: self.string(d.get("resource"), &join(&p, "resource")),
                     on: self.string(d.get("on"), &join(&p, "on")),
@@ -505,6 +566,7 @@ impl Decoder<'_> {
                     if_missing: IfMissing::from_text(
                         &self.string(d.get("ifMissing"), &join(&p, "ifMissing")),
                     ),
+                    when: self.string(d.get("when"), &join(&p, "when")),
                     pos: self.at_or(n, &pos),
                 });
             }
@@ -529,10 +591,11 @@ impl Decoder<'_> {
         let mut out = Vec::new();
         for (i, item) in self.list(node, "spec.outputs").iter().enumerate() {
             let path = format!("spec.outputs[{i}]");
-            let f = self.fields(Some(item), &path, &["name", "value"]);
+            let f = self.fields(Some(item), &path, &["name", "value", "when"]);
             out.push(Output {
                 name: self.string(f.get("name"), &join(&path, "name")),
                 value: self.string(f.get("value"), &join(&path, "value")),
+                when: self.string(f.get("when"), &join(&path, "when")),
                 pos: self.at_or(item, doc_pos),
             });
         }
@@ -554,23 +617,67 @@ impl Decoder<'_> {
                 r#ref: self.string(f.get("ref"), &join(&path, "ref")),
                 file: self.string(f.get("file"), &join(&path, "file")),
                 output: self.string(f.get("output"), &join(&path, "output")),
-                sensitive: self.boolean(f.get("sensitive"), &join(&path, "sensitive")),
+                sensitive: self.flag(f.get("sensitive"), &join(&path, "sensitive")),
                 pos: self.at_or(item, doc_pos),
             });
         }
         out
     }
 
-    /// A true or false; absent or null is false.
-    fn boolean(&mut self, node: Option<&Node>, path: &str) -> bool {
+    /// `spec.secrets`: where each secret comes from. Never a value.
+    fn secrets(&mut self, node: Option<&Node>, doc_pos: &Position) -> Vec<Secret> {
+        let mut out = Vec::new();
+        for (i, item) in self.list(node, "spec.secrets").iter().enumerate() {
+            let path = format!("spec.secrets[{i}]");
+            let f = self.fields(
+                Some(item),
+                &path,
+                &[
+                    "name",
+                    "from",
+                    "key",
+                    "path",
+                    "command",
+                    "optional",
+                    "allowWideMode",
+                    "keepTrailingNewline",
+                ],
+            );
+            let command_path = join(&path, "command");
+            let command = self
+                .list(f.get("command"), &command_path)
+                .iter()
+                .enumerate()
+                .map(|(j, arg)| self.string(Some(arg), &format!("{command_path}[{j}]")))
+                .collect();
+            out.push(Secret {
+                name: self.string(f.get("name"), &join(&path, "name")),
+                from: self.string(f.get("from"), &join(&path, "from")),
+                key: self.string(f.get("key"), &join(&path, "key")),
+                path: self.string(f.get("path"), &join(&path, "path")),
+                command,
+                optional: self.flag(f.get("optional"), &join(&path, "optional")),
+                allow_wide_mode: self.flag(f.get("allowWideMode"), &join(&path, "allowWideMode")),
+                keep_trailing_newline: self.flag(
+                    f.get("keepTrailingNewline"),
+                    &join(&path, "keepTrailingNewline"),
+                ),
+                pos: self.at_or(item, doc_pos),
+            });
+        }
+        out
+    }
+
+    /// A yes or a no; left out, it is no.
+    fn flag(&mut self, node: Option<&Node>, path: &str) -> bool {
         let Some(node) = node.filter(|n| !n.is_null()) else {
             return false;
         };
         match &node.kind {
             NodeKind::Scalar {
-                resolved: Scalar::Bool(value),
+                resolved: Scalar::Bool(b),
                 ..
-            } => *value,
+            } => *b,
             _ => {
                 self.error(
                     node,

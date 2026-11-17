@@ -400,6 +400,7 @@ pub fn explain(reason: &str) -> &str {
         "policy-denied" => "the run's policy does not allow the change, or could not be asked",
         "state-failed" => "the step's working directory could not be prepared",
         "already-applied" => "already applied from the same compiled content",
+        "when-false" => "left out: its `when` condition is false",
         "earlier-step-failed" => "an earlier step failed",
         "never-applied" => "never applied, so there is nothing to compare",
         "no-preview" => "the tool cannot preview, so it cannot say",

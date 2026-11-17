@@ -145,5 +145,10 @@ directory, so keep that directory.
 
 An output Terraform marks sensitive is reported as sensitive and never printed.
 
-This plugin's runner has been tested against a stand-in for Terraform. It has
-not yet been run against a real Terraform binary.
+The runner is tested against the real `terraform` command (1.13) on every pull
+request that touches it, and the same tests run again with `tofu`: a plan that
+creates nothing, an apply checked on disk, a second plan that is in sync, an
+update, a replacement, outputs including a sensitive one, and a configuration
+Terraform refuses. They use `terraform_data` and a local state file, so a
+provider that talks to a cloud has not been run this way. See
+[Real-tool tests](../contributing/real-tool-tests.md).

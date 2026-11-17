@@ -1,0 +1,39 @@
+# Resources that need no account: Terraform's built-in terraform_data keeps
+# its state on the machine that runs it.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: local-state
+spec:
+  target: terraform
+  resources:
+    - id: config
+      type: terraform_data
+      params:
+        input: v1
+      notifies:
+        - resource: service
+          action: replace
+
+    - id: service
+      type: terraform_data
+      params:
+        input: running
+
+    - id: release
+      type: terraform_data
+      params:
+        input:
+          name: web-${config.output}
+          ports: [80, 443]
+        triggers_replace: ${config.output}
+      dependsOn:
+        - resource: service
+
+  outputs:
+    - name: config
+      value: ${config.output}
+    - name: release
+      value: ${release.output.name}
+    - name: ports
+      value: ${release.output.ports}

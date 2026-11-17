@@ -229,3 +229,17 @@ fn a_reference_that_cannot_be_settled_is_refused() {
         assert!(err.msg.contains(says), "{value}: {}", err.msg);
     }
 }
+
+#[test]
+fn a_directory_with_content_is_refused_here_not_on_the_node() {
+    let err = refusal(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n        content: \"x\\n\"\n",
+    );
+    assert_eq!(err.rule, "param-conflicts-with-state");
+    assert_eq!(err.resource, "root");
+    assert_eq!(
+        err.msg,
+        "param \"content\" cannot be used with state \"directory\": a directory has no content; \
+         remove the param or the state"
+    );
+}

@@ -206,7 +206,7 @@ not change when workflows, fan-out and retries arrive.
 | `policy.denied` | the policy denied the step, or could not be asked | `kind`, `denials`, `warnings`, `asked`: `false` when the engine could not be asked |
 | `step.succeeded` | the step did what was asked | `kind`, `artifact`, `changes`; a plan also has `unknown` |
 | `step.failed` | the step failed | `kind`, `reason`, `artifact`, `changes` |
-| `step.skipped` | the step was not run | `kind`, `reason`: `already-applied` (with `artifact`, `appliedIn`) or `earlier-step-failed` (with `becauseOf`) |
+| `step.skipped` | the step was not run | `kind`, `reason`: `already-applied` (with `artifact`, `appliedIn`) `earlier-step-failed` (with `becauseOf`), or `when-false`: the document's own `spec.when` left it out. The condition is not recorded |
 | `step.deferred` | the step waits on an output | `kind`, `waitingOn`, `output` |
 | `drift.none` | a drift check found the step in sync | `kind`, `artifact`, `changes` (0) |
 | `drift.detected` | a drift check found the step drifted | `kind`, `artifact`, `changes` |

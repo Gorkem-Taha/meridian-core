@@ -22,6 +22,23 @@ use crate::NAME;
 pub(crate) fn check_order(graph: &ResourceGraph) -> Result<Vec<Warning>, CompileError> {
     let order = graph.order();
     let pos: HashMap<&str, usize> = order.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+    // The core refuses a repeated id, and the counting below relies on it.
+    if let Some(repeated) = graph
+        .resources
+        .iter()
+        .enumerate()
+        .find(|(i, r)| pos[r.id.as_str()] != *i)
+        .map(|(_, r)| r)
+    {
+        return Err(CompileError {
+            target: NAME.to_owned(),
+            ..CompileError::for_resource(
+                repeated,
+                "duplicate-resource",
+                format!("resource id {:?} is used twice", repeated.id),
+            )
+        });
+    }
 
     let mut indegree: HashMap<&str, usize> = order.iter().map(|id| (*id, 0)).collect();
     let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();

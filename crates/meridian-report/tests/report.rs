@@ -429,3 +429,21 @@ fn a_policy_denial_is_a_failed_step_with_counts_and_never_a_message() {
     assert!(json.contains("\"policy\": \"denied\""), "{json}");
     assert!(json.contains("\"policyDenials\": 1"), "{json}");
 }
+
+#[test]
+fn a_document_left_out_by_its_condition_is_skipped_and_says_why() {
+    let events = Stream::new()
+        .run("run.started", &[("mode", text("apply"))])
+        .step("step.started", "canary", &[])
+        .step("step.skipped", "canary", &[("reason", text("when-false"))])
+        .run("run.succeeded", &[])
+        .0;
+    let report = Report::from_events(&events);
+    assert_eq!(report.steps[0].status, StepState::Skipped);
+    assert_eq!(report.summary().skipped, 1);
+    let junit = render(&report, Format::Junit);
+    assert!(
+        junit.contains("<skipped message=\"skipped: left out: its `when` condition is false\"/>"),
+        "{junit}"
+    );
+}

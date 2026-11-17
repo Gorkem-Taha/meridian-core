@@ -182,3 +182,147 @@ mod tests {
         assert!(!is_setting_name("aws:region:extra"));
     }
 }
+
+#[cfg(test)]
+mod rule_tables {
+    use super::*;
+    use crate::{Entry, Kind, Settings, NAME};
+    use meridian_sdk::Value;
+
+    fn entry(kind: Kind, id: &str, name: &str) -> Entry {
+        Entry {
+            kind,
+            id: id.to_owned(),
+            name: name.to_owned(),
+            token: "aws:s3:Bucket".to_owned(),
+            body: Default::default(),
+            options: Default::default(),
+            refs: Default::default(),
+            pos: Position {
+                line: 12,
+                ..Position::default()
+            },
+        }
+    }
+
+    fn output(name: &str) -> (String, Value, Position) {
+        (name.to_owned(), Value::Null, Position::default())
+    }
+
+    fn program() -> Program {
+        Program {
+            project: "site".to_owned(),
+            settings: Settings {
+                stack: "acme/site/prod".to_owned(),
+                backend: String::new(),
+                encryption: String::new(),
+                declared: Some((
+                    "stack".to_owned(),
+                    Position {
+                        line: 12,
+                        ..Position::default()
+                    },
+                )),
+            },
+            entries: vec![
+                entry(Kind::Config, "region", "aws:region"),
+                entry(Kind::Config, "size", "size"),
+                entry(Kind::Invoke, "ami", "ami"),
+                entry(Kind::Managed, "bucket", "bucket"),
+            ],
+            outputs: vec![output("url")],
+        }
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Program);
+        let table: &[(&str, &str, Break)] = &[
+            ("invalid-name", "", |p| p.project = "my site".to_owned()),
+            ("invalid-name", "", |p| p.project.clear()),
+            ("invalid-name", "", |p| p.project = "a".repeat(101)),
+            ("invalid-name", "stack", |p| {
+                p.settings.stack = "a/b/c/d".to_owned();
+            }),
+            ("invalid-name", "stack", |p| p.settings.stack.clear()),
+            ("invalid-name", "bucket", |p| {
+                p.entries[3].name = "my.bucket".to_owned();
+            }),
+            ("invalid-name", "ami", |p| {
+                p.entries[2].name = "9ami".to_owned()
+            }),
+            ("invalid-name", "region", |p| {
+                p.entries[0].name = "aws:".to_owned();
+            }),
+            ("invalid-name", "region", |p| {
+                p.entries[0].name = "aws:region:extra".to_owned();
+            }),
+            // Only a configuration value may carry a package in front.
+            ("invalid-name", "bucket", |p| {
+                p.entries[3].name = "aws:bucket".to_owned();
+            }),
+            ("invalid-name", "bucket", |p| {
+                p.entries[3].name = "pulumi".to_owned();
+            }),
+            ("duplicate-name", "bucket", |p| {
+                p.entries[3].name = "ami".to_owned();
+            }),
+            ("duplicate-name", "again", |p| {
+                p.entries.push(entry(Kind::Config, "again", "aws:region"));
+            }),
+            ("duplicate-name", "bucket", |p| {
+                p.entries[3].name = "size".to_owned();
+            }),
+            ("invalid-name", "", |p| p.outputs[0].0.clear()),
+            ("duplicate-output", "", |p| p.outputs.push(output("url"))),
+        ];
+
+        assert_eq!(validate(&program()), Ok(()));
+        for (rule, resource, break_it) in table {
+            let mut broken = program();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule);
+            assert_eq!(err.resource, *resource, "{rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 12, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Program);
+        let table: &[(&str, Change)] = &[
+            // A stack name nobody declared is the runner's default, and is
+            // not this document's to get wrong.
+            ("an undeclared stack is not checked", |p| {
+                p.settings.declared = None;
+                p.settings.stack = "not a stack".to_owned();
+            }),
+            ("a stack with no organisation", |p| {
+                p.settings.stack = "dev".to_owned()
+            }),
+            ("one key under two packages", |p| {
+                p.entries.push(entry(Kind::Config, "r2", "gcp:region"));
+            }),
+            ("an output named like a resource", |p| {
+                p.outputs.push(output("bucket"))
+            }),
+            ("a program with nothing in it", |p| {
+                p.entries.clear();
+                p.outputs.clear();
+            }),
+            ("a project name of 100 characters", |p| {
+                p.project = "a".repeat(100)
+            }),
+        ];
+        for (what, change) in table {
+            let mut p = program();
+            change(&mut p);
+            assert_eq!(validate(&p), Ok(()), "{what}");
+        }
+    }
+}

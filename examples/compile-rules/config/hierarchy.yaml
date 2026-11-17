@@ -1,0 +1,14 @@
+# The layers, least specific first. A later layer is more specific and wins
+# a merge, unless a compile rule in rules.yaml says it may not.
+hierarchy:
+  - common.yaml
+  - environment/%{env}.yaml
+  - role/%{role}.yaml
+  - node/%{node}.yaml
+
+default:
+  strategy: deep-merge
+
+keys:
+  packages:
+    strategy: unique-array-merge

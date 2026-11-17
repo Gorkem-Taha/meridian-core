@@ -841,9 +841,9 @@ fn a_selector_chooses_which_documents_run() {
         let report = run_with(selector, Mode::Compile, &state);
         assert_eq!(names(&report), want, "{selector}");
         let selector = Selector::parse(selector).unwrap();
-        assert_eq!(selected(&bundle, &selector), want.len());
+        assert_eq!(selected(&bundle, &selector, &Data::new()), want.len());
     }
-    assert_eq!(selected(&bundle, &Selector::all()), 3);
+    assert_eq!(selected(&bundle, &Selector::all(), &Data::new()), 3);
 
     // A document left out is still there to be referred to. Selecting only
     // the web tier before the network exists defers it, as ever...
@@ -865,5 +865,227 @@ fn a_selector_chooses_which_documents_run() {
         matches!(report.stages[0].outcome, Outcome::Applied { .. }),
         "{:?}",
         report.stages[0].outcome
+    );
+}
+
+const RESOLVED: &str = r#"apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+  labels:
+    env: ${{ data.env }}
+spec:
+  target: ${{ data.tool }}
+  targetVersion: ${{ data.version ?? '3' }}
+  variables:
+    name: shop-${{ data.env }}
+  conditions:
+    is_prod: data.env == 'prod'
+  resources:
+    - id: vpc
+      type: file
+      params:
+        name: ${{ var.name }}
+        size: "${{ cond.is_prod ? 3 : 1 }}"
+    - id: audit
+      type: file
+      when: cond.is_prod
+    - id: gateway
+      type: file
+      dependsOn:
+        - resource: vpc
+          when: cond.is_prod
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: monitoring
+  labels:
+    env: ${{ data.env }}
+    part: extra
+spec:
+  target: cm
+  when: data.monitoring ?? false
+  targetHost:
+    from: inline
+    host: ${{ var.host }}
+  variables:
+    host: mon.${{ data.env }}.example.com
+  resources:
+    - id: agent
+      type: file
+"#;
+
+fn run_resolved(
+    data: &[(&str, Value)],
+    selector: &str,
+    test: &str,
+) -> meridian_orchestrator::RunReport {
+    let mut options = options(test);
+    options.data = data
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), v.clone()))
+        .collect();
+    run_selected(
+        &bundle(RESOLVED),
+        &in_process(&["3"]),
+        Mode::Compile,
+        &options,
+        &if selector.is_empty() {
+            Selector::all()
+        } else {
+            Selector::parse(selector).unwrap()
+        },
+        &mut Quiet,
+    )
+}
+
+fn text(s: &str) -> Value {
+    Value::String(s.to_owned())
+}
+
+#[test]
+fn variables_conditions_and_interpolation_are_settled_before_the_plugin_compiles() {
+    let report = run_resolved(
+        &[
+            ("env", text("prod")),
+            ("tool", text("iac")),
+            ("monitoring", Value::Bool(true)),
+        ],
+        "",
+        "resolved-prod",
+    );
+    assert!(report.succeeded(), "{report:#?}");
+    let network = &report.stages[0];
+    // The target itself came from data, and so did the version.
+    assert_eq!(network.target, "iac");
+    assert_eq!(resources_in(network), ["vpc", "audit", "gateway"]);
+    let tree = &network.artifact.as_ref().unwrap().files["tree"];
+    assert!(tree.contains("\ntargetVersion=3\n"), "{tree}");
+    assert!(tree.contains("shop-prod"), "{tree}");
+    assert!(
+        tree.contains("edge vpc -> gateway kind=dependsOn"),
+        "{tree}"
+    );
+    assert!(
+        !tree.contains("${{"),
+        "nothing is left for a plugin to decide: {tree}"
+    );
+    assert!(network.removed.is_empty());
+
+    // The second document's host came from a variable.
+    let monitoring = &report.stages[1];
+    assert_eq!(monitoring.outcome, Outcome::Compiled);
+    assert_eq!(monitoring.host, "mon.prod.example.com");
+}
+
+#[test]
+fn what_a_condition_removed_is_reported_with_the_condition() {
+    let report = run_resolved(
+        &[("env", text("dev")), ("tool", text("iac"))],
+        "",
+        "resolved-dev",
+    );
+    assert!(report.succeeded(), "{report:#?}");
+    let network = &report.stages[0];
+    assert_eq!(resources_in(network), ["vpc", "gateway"]);
+    let tree = &network.artifact.as_ref().unwrap().files["tree"];
+    assert!(tree.contains("shop-dev"), "{tree}");
+    assert!(!tree.contains("edge "), "{tree}");
+    let removed: Vec<(&str, &str)> = network
+        .removed
+        .iter()
+        .map(|r| (r.subject.as_str(), r.condition.as_str()))
+        .collect();
+    assert_eq!(
+        removed,
+        [
+            ("resource \"audit\"", "cond.is_prod"),
+            ("\"gateway\" depends on \"vpc\"", "cond.is_prod"),
+        ]
+    );
+}
+
+#[test]
+fn a_document_its_own_when_leaves_out_is_skipped_and_the_run_still_succeeds() {
+    let report = run_resolved(
+        &[("env", text("dev")), ("tool", text("iac"))],
+        "",
+        "resolved-skipped",
+    );
+    let monitoring = &report.stages[1];
+    assert_eq!(
+        monitoring.outcome,
+        Outcome::LeftOut {
+            condition: "data.monitoring ?? false".to_owned()
+        }
+    );
+    assert!(monitoring.artifact.is_none());
+    assert!(report.succeeded());
+}
+
+#[test]
+fn a_selector_matches_labels_as_they_are_once_interpolated() {
+    let prod = [
+        ("env", text("prod")),
+        ("tool", text("iac")),
+        ("monitoring", Value::Bool(true)),
+    ];
+    assert_eq!(
+        names(&run_resolved(&prod, "env=prod", "sel-a")),
+        ["network", "monitoring"]
+    );
+    assert_eq!(
+        names(&run_resolved(&prod, "env=prod,part=extra", "sel-b")),
+        ["monitoring"]
+    );
+    assert!(names(&run_resolved(&prod, "env=dev", "sel-c")).is_empty());
+    let data: Data = prod
+        .iter()
+        .map(|(k, v)| ((*k).to_owned(), v.clone()))
+        .collect();
+    assert_eq!(
+        selected(
+            &bundle(RESOLVED),
+            &Selector::parse("env=prod").unwrap(),
+            &data
+        ),
+        2
+    );
+    assert_eq!(
+        selected(
+            &bundle(RESOLVED),
+            &Selector::parse("env=dev").unwrap(),
+            &data
+        ),
+        0
+    );
+}
+
+#[test]
+fn a_document_that_cannot_be_resolved_fails_its_stage_and_says_where() {
+    // No data.env: the label cannot be decided, so the document stays a
+    // stage and its error is reported, whatever the selector says.
+    let report = run_resolved(&[("tool", text("iac"))], "env=prod", "resolved-unset");
+    assert_eq!(names(&report), ["network", "monitoring"]);
+    let why = failure(report.stages[0].outcome.clone());
+    assert!(why.contains("data.env is not set"), "{why}");
+    assert!(
+        matches!(report.stages[1].outcome, Outcome::NotRun { .. }),
+        "{:?}",
+        report.stages[1].outcome
+    );
+    assert!(!report.succeeded());
+
+    // A target that data names, and no plugin provides.
+    let report = run_resolved(
+        &[("env", text("prod")), ("tool", text("nosuch"))],
+        "",
+        "resolved-target",
+    );
+    let why = failure(report.stages[0].outcome.clone());
+    assert!(
+        why.contains("no plugin provides target \"nosuch\""),
+        "{why}"
     );
 }

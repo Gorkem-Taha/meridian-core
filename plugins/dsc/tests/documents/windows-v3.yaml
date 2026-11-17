@@ -1,0 +1,21 @@
+# A real Windows resource through DSC v3 (the dsc command line): a registry
+# value. Compiled on Linux and run on a Windows runner by the dsc workflow.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: windows-v3
+spec:
+  target: dsc
+  targetVersion: "3"
+  targetHost:
+    from: inline
+    host: localhost
+  resources:
+    - id: marker
+      type: Microsoft.Windows/Registry
+      params:
+        keyPath: HKCU\Software\MeridianReal
+        valueName: stage
+        valueData:
+          String: one
+        _exist: true

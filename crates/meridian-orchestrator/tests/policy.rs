@@ -594,3 +594,99 @@ fn a_drift_check_and_a_compile_ask_no_policy() {
     }
     assert!(case.seen().is_empty());
 }
+
+/// A document that reads a secret, and one its own `when` leaves out.
+const SECRETS: &str = r#"apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: site
+spec:
+  target: fake
+  targetHost:
+    from: inline
+    host: web01
+  secrets:
+    - name: flag
+      from: exec
+      command: [sh, -c, "echo fetched >> COUNT; printf on"]
+  conditions:
+    flagged: secret.flag == 'on'
+  resources:
+    - id: motd
+      type: file
+      when: cond.flagged
+      params:
+        content: "welcome"
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: spare
+spec:
+  target: fake
+  when: "1 == 2"
+  targetHost:
+    from: inline
+    host: web02
+  resources:
+    - id: motd
+      type: file
+      params:
+        content: "spare"
+"#;
+
+#[test]
+fn a_secret_is_fetched_once_at_its_stages_turn_and_not_by_the_first_pass() {
+    let case = case("secrets", "warn|never-matches|nothing\n");
+    let count = case.dir.join("count");
+    let yaml = SECRETS.replace("COUNT", count.to_str().unwrap());
+    let bundle = Bundle::new(meridian_ir::parse("workflow.yaml", yaml.as_bytes()).unwrap());
+    bundle.validate().unwrap();
+
+    let mut recorder = Recorder::default();
+    let report = run(
+        &bundle,
+        &registry(),
+        Mode::Apply,
+        &case.options,
+        &mut recorder,
+    );
+    assert!(report.succeeded(), "{report:?}");
+
+    // The first pass asked nothing of the provider; the stage's own turn
+    // asked once. A second fetch would prompt a person twice, or find an
+    // environment variable already taken.
+    assert_eq!(fs::read_to_string(&count).unwrap(), "fetched\n");
+
+    // The stage was still put to the policy, at its turn, before its apply.
+    let site = StageId {
+        kind: StageKind::ResourceSet,
+        name: "site".to_owned(),
+    };
+    assert!(matches!(report.stages[0].outcome, Outcome::Applied { .. }));
+    assert!(report.stages[0].policy.as_ref().unwrap().allowed());
+    assert_eq!(case.file(&site, "motd").as_deref(), Some("welcome"));
+    let seen = case.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(text(&seen[0], &["stage", "name"]), "site");
+
+    // The document its own `when` leaves out is not asked about, and is
+    // recorded as skipped without the condition's text.
+    assert!(matches!(
+        report.stages[1].outcome,
+        Outcome::LeftOut { ref condition } if condition == "1 == 2"
+    ));
+    assert!(report.stages[1].policy.is_none());
+    let skipped: Vec<&Event> = recorder
+        .events
+        .iter()
+        .filter(|e| e.kind == event::STEP_SKIPPED)
+        .collect();
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0].step, "spare");
+    assert_eq!(skipped[0].detail["reason"], Value::from("when-false"));
+    assert!(!skipped[0]
+        .detail
+        .values()
+        .any(|v| v.canonical().contains("1 == 2")));
+}

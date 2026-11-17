@@ -42,6 +42,14 @@ enum Command {
         /// The documents to check
         #[arg(required = true)]
         files: Vec<PathBuf>,
+        /// Where fetched modules are kept, for a file written @module:path
+        #[arg(
+            long,
+            value_name = "DIR",
+            env = "MERIDIAN_STATE_DIR",
+            default_value = ".meridian"
+        )]
+        state_dir: PathBuf,
     },
     /// Compile each document into its target's own files, and change nothing
     Compile {
@@ -138,6 +146,11 @@ enum Command {
         #[command(flatten)]
         plugins: PluginDirs,
     },
+    /// Work with compile rules: the policies layered data must keep
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
     /// Rewrite documents into a newer language version (apiVersion)
     Migrate {
         /// The files to rewrite, in place
@@ -154,6 +167,90 @@ enum Command {
     /// Show every version this build carries: core, language, SDK and
     /// plugin protocol
     Version,
+    /// Fetch, pin and check the modules the project's meridian.yaml requires
+    Module {
+        #[command(subcommand)]
+        command: ModuleCommand,
+        /// Where fetched modules are kept
+        #[arg(
+            long,
+            global = true,
+            value_name = "DIR",
+            env = "MERIDIAN_STATE_DIR",
+            default_value = ".meridian"
+        )]
+        state_dir: PathBuf,
+    },
+}
+
+#[derive(Subcommand)]
+enum ModuleCommand {
+    /// Fetch what meridian.yaml requires and write meridian.lock
+    Install {
+        /// Fail if meridian.lock would have to change; for CI
+        #[arg(long)]
+        locked: bool,
+    },
+    /// Move pinned modules to the newest version that still fits
+    Update {
+        /// The modules to move; every module when none is named
+        names: Vec<String>,
+    },
+    /// Check every pinned module against the hash in meridian.lock
+    Verify,
+    /// List the pinned modules, their versions and where they come from
+    List,
+    /// Write this module as the archive a registry stores
+    Pack {
+        /// The file to write. Defaults to a file under the state directory
+        #[arg(short, long, value_name = "FILE")]
+        out: Option<PathBuf>,
+    },
+    /// Publish this module to an OCI registry, under its version
+    Push {
+        /// The repository to publish to, such as
+        /// registry.example.com/team/module, with no scheme and no tag
+        repository: String,
+        /// Talk plain HTTP. For a registry on a trusted network only
+        #[arg(long)]
+        insecure: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// Load a hierarchy's layers and check them against its compile rules,
+    /// compiling nothing
+    Check {
+        /// The hierarchy file; its layers are found relative to it
+        #[arg(long, value_name = "FILE")]
+        hierarchy: PathBuf,
+        /// The rules file. Defaults to rules.yaml beside the hierarchy file
+        #[arg(long, value_name = "FILE")]
+        rules: Option<PathBuf>,
+        /// Fail when there is no rules file, so that removing it cannot
+        /// switch the rules off unnoticed
+        #[arg(long)]
+        require_rules: bool,
+        /// One value, as on compile: merged over the hierarchy last and
+        /// checked as its most specific layer. The hierarchy's layer paths
+        /// also read it as %{KEY}; may be given more than once
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// A YAML or JSON file of values merged over the hierarchy, checked
+        /// as its most specific layer; may be given more than once
+        #[arg(long, value_name = "FILE")]
+        data: Vec<PathBuf>,
+        /// Where fetched modules are kept, for a --data file named
+        /// @<module>:<path>
+        #[arg(
+            long,
+            value_name = "DIR",
+            env = "MERIDIAN_STATE_DIR",
+            default_value = ".meridian"
+        )]
+        state_dir: PathBuf,
+    },
 }
 
 #[derive(Args)]
@@ -286,11 +383,16 @@ struct Workflow {
 }
 
 fn main() -> ExitCode {
+    // Before anything is read: no core dump of this process, and no other
+    // process of the same user reading its memory, so a secret fetched later
+    // cannot leave that way.
+    let _ = meridian_secret::harden_process();
     let cli = Cli::parse();
     let outcome = match cli.command {
-        Command::Validate { files } => load(&files).map(|bundle| {
+        Command::Validate { files, state_dir } => load(&files, &state_dir).map(|bundle| {
             println!("{} valid", count(bundle.documents.len(), "document"));
         }),
+        Command::Module { command, state_dir } => module(command, &state_dir),
         Command::Compile { workflow, out } => orchestrate(
             &workflow,
             Mode::Compile,
@@ -340,6 +442,26 @@ fn main() -> ExitCode {
         ),
         Command::Unlock { id, state } => unlock(&state, &id),
         Command::Plugins { plugins } => list_plugins(&plugins),
+        Command::Rules {
+            command:
+                RulesCommand::Check {
+                    hierarchy,
+                    rules,
+                    require_rules,
+                    set,
+                    data,
+                    state_dir,
+                },
+        } => check_rules(
+            meridian_rules::Files {
+                hierarchy,
+                rules,
+                require_rules,
+            },
+            &set,
+            &data,
+            &state_dir,
+        ),
         Command::Migrate { files, to, check } => migrate(&files, to.as_deref(), check),
         Command::Version => {
             print!("{}", versions());
@@ -376,12 +498,13 @@ fn count(n: usize, noun: &str) -> String {
 
 /// Reads and validates the documents. Every problem is reported, each at its
 /// own line, before anything else happens.
-fn load(files: &[PathBuf]) -> Result<Bundle, Failure> {
+fn load(files: &[PathBuf], state_dir: &Path) -> Result<Bundle, Failure> {
     let problems = |errors: meridian_ir::ErrorList| {
         eprintln!("error: {errors}");
         Failure::Reported
     };
-    let bundle = meridian_ir::load(files).map_err(problems)?;
+    let files = in_modules(files, state_dir)?;
+    let bundle = meridian_ir::load(&files).map_err(problems)?;
     bundle.validate().map_err(problems)?;
     // Once per run, however many documents: see the versioning policy.
     if let Some(warning) = bundle.deprecation_warning() {
@@ -407,6 +530,10 @@ fn versions() -> String {
     out.push_str(&format!(
         "  plugin protocol  {}\n",
         describe_protocols(&supported_protocols())
+    ));
+    out.push_str(&format!(
+        "  lockfile format  {}\n",
+        meridian_module::LOCK_VERSION
     ));
     out
 }
@@ -489,11 +616,214 @@ fn replace_file(path: &Path, content: &str) -> std::io::Result<()> {
     })
 }
 
+/// The project in the current directory, as the module commands see it.
+fn project(state_dir: &Path) -> meridian_module::Project<'_> {
+    meridian_module::Project {
+        dir: Path::new("."),
+        state_dir,
+        core_version: env!("CARGO_PKG_VERSION"),
+    }
+}
+
+fn module_failure(e: meridian_module::Error) -> Failure {
+    Failure::Message(e.to_string())
+}
+
+/// Turns each file written `@<module>:<path>` into the file it names in a
+/// pinned module. Nothing is fetched: a module that is not installed, or
+/// does not match its pin, stops the command here.
+fn in_modules(files: &[PathBuf], state_dir: &Path) -> Result<Vec<PathBuf>, Failure> {
+    use meridian_module::Modules;
+    let is_reference = |file: &PathBuf| file.to_str().is_some_and(Modules::is_reference);
+    if !files.iter().any(is_reference) {
+        return Ok(files.to_vec());
+    }
+    let modules = Modules::load(&project(state_dir)).map_err(module_failure)?;
+    files
+        .iter()
+        .map(|file| match file.to_str() {
+            Some(text) if Modules::is_reference(text) => {
+                modules.resolve(text).map_err(module_failure)
+            }
+            _ => Ok(file.clone()),
+        })
+        .collect()
+}
+
+fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
+    use meridian_module::{Change, Mode, LOCK_FILE};
+    let project = project(state_dir);
+    let named = |m: &meridian_module::Locked| {
+        if m.version.is_empty() {
+            m.name.clone()
+        } else {
+            format!("{} {}", m.name, m.version)
+        }
+    };
+    let mode = match command {
+        ModuleCommand::Install { locked: true } => Mode::Locked,
+        ModuleCommand::Install { locked: false } => Mode::Install,
+        ModuleCommand::Update { names } => Mode::Update(names),
+        ModuleCommand::Verify => {
+            let checks = meridian_module::verify(&project).map_err(module_failure)?;
+            if checks.is_empty() {
+                println!("no modules are pinned");
+            }
+            let mut failed = 0;
+            for check in &checks {
+                match &check.problem {
+                    None => println!("ok      {}", named(&check.module)),
+                    Some(problem) => {
+                        failed += 1;
+                        println!("FAILED  {}", named(&check.module));
+                        for line in problem.lines() {
+                            println!("    {line}");
+                        }
+                    }
+                }
+            }
+            return if failed == 0 {
+                Ok(())
+            } else {
+                Err(Failure::Message(format!(
+                    "{} failed verification",
+                    count(failed, "module")
+                )))
+            };
+        }
+        ModuleCommand::List => {
+            let lock = meridian_module::Lock::load(project.dir)
+                .map_err(module_failure)?
+                .unwrap_or_default();
+            if lock.modules.is_empty() {
+                println!("no modules are pinned");
+            }
+            let width = |f: fn(&meridian_module::Locked) -> usize| {
+                lock.modules.iter().map(f).max().unwrap_or(0)
+            };
+            let (names, versions) = (width(|m| m.name.len()), width(|m| m.version.len()));
+            for m in &lock.modules {
+                let version = if m.version.is_empty() {
+                    "-"
+                } else {
+                    &m.version
+                };
+                println!("{:<names$}  {version:<versions$}  {}", m.name, m.source);
+            }
+            return Ok(());
+        }
+        ModuleCommand::Pack { out } => return pack_module(&project, out),
+        ModuleCommand::Push {
+            repository,
+            insecure,
+        } => return push_module(&project, &repository, insecure),
+    };
+
+    let report = meridian_module::install(&project, mode).map_err(module_failure)?;
+    let mut unchanged = 0;
+    for (m, change) in &report.changes {
+        match change {
+            Change::Added => println!("+ {} ({})", named(m), m.source),
+            Change::Updated { from } if *from != m.version && !m.version.is_empty() => {
+                println!("~ {} {from} -> {}", m.name, m.version)
+            }
+            Change::Updated { from } => println!("~ {} (was {from})", named(m)),
+            Change::Removed => println!("- {}", named(m)),
+            Change::Unchanged => unchanged += 1,
+        }
+    }
+    if unchanged > 0 {
+        println!("{} unchanged", count(unchanged, "module"));
+    }
+    if report.wrote_lock {
+        println!("wrote {LOCK_FILE}");
+    } else if report.lock.modules.is_empty() {
+        println!("the project requires no modules");
+    } else {
+        println!("{LOCK_FILE} is up to date");
+    }
+    Ok(())
+}
+
+fn pack_module(
+    project: &meridian_module::Project<'_>,
+    out: Option<PathBuf>,
+) -> Result<(), Failure> {
+    let manifest = meridian_module::Manifest::load(project.dir).map_err(module_failure)?;
+    let Some(version) = &manifest.version else {
+        return Err(Failure::Message(format!(
+            "{} has no metadata.version, and a module is published as a version",
+            manifest.name
+        )));
+    };
+    let archive = meridian_module::pack(project.dir).map_err(module_failure)?;
+    let integrity = meridian_module::hash_dir(project.dir).map_err(module_failure)?;
+    let out = out.unwrap_or_else(|| {
+        project.state_dir.join("packages").join(format!(
+            "{}-{version}.tar.gz",
+            manifest.name.replace('/', "-")
+        ))
+    });
+    let written = (|| {
+        if let Some(parent) = out.parent().filter(|p| !p.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out, &archive)
+    })();
+    if let Err(e) = written {
+        return Err(Failure::Message(format!("writing {}: {e}", out.display())));
+    }
+    println!("packed {} {version} into {}", manifest.name, out.display());
+    println!("  size:       {} bytes", archive.len());
+    println!("  integrity:  {integrity}");
+    println!("  media type: {}", meridian_module::LAYER_MEDIA_TYPE);
+    Ok(())
+}
+
+fn push_module(
+    project: &meridian_module::Project<'_>,
+    repository: &str,
+    insecure: bool,
+) -> Result<(), Failure> {
+    let manifest = meridian_module::Manifest::load(project.dir).map_err(module_failure)?;
+    let Some(version) = &manifest.version else {
+        return Err(Failure::Message(format!(
+            "{} has no metadata.version, and a module is published as a version",
+            manifest.name
+        )));
+    };
+    let archive = meridian_module::pack(project.dir).map_err(module_failure)?;
+    let pushed = meridian_module::push(
+        repository,
+        insecure,
+        &manifest.name,
+        version,
+        &manifest.description,
+        &archive,
+    )
+    .map_err(module_failure)?;
+    if pushed.already_published {
+        println!(
+            "{} {version} is already published in {repository}, with this content",
+            manifest.name
+        );
+    } else {
+        println!(
+            "published {} {version} to {repository}:{}",
+            manifest.name, pushed.tag
+        );
+    }
+    println!("  digest:     {}", pushed.digest);
+    let integrity = meridian_module::hash_dir(project.dir).map_err(module_failure)?;
+    println!("  integrity:  {integrity}");
+    Ok(())
+}
+
 /// Reads the `--data` files into one map. Each file is a mapping; a key in a
 /// later file replaces the same key from an earlier one, whole.
-fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
+fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
     let mut data = Data::new();
-    for file in files {
+    for file in &in_modules(files, state_dir)? {
         let name = file.to_string_lossy();
         let raw = std::fs::read(file)
             .map_err(|e| Failure::Message(format!("reading the data file {name}: {e}")))?;
@@ -531,6 +861,69 @@ fn parse_duration(text: &str) -> Result<Duration, String> {
             "{other:?} is not a unit of time; use ms, s, m or h"
         )),
     }
+}
+
+/// `meridian rules check`: loads the layers, checks every rule, and says
+/// which layer belongs to whom. Every violation is printed, not only the
+/// first, and none of them shows a value.
+fn check_rules(
+    files: meridian_rules::Files,
+    set: &[String],
+    data_files: &[PathBuf],
+    state_dir: &Path,
+) -> Result<(), Failure> {
+    // Each --data file is a layer of its own, so a refusal can say which.
+    let mut command_line = Vec::new();
+    for file in data_files {
+        let data = read_data(std::slice::from_ref(file), state_dir)?;
+        command_line.push(meridian_rules::Layer::command_line(
+            format!("--data {}", file.display()),
+            data,
+        ));
+    }
+    // The --set values are what they are on compile: data, merged last. They
+    // are also what a layer path's %{KEY} reads.
+    let mut values = Data::new();
+    apply_sets(&mut values, set)?;
+    let scope: meridian_resolve::Scope = set
+        .iter()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+    if !values.is_empty() {
+        command_line.push(meridian_rules::Layer::set("--set", values));
+    }
+    let checked = meridian_rules::check_files(&files, &scope, &command_line)
+        .map_err(|refusal| Failure::Message(refusal.to_string()))?;
+    let Some((path, rules)) = &checked.rules else {
+        println!(
+            "no rules file ({} beside {}): nothing was checked",
+            meridian_rules::RULES_FILE,
+            files.hierarchy.display()
+        );
+        return Ok(());
+    };
+    println!(
+        "rules: {} ({})",
+        path.display(),
+        count(rules.rules.len(), "rule")
+    );
+    println!("layers, least specific first:");
+    let width = checked
+        .groups
+        .iter()
+        .map(|(p, _)| p.len())
+        .max()
+        .unwrap_or(0);
+    for (layer, group) in &checked.groups {
+        if rules.groups.is_empty() {
+            println!("  {layer}");
+        } else {
+            println!("  {layer:width$}  {group}");
+        }
+    }
+    println!("no violations");
+    Ok(())
 }
 
 /// Applies the `--set key=value` options to the data, in the order given.
@@ -684,19 +1077,19 @@ struct How<'a> {
 
 fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Failure> {
     let (out, resume) = (how.out, how.resume);
-    let bundle = load(&workflow.files)?;
+    let bundle = load(&workflow.files, &workflow.state.state_dir)?;
     let mut selector = Selector::all();
     for text in &workflow.selector {
         selector = selector.and(Selector::parse(text).map_err(Failure::Message)?);
     }
-    if selected(&bundle, &selector) == 0 {
+    let mut data = read_data(&workflow.data, &workflow.state.state_dir)?;
+    apply_sets(&mut data, &workflow.set)?;
+    if selected(&bundle, &selector, &data) == 0 {
         // Doing nothing and reporting success would read as "all applied".
         return Err(Failure::Message(format!(
             "no document's labels match the selector {selector}"
         )));
     }
-    let mut data = read_data(&workflow.data)?;
-    apply_sets(&mut data, &workflow.set)?;
     // Where the reports go and who is sent the events are settled before
     // anything runs, so a misspelt format cannot cost a finished apply its
     // report.
@@ -1227,6 +1620,18 @@ impl Printer<'_> {
                 writeln!(out, "  policy: allowed")?;
             }
         }
+        // Every decision a condition made, so that something missing from
+        // the compiled output is never a surprise.
+        if !report.removed.is_empty() {
+            writeln!(out, "  when: {} removed", report.removed.len())?;
+            for removed in &report.removed {
+                writeln!(
+                    out,
+                    "    {}: {} is false",
+                    removed.subject, removed.condition
+                )?;
+            }
+        }
 
         match &report.outcome {
             Outcome::Compiled => {
@@ -1334,6 +1739,9 @@ impl Printer<'_> {
                 out,
                 "  already applied by run {applied_in}, and unchanged since; left alone"
             )?,
+            Outcome::LeftOut { condition } => {
+                writeln!(out, "  skipped: its when ({condition}) is false")?
+            }
             Outcome::Failed(why) => {
                 // What the tool had already done is part of what happened.
                 for change in &report.done_before_failing {

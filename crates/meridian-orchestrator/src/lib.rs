@@ -42,6 +42,7 @@ pub mod lock;
 pub mod policy;
 pub mod record;
 mod rollback;
+mod secrets;
 mod select;
 mod state;
 pub mod time;
@@ -53,11 +54,15 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use meridian_ast::ResourceGraph;
-use meridian_ir::{Bundle, Document, Infrastructure, ResourceSet, TARGET_HOST_FROM_INFRASTRUCTURE};
+use meridian_ir::{
+    Bundle, Document, Infrastructure, Removed, Resolution, ResourceSet, Secrets,
+    TARGET_HOST_FROM_INFRASTRUCTURE,
+};
 use meridian_plugin_host::{to_sdk, EmitError, Registry, RunFailure};
 use meridian_sdk::{
     Artifact, Category, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning,
 };
+use meridian_secret::Masker;
 
 pub use backend::{Backend, ExecBackend, LocalBackend, MemoryBackend};
 pub use event::Event;
@@ -151,6 +156,9 @@ pub enum Outcome {
     Skipped { applied_in: String },
     /// What a drift check found.
     Drift(Drift),
+    /// The document's own `spec.when` was false, so it is not part of this
+    /// run. Nothing went wrong, and nothing was compiled.
+    LeftOut { condition: String },
     /// The stage failed, and the run stopped here.
     Failed(String),
     /// An earlier stage failed, so this one was not attempted.
@@ -197,6 +205,8 @@ pub struct StageReport {
     /// What the document compiled to, when it got that far.
     pub artifact: Option<Artifact>,
     pub warnings: Vec<Warning>,
+    /// What the document's conditions removed before it was compiled.
+    pub removed: Vec<Removed>,
     pub outcome: Outcome,
     /// For a failed stage, the fixed word that says what kind of failure it
     /// was, one of the `REASON_` constants. It is what the run's record
@@ -553,6 +563,7 @@ pub fn run_selected(
         checked: BTreeMap::new(),
         artifacts: BTreeMap::new(),
         preflight: false,
+        masker: Masker::new(),
     };
     let mut failed: Option<StageId> = None;
 
@@ -560,7 +571,7 @@ pub fn run_selected(
     let to_run = if mode == Mode::Rollback {
         Vec::new()
     } else {
-        stages(bundle, selector)
+        stages(bundle, selector, &options.data)
     };
 
     // With a policy, an apply asks about every stage it can before it
@@ -606,7 +617,13 @@ pub fn run_selected(
     }
     for stage in to_run {
         let id = stage.id();
-        let target = stage.target().to_owned();
+        // The target as the document's interpolations make it, for what
+        // is said before the stage has run. The stage itself reads the
+        // document again, with its secrets, when its turn comes.
+        let target = match meridian_ir::resolve(&stage.document(), &options.data) {
+            Ok(Resolution::Kept { document, .. }) => document.target().to_owned(),
+            _ => stage.target().to_owned(),
+        };
         if let Some(because_of) = &failed {
             let skipped = StageReport {
                 id,
@@ -614,6 +631,7 @@ pub fn run_selected(
                 host: String::new(),
                 artifact: None,
                 warnings: Vec::new(),
+                removed: Vec::new(),
                 outcome: Outcome::NotRun {
                     because_of: because_of.clone(),
                 },
@@ -1000,6 +1018,15 @@ impl Journal {
                     ],
                 );
             }
+            Outcome::LeftOut { .. } => {
+                step.status = StepStatus::Skipped;
+                self.emit(
+                    observer,
+                    event::STEP_SKIPPED,
+                    at,
+                    vec![("reason", Value::from("when-false"))],
+                );
+            }
             Outcome::Deferred { waiting_on, output } => {
                 step.status = StepStatus::Deferred;
                 self.emit(
@@ -1078,6 +1105,13 @@ impl Stage<'_> {
         }
     }
 
+    fn document(&self) -> Document {
+        match *self {
+            Stage::Infrastructure(d) => Document::Infrastructure(d.clone()),
+            Stage::ResourceSet(d) => Document::ResourceSet(d.clone()),
+        }
+    }
+
     fn target_version(&self) -> &str {
         match self {
             Stage::Infrastructure(d) => &d.spec.target_version,
@@ -1110,15 +1144,23 @@ impl Stage<'_> {
         }
     }
 
-    fn document<'b>(&self, bundle: &'b Bundle) -> Option<&'b Document> {
+    /// A document, as a stage.
+    fn of(document: &Document) -> Stage<'_> {
+        match document {
+            Document::Infrastructure(doc) => Stage::Infrastructure(doc),
+            Document::ResourceSet(doc) => Stage::ResourceSet(doc),
+        }
+    }
+
+    fn in_bundle<'b>(&self, bundle: &'b Bundle) -> Option<&'b Document> {
         bundle.documents.iter().find(|document| self.is(document))
     }
 }
 
 /// How many documents of `bundle` a selector picks. A run that picks none
 /// does nothing, which a caller will usually want to say out loud.
-pub fn selected(bundle: &Bundle, selector: &Selector) -> usize {
-    stages(bundle, selector).len()
+pub fn selected(bundle: &Bundle, selector: &Selector, data: &Data) -> usize {
+    stages(bundle, selector, data).len()
 }
 
 /// Whether a document of this kind can be aimed at a target of this
@@ -1180,8 +1222,15 @@ pub fn version_fits(asked: &str, declared: &[String]) -> bool {
 /// Every Infrastructure document, then every ResourceSet, each in the order
 /// written. A ResourceSet can only depend on an Infrastructure document, so
 /// this order satisfies every dependency a workflow can express.
-fn stages<'a>(bundle: &'a Bundle, selector: &Selector) -> Vec<Stage<'a>> {
-    let selected = |doc: &&Document| selector.matches(doc.labels());
+///
+/// A selector matches a document's labels as they are once their
+/// interpolations are placed. A document whose labels cannot be decided stays
+/// a stage, so that its error is reported instead of the document quietly
+/// dropping out of the run.
+fn stages<'a>(bundle: &'a Bundle, selector: &Selector, data: &Data) -> Vec<Stage<'a>> {
+    let selected = |doc: &&Document| {
+        meridian_ir::resolved_labels(doc, data).map_or(true, |labels| selector.matches(&labels))
+    };
     let infrastructure = bundle
         .documents
         .iter()
@@ -1211,7 +1260,7 @@ fn by_need<'a>(bundle: &'a Bundle, mut waiting: Vec<Stage<'a>>) -> Vec<Stage<'a>
     let mut ordered: Vec<Stage<'a>> = Vec::with_capacity(waiting.len());
     while !waiting.is_empty() {
         let ready = waiting.iter().position(|stage| {
-            let Some(document) = stage.document(bundle) else {
+            let Some(document) = stage.in_bundle(bundle) else {
                 return true;
             };
             !bundle
@@ -1253,6 +1302,9 @@ struct Run<'a> {
     /// Whether this is an apply's first pass, which asks the policy about
     /// every stage it can and applies nothing.
     preflight: bool,
+    /// The filter for the secrets the stage now running fetched, for what is
+    /// said about a failure. Empty between stages.
+    masker: Masker,
 }
 
 /// A stage, compiled.
@@ -1281,6 +1333,23 @@ enum Stop {
     },
 }
 
+/// A stage's document, as this run reads it.
+enum Read {
+    /// The document, holding only what will be compiled, what its
+    /// conditions removed, and the secrets it reads. The secrets must
+    /// outlive every use of the document.
+    Kept {
+        document: Box<Document>,
+        removed: Vec<Removed>,
+        secrets: Secrets,
+    },
+    /// The document's own `spec.when` was false.
+    LeftOut {
+        condition: String,
+    },
+    Failed(String),
+}
+
 /// Why a stage stopped before reaching the tool.
 enum Halt {
     Failed(String),
@@ -1289,6 +1358,14 @@ enum Halt {
 
 impl Run<'_> {
     fn stage(&mut self, stage: Stage<'_>, observer: &mut dyn Observer) -> StageReport {
+        let report = self.stage_with_secrets(stage, observer);
+        // The stage is over: its secrets are wiped now, not at the end of
+        // the run, and so is the filter that held their forms.
+        self.masker = Masker::new();
+        report
+    }
+
+    fn stage_with_secrets(&mut self, stage: Stage<'_>, observer: &mut dyn Observer) -> StageReport {
         let id = stage.id();
         let mut report = StageReport {
             id: id.clone(),
@@ -1296,6 +1373,7 @@ impl Run<'_> {
             host: String::new(),
             artifact: None,
             warnings: Vec::new(),
+            removed: Vec::new(),
             outcome: Outcome::Compiled,
             reason: String::new(),
             done_before_failing: Vec::new(),
@@ -1307,6 +1385,35 @@ impl Run<'_> {
             report.reason = reason.to_owned();
             report
         };
+
+        // What the document's conditions and interpolations come to. A
+        // document its own `when` leaves out stops here, before a plugin is
+        // even looked for.
+        //
+        // The first pass of an apply with a policy fetches no secret: one is
+        // fetched once, at the turn of the stage that reads it. A document
+        // that reads secrets cannot be decided without them, so the policy
+        // is asked about it at its turn instead.
+        if self.preflight && !stage.document().secrets().is_empty() {
+            return report;
+        }
+        let (document, secrets) = match self.read(stage, !self.preflight) {
+            Read::Kept {
+                document,
+                removed,
+                secrets,
+            } => {
+                report.removed = removed;
+                report.target = document.target().to_owned();
+                (document, secrets)
+            }
+            Read::LeftOut { condition } => {
+                report.outcome = Outcome::LeftOut { condition };
+                return report;
+            }
+            Read::Failed(why) => return fail(report, REASON_COMPILE_REFUSED, why),
+        };
+        let stage = Stage::of(&document);
 
         let Compiled {
             graph,
@@ -1339,7 +1446,7 @@ impl Run<'_> {
 
         // What the stage is handed from other documents. Compiling needs
         // none of it: the values reach the tool, not the artifact.
-        if let Some(document) = stage.document(self.bundle) {
+        if let Some(document) = stage.in_bundle(self.bundle) {
             match self.imports_of(document) {
                 Ok(imports) => inputs.extend(imports),
                 Err(Stop::Failed { reason, why, .. }) => return fail(report, reason, why),
@@ -1405,9 +1512,14 @@ impl Run<'_> {
             report.outcome = Outcome::Skipped { applied_in };
             return report;
         }
-        let secrets = self.secrets.clone();
+        // What the tool prints is searched for every sensitive output of
+        // earlier stages and for every secret this stage fetched, however
+        // the tool came to print it.
+        let sensitive = self.secrets.clone();
+        let masker = secrets.masker();
+        self.masker = secrets.masker();
         let mut log = |mut line: LogLine| {
-            line.text = mask(&line.text, &secrets);
+            line.text = masker.mask(&mask(&line.text, &sensitive));
             observer.log(&id, &line);
         };
 
@@ -1531,6 +1643,64 @@ impl Run<'_> {
     /// Compiles a stage: settles what is the core's to settle, works out
     /// the host, builds the tree and hands it to the target. No tool is
     /// asked to change anything.
+    /// Decides everything the core decides about a document: its conditions
+    /// and its interpolations, the target among them.
+    ///
+    /// With `fetch`, the document's secrets are fetched: that is for a stage
+    /// at its own turn, exactly once, and only in a run that drives a tool.
+    /// A document its own `when` leaves out without reading a secret fetches
+    /// nothing. Without `fetch` the document is read as `compile` reads it:
+    /// a secret in a param is written as what stands for it, and a
+    /// condition that reads one cannot be decided.
+    fn read(&self, stage: Stage<'_>, fetch: bool) -> Read {
+        let document = stage.document();
+        let mut secrets = Secrets::declared(&document);
+        let mut resolution = meridian_ir::resolve_with(&document, &self.options.data, &secrets);
+        let fetches = fetch
+            && self.mode != Mode::Compile
+            && !document.secrets().is_empty()
+            && !matches!(resolution, Ok(Resolution::Skipped { .. }));
+        if fetches {
+            resolution = match secrets::fetch(&document, &mut secrets) {
+                Ok(()) => meridian_ir::resolve_with(&document, &self.options.data, &secrets),
+                Err(why) => Err(meridian_ir::Error {
+                    pos: document.position().clone(),
+                    path: "spec.secrets".to_owned(),
+                    msg: why,
+                }),
+            };
+        }
+        let (mut document, removed) = match resolution {
+            Ok(Resolution::Kept { document, removed }) => (*document, removed),
+            Ok(Resolution::Skipped { condition }) => return Read::LeftOut { condition },
+            Err(e) => return Read::Failed(e.to_string()),
+        };
+
+        // A secret in a param. A read that fetched nothing writes what
+        // stands for it. `plan` and `apply` hold it, and must hand it to the
+        // tool by a channel that is not the compiled files; until a target
+        // has one, the stage stops here instead of writing a secret into a
+        // file or dropping it silently.
+        if let Some((resource, param)) = secrets::first_in_params(&document) {
+            if !fetches {
+                secrets::describe_in_params(&mut document, secrets.table());
+            } else {
+                return Read::Failed(format!(
+                    "resource {resource:?}: {param} holds a secret, and target {:?} cannot \
+                     be handed a secret yet. A secret can decide a when today; handing one \
+                     to a tool arrives with secret delivery for each target",
+                    document.target()
+                ));
+            }
+        }
+        Read::Kept {
+            document: Box::new(document),
+            removed,
+            secrets,
+        }
+    }
+
+    /// Compiles a document that has been [read](Run::read).
     fn compile(&mut self, stage: Stage<'_>) -> Result<Compiled, Stop> {
         let id = stage.id();
         let refuse = |reason: &'static str, why: String| Stop::Failed {
@@ -1599,38 +1769,21 @@ impl Run<'_> {
             }
         }
 
-        // Decide every `when`, so the tree holds only what will be applied.
-        let pruned = |resources: &[meridian_ir::Resource]| {
-            meridian_ir::prune(resources, &options.data).map_err(|e| e.to_string())
-        };
-
         // Resolve what the stage needs from earlier ones, then build its tree.
         let (graph, host, inputs) = match stage {
-            Stage::Infrastructure(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
-                };
-                match ResourceGraph::build_infrastructure(&doc) {
-                    Ok(graph) => (graph, String::new(), Data::new()),
-                    Err(e) => return Err(refuse(REASON_COMPILE_REFUSED, e.to_string())),
-                }
-            }
+            Stage::Infrastructure(doc) => match ResourceGraph::build_infrastructure(doc) {
+                Ok(graph) => (graph, String::new(), Data::new()),
+                Err(e) => return Err(refuse(REASON_COMPILE_REFUSED, e.to_string())),
+            },
             Stage::ResourceSet(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
-                };
-                let (host, inputs) = match self.host_of(&doc) {
+                let (host, inputs) = match self.host_of(doc) {
                     Ok(found) => found,
                     Err(Halt::Failed(why)) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
                     Err(Halt::Deferred { waiting_on, output }) => {
                         return Err(Stop::Deferred { waiting_on, output })
                     }
                 };
-                match ResourceGraph::build(&doc, &host) {
+                match ResourceGraph::build(doc, &host) {
                     Ok(graph) => (graph, host, inputs),
                     Err(e) => {
                         return Err(Stop::Failed {
@@ -1669,7 +1822,28 @@ impl Run<'_> {
         if let Some(artifact) = self.artifacts.get(&id) {
             return Ok(artifact.clone());
         }
-        let compiled = self.compile(stage)?;
+        // Nothing of this document runs here, so nothing of it is read from
+        // a provider.
+        let (document, _secrets) = match self.read(stage, false) {
+            Read::Kept {
+                document, secrets, ..
+            } => (document, secrets),
+            Read::LeftOut { condition } => {
+                return Err(Stop::Failed {
+                    reason: REASON_COMPILE_REFUSED,
+                    why: format!("its when ({condition}) is false, so it compiles to nothing"),
+                    host: String::new(),
+                })
+            }
+            Read::Failed(why) => {
+                return Err(Stop::Failed {
+                    reason: REASON_COMPILE_REFUSED,
+                    why,
+                    host: String::new(),
+                })
+            }
+        };
+        let compiled = self.compile(Stage::of(&document))?;
         self.artifacts.insert(id, compiled.emitted.artifact.clone());
         Ok(compiled.emitted.artifact)
     }
@@ -2003,7 +2177,7 @@ impl Run<'_> {
     }
 
     fn describe(&self, failure: RunFailure) -> String {
-        mask(&failure.to_string(), &self.secrets)
+        self.masker.mask(&mask(&failure.to_string(), &self.secrets))
     }
 }
 

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::condition::Condition;
 use crate::error::{Error, ErrorList, Position};
 use crate::parse::parse_file;
 use crate::types::*;
@@ -488,11 +487,6 @@ fn validate_document(doc: &Document, errs: &mut ErrorList) {
                 "missing required field".into(),
             );
         }
-        if !r.when.is_empty() {
-            if let Err(why) = Condition::parse(&r.when) {
-                fail(&r.pos, format!("{path}.when"), why);
-            }
-        }
     }
 
     for (i, r) in resources.iter().enumerate() {
@@ -602,6 +596,8 @@ fn validate_document(doc: &Document, errs: &mut ErrorList) {
             }
         }
     }
+
+    crate::resolve::check(doc, errs);
 }
 
 fn check_if_missing(

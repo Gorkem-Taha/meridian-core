@@ -8,10 +8,11 @@ repository.workspace = true
 
 [dependencies]
 meridian-expr = { path = "../meridian-expr" }
+meridian-secret = { path = "../meridian-secret" }
 meridian-value = { path = "../meridian-value" }
 meridian-yaml = { path = "../meridian-yaml" }
 saphyr-parser = "0.3"
-serde_json = { version = "1", features = ["preserve_order"] }
+serde_json = { version = "1", features = ["preserve_order", "float_roundtrip"] }
 
 [lints]
 workspace = true

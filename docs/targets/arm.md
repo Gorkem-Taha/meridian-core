@@ -292,8 +292,13 @@ was ever applied is an error that says so.
 
 Credentials are the `az` command's own (`az login`). Meridian stores and passes none.
 
-This plugin's runner has been tested against a stand-in for the `az` command. It has not
-yet been run against a real Azure subscription.
+Every template this plugin writes is read by the real Bicep compiler's ARM reader
+(`az bicep decompile`) on every pull request that touches it, which has to parse the whole
+template. The runner itself (`az deployment group what-if`, `create` and `show`) has only
+met a stand-in for the `az` command: Azure has no emulator, so running it for real needs a
+subscription. The job that does so is written and is switched on by four repository
+settings, listed under [Real-tool tests](../contributing/real-tool-tests.md#azure). Until it has run, treat the runner as
+untested against Azure.
 
 ### Environment
 
