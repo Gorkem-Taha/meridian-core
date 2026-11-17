@@ -707,7 +707,14 @@ mod tests {
             assert_eq!(credentials_from(config, host), None, "{host}");
         }
         assert_eq!(credentials_from(b"not json", "x"), None);
-        assert_eq!(basic("a", "b"), "Basic YTpi");
+        // A login read from the file is sent as the file stored it.
+        for (host, stored) in [
+            ("index.example.com", "dXNlcjpwYXNzOndvcmQ="),
+            ("registry.example.com:5000", "YTpi"),
+        ] {
+            let (user, password) = credentials_from(config, host).unwrap();
+            assert_eq!(basic(&user, &password), format!("Basic {stored}"));
+        }
     }
 
     #[test]

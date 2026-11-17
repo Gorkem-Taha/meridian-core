@@ -359,9 +359,10 @@ code and checked by a test, so it cannot drift:
 - **A public index.** Deliberately absent. If one is ever wanted, it is a hosted service
   and a decision for the owner.
 - **Signing.** Decided: reuse the signing and verification that the release work adds
-  for plugins, optional at first. Whether registry artifacts are also verified with
-  cosign/Sigstore is open: it would be new work with a new dependency. Waits for that to land;
-  [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
+  for plugins, optional at first. It waits for that work to land;
+  [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68). Whether registry
+  artifacts are also verified with cosign/Sigstore is open: it would be new work with a
+  new dependency.
 - **Credentials for registries.** Only `auths` entries of the Docker configuration are read
   at first. Decided: a module source will also be able to name a credential declared in
   the language's model ([language expansion §12](language-expansion.md#12-credentials),
