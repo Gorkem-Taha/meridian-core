@@ -749,15 +749,13 @@ dependencies = [
 name = "meridian-plugin-host"
 version = "0.1.0"
 dependencies = [
- "ed25519-dalek",
- "getrandom 0.4.3",
  "hyper-util",
  "meridian-ast",
  "meridian-ir",
  "meridian-plugin-testkit",
  "meridian-sdk",
+ "meridian-signing",
  "meridian-target-fake",
- "sha2",
  "tokio",
  "tonic",
  "tower",
@@ -800,6 +798,15 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "meridian-signing"
+version = "0.1.0"
+dependencies = [
+ "ed25519-dalek",
+ "getrandom 0.4.3",
+ "sha2",
 ]
 
 [[package]]

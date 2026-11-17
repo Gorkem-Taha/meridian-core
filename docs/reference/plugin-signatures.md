@@ -159,3 +159,12 @@ changed; the check uses the digest of the file as it is.
   directory, is not caught.
 - A target compiled into `meridian` itself is part of that binary and has no
   signature of its own.
+
+## Using the check from other code
+
+The signing and checking code is the `meridian-signing` crate
+(`crates/meridian-signing`). It is not about plugins: `SecretKey::sign_file`
+signs any file, `verify_file` checks a file and its `.sig` against a list of
+`PublicKey`s, and `Verification::check` applies a `Policy` (off, warn or
+require) to the result. The plugin host re-exports it as
+`meridian_plugin_host::signature`.

@@ -1,4 +1,8 @@
-//! Signed plugins: deciding whether a binary may be started.
+//! Signed files: deciding whether a file is the one a trusted key signed.
+//!
+//! This crate knows nothing about plugins. It signs and checks any file, and
+//! the plugin host is its first user; the words below are about plugins
+//! because that is where the check was first needed.
 //!
 //! A plugin is a program the host runs with the operator's own rights, so
 //! "which program is this?" deserves an answer before it starts. A signed

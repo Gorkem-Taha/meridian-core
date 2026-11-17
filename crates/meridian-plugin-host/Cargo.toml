@@ -7,11 +7,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-ed25519-dalek = "2"
-getrandom = "0.4.3"
 meridian-ast = { path = "../meridian-ast" }
 meridian-sdk = { path = "../meridian-sdk" }
-sha2 = "0.10"
+meridian-signing = { path = "../meridian-signing" }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = "0.14"
 

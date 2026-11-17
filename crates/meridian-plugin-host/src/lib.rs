@@ -19,7 +19,11 @@
 
 mod client;
 mod registry;
-pub mod signature;
+/// Signatures on plugin binaries. The code is in the `meridian-signing`
+/// crate, which is not about plugins and can be used for any file.
+pub mod signature {
+    pub use meridian_signing::*;
+}
 
 use std::fmt;
 
