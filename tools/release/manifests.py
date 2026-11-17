@@ -186,7 +186,8 @@ def winget(version: str, url, sums) -> dict[str, str]:
         f"PackageUrl: {HOMEPAGE}\n"
         f"License: {LICENSE}\n"
         f"LicenseUrl: {HOMEPAGE}/blob/main/LICENSE\n"
-        f"ShortDescription: {DESCRIPTION}\n"
+        # Quoted, because the description holds a colon.
+        f"ShortDescription: {json.dumps(DESCRIPTION)}\n"
         "Moniker: meridian\n"
         "Tags:\n  - infrastructure-as-code\n  - configuration-management\n  - devops\n"
         f"ReleaseNotesUrl: {HOMEPAGE}/releases/tag/v{version}\n"
