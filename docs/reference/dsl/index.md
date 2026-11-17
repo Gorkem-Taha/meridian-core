@@ -46,7 +46,9 @@ flowchart TD
 | [`dependsOn`](dependson.md) | order: how the sort works, cycles, what each tool makes of it |
 | [`notifies`](notifies.md) | reactions: native, synthetic, refused; the actions each target takes |
 | [Conditions](conditions.md) | `runtimeWhen` and `when` |
-| [Expressions and functions](expressions.md) | the language a `when` is written in: values, operators, every function, every error |
+| [Expressions and functions](expressions.md) | the language a `when` and an interpolation are written in: values, operators, every function, every error |
+| [Interpolation, variables and named conditions](interpolation.md) | an expression inside a value, `spec.variables`, `spec.conditions`, and what is decided in which order |
+| [Secrets](secrets.md) | `spec.secrets`: declaring a secret by where it comes from, reading it as `secret.<name>`, what an expression may do with one, and when it is fetched |
 | [References](references.md) | `${...}`: syntax, how each target rewrites it, what can be read where |
 | [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs`, `targetHost` and `imports`: the ties between documents |
 | The four flavour pages above | how all of it is written for each segment |
@@ -211,7 +213,9 @@ metadata:
 ```
 
 Labels mean nothing to Meridian on their own, and they are not passed to the
-tool. They exist so that one command can run part of a workflow.
+tool. They exist so that one command can run part of a workflow. A label's
+value may hold an [interpolation](interpolation.md), such as
+`env: ${{ data.env }}`, and a selector matches the value it comes to.
 `compile`, `plan` and `apply` take `-l` (or `--selector`):
 
 ```
@@ -245,6 +249,10 @@ every `-l` given. Rules:
 |---|---|---|
 | `target` | yes | the name of the plugin that compiles and runs the document, such as `terraform`. `meridian plugins` lists what is installed |
 | `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
+| `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the whole document. False, and the document is skipped |
+| `variables` | no | a mapping of named values, read as `var.<name>`. See [variables](interpolation.md#variables) |
+| `conditions` | no | a mapping of named conditions, read as `cond.<name>`. See [named conditions](interpolation.md#named-conditions) |
+| `secrets` | no | a list of secrets, each a name and where it comes from, read as `secret.<name>`. See [secrets](secrets.md) |
 | `imports` | no | a list of [imports](#imports): values handed to this document from others |
 | `resources` | yes | a list of at least one [resource](#resources) |
 | `outputs` | no | a list of [outputs](#outputs) |
@@ -257,6 +265,10 @@ every `-l` given. Rules:
 |---|---|---|
 | `target` | yes | the plugin, such as `ansible` |
 | `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
+| `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the whole document. False, and the document is skipped |
+| `variables` | no | a mapping of named values, read as `var.<name>`. See [variables](interpolation.md#variables) |
+| `conditions` | no | a mapping of named conditions, read as `cond.<name>`. See [named conditions](interpolation.md#named-conditions) |
+| `secrets` | no | a list of secrets, each a name and where it comes from, read as `secret.<name>`. See [secrets](secrets.md) |
 | `targetHost` | yes, to compile | the machine. See [`targetHost`](#targethost) |
 | `imports` | no | a list of [imports](#imports): values handed to this document from others |
 | `resources` | yes | a list of at least one [resource](#resources) |
@@ -452,6 +464,12 @@ all.
 ## `when` and `runtimeWhen`
 
 They are two different times. In depth: [conditions](conditions.md).
+
+A `when` can also be written on a whole document (`spec.when`), on an output
+and on a `dependsOn` or `notifies` entry:
+[where a `when` can be written](conditions.md#where-a-when-can-be-written).
+Values anywhere in a document can hold an expression between `${{` and `}}`:
+[interpolation](interpolation.md).
 
 **`runtimeWhen`** is a condition the tool checks on the machine while it
 applies, so it is written in the tool's own language and Meridian passes it

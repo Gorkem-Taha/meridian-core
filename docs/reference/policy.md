@@ -60,6 +60,12 @@ flowchart TB
   If it is denied then, the stages before it have been applied: the run stops
   as it does for any failed stage, and `--on-failure rollback` puts them
   back.
+- A document that reads [secrets](dsl/secrets.md) is not asked about in the
+  first pass either. A secret is fetched once, at the turn of the stage that
+  reads it, and the document cannot be decided without it. The policy is
+  asked at that turn, before the stage's apply.
+- A document its own `spec.when` leaves out is not a stage of the run, so it
+  is not asked about.
 - A stage a [resumed run](../concepts/run-safety.md#picking-up-where-a-run-stopped)
   leaves alone is not asked about: nothing is done to it.
 - **`plan`** asks about every stage and shows every denial. A denied stage

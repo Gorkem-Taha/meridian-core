@@ -864,6 +864,7 @@ pub(crate) fn call(name: &str, values: &[Value], scope: &Scope) -> Result<Value,
             Value::String(_) => "string",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::Secret(_) => "secret",
         }),
         "toString" => text(to_text(&values[0])?),
         "toNumber" => match &values[0] {
@@ -1072,6 +1073,7 @@ fn whole(n: f64) -> Value {
 fn serde_free_json(value: &Value) -> String {
     match value {
         Value::Null => "null".to_owned(),
+        Value::Secret(_) => format!("\"{}\"", meridian_value::SENSITIVE),
         Value::Bool(_) | Value::Int(_) | Value::Uint(_) | Value::Float(_) => value.canonical(),
         Value::String(s) => {
             let mut out = String::from("\"");

@@ -1,0 +1,39 @@
+# A baseline for sshd. `data.ssh_permit_root` comes from data/defaults.yaml,
+# and a project can set it differently with a data file of its own.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: ssh-baseline
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: sshd_pkg
+      type: package
+      params:
+        name: openssh-server
+
+    - id: no_root_login
+      type: file
+      when: "data.ssh_permit_root == false"
+      params:
+        path: /etc/ssh/sshd_config.d/10-no-root.conf
+        content: |
+          PermitRootLogin no
+        owner: root
+        mode: "0600"
+      dependsOn:
+        - resource: sshd_pkg
+      notifies:
+        - resource: sshd_svc
+          action: restart
+
+    - id: sshd_svc
+      type: service
+      params:
+        name: sshd
+        enabled: true
+      dependsOn:
+        - resource: sshd_pkg

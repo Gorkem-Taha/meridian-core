@@ -1,0 +1,11 @@
+# What makes this directory a module: its name, its version, and what it
+# needs. It needs no other modules.
+apiVersion: meridian/v1
+kind: Module
+metadata:
+  name: acme/hardening
+  version: 1.2.0
+  description: A baseline SSH configuration
+spec:
+  # The releases of meridian this module works with.
+  meridian: ">=0.1.0"
