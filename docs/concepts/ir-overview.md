@@ -65,6 +65,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
 | `helm` | API version and kind, the same as `kubernetes` | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |
+| `podman` | a kind of Quadlet unit | `container` |
 | `dsc` | module and resource | `PSDscResources/Service` |
 
 What Meridian adds for these targets is everything around the resource: one

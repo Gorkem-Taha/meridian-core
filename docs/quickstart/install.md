@@ -54,6 +54,7 @@ hand:
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
 | `docker` | `docker` with the Compose plugin |
+| `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |
 | `helm` | `helm`; `kustomize` when a document has an overlay; `kubectl` when an output reads from the cluster |
 
