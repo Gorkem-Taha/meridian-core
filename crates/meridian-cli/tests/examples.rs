@@ -157,7 +157,12 @@ fn compiled(file: &Path, data: &[PathBuf], scratch_name: &str) -> BTreeMap<Strin
                 pending.push(path);
             } else {
                 let relative = path.strip_prefix(&out).unwrap().to_str().unwrap();
-                files.insert(relative.to_owned(), fs::read_to_string(&path).unwrap());
+                // Named with forward slashes on every system, so the tests
+                // can ask for "document/file" wherever they run.
+                files.insert(
+                    relative.replace('\\', "/"),
+                    fs::read_to_string(&path).unwrap(),
+                );
             }
         }
     }
