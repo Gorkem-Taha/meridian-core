@@ -20,7 +20,7 @@ order and nothing else. It does not carry data (that is a
 | Field | Required | Value |
 |---|---|---|
 | `resource` | yes | the `id` of another resource in the same document |
-| `ifMissing` | no | `error` (the default) or `skip`. Checked for spelling, [not acted on yet](index.md#fields-that-are-read-but-not-used-yet) |
+| `ifMissing` | no | `error` (the default) or `skip`: what happens when a [`when`](conditions.md#when) removed the resource this entry names. See [`ifMissing`](conditions.md#ifmissing) |
 
 A resource may depend on any number of others, and any number may depend on it.
 
@@ -30,7 +30,8 @@ A resource may depend on any number of others, and any number may depend on it.
 |---|---|---|
 | The resource named must be in the document | `validate` | `resource "a" depends on unknown resource "s2"` |
 | A resource cannot depend on itself | `validate` | `resource "a" cannot depend on itself` |
-| The dependencies must not form a cycle | `compile` | `dependency cycle among 2 resources: a -> b -> a` |
+| The dependencies must not form a cycle | `validate` | `dependency cycle among 2 resources: a -> b -> a` |
+| An entry naming a resource its `when` removed must say `ifMissing: skip` | `compile` | `resource "conf" depends on "pkg", which its when removed from this run; ...` |
 | A dependency cannot point into another document | by construction | ids are local to a document |
 
 ## How the order is worked out
@@ -94,14 +95,19 @@ flowchart LR
     a --> b --> a
 ```
 
-There is no order that satisfies this, so the document does not compile, and the
-message names the resources on the cycle so it can be broken:
+There is no order that satisfies this, so the document is refused, and the
+message names the resources on the cycle, in the order they would have to be
+applied, so it can be broken:
 
 ```
-cycle.yaml:8:7: dependency cycle among 2 resources: a -> b -> a
+cycle.yaml:8:7: spec.resources[0].dependsOn: dependency cycle among 2 resources: a -> b -> a
 ```
 
-`meridian validate` does not look for cycles; `compile`, `plan` and `apply` do.
+`meridian validate` finds a cycle, and so do `compile`, `plan` and `apply`,
+before any plugin is loaded. Every resource counts, whatever its `when` says:
+an order that only works while one condition happens to be false is still a
+mistake in the document. Only `dependsOn` can form a cycle; two resources that
+notify each other are fine.
 
 ## What a dependency becomes
 

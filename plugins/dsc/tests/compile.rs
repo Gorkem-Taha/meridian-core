@@ -195,3 +195,42 @@ fn what_dsc_cannot_take_is_refused() {
     let err = refusal("    - id: settings\n      type: runner\n      params: {engine: Auto}\n");
     assert_eq!(err.rule, "empty-configuration");
 }
+
+#[test]
+fn the_target_version_chooses_the_engine() {
+    let versioned = |version: &str, resources: &str| {
+        let text = document("localhost", resources).replace(
+            "  target: dsc\n",
+            &format!("  target: dsc\n  targetVersion: \"{version}\"\n"),
+        );
+        emit(&graph_from_text("site.yaml", &text, "dsc"))
+    };
+    assert_eq!(Dsc.target_versions(), ["2", "3"]);
+
+    for (version, engine) in [("2", "DscV2"), ("3", "DscV3"), ("3.1", "DscV3")] {
+        let datum = versioned(version, KEY).unwrap().artifact.files["Datum.yml"].clone();
+        assert!(datum.contains(&format!("  Engine: {engine}\n")), "{datum}");
+    }
+    // With no version asked for, the runner decides, as before.
+    let datum = compile(KEY).unwrap().artifact.files["Datum.yml"].clone();
+    assert!(datum.contains("  Engine: Auto\n"), "{datum}");
+
+    // A runner that agrees, or says nothing about the engine, is fine.
+    let agrees =
+        format!("    - id: settings\n      type: runner\n      params: {{engine: DscV3}}\n{KEY}");
+    versioned("3", &agrees).unwrap();
+    let silent =
+        format!("    - id: settings\n      type: runner\n      params: {{target: Local}}\n{KEY}");
+    let datum = versioned("2", &silent).unwrap().artifact.files["Datum.yml"].clone();
+    assert!(datum.contains("  Engine: DscV2\n"), "{datum}");
+
+    // One that disagrees is refused, not overruled.
+    let e = versioned("2", &agrees).expect_err("the engines disagree");
+    assert_eq!(e.rule, "conflicting-engine");
+    assert!(
+        e.msg.contains("targetVersion \"2\" means the engine DscV2")
+            && e.msg.contains("the runner asks for DscV3"),
+        "{}",
+        e.msg
+    );
+}

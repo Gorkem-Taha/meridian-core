@@ -156,6 +156,7 @@ impl Client {
             resource_types: reply.resource_types,
             capabilities: wire::capabilities_from_wire(reply.capabilities),
             category: wire::category_from_wire(reply.category),
+            target_versions: reply.target_versions,
             operations: wire::operations_from_wire(reply.operations),
             path: path.to_owned(),
         };

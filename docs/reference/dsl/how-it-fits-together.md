@@ -23,7 +23,7 @@ any tool; each plugin knows one tool and nothing about the others.
 flowchart TB
     subgraph CORE["meridian (the core)"]
         direction LR
-        PARSE["parse and validate<br/>the language"] --> GRAPH["order resources<br/>refuse cycles"] --> ORCH["orchestrate stages<br/>carry outputs"]
+        PARSE["parse and validate<br/>the language"] --> GRAPH["decide conditions<br/>order resources"] --> ORCH["orchestrate stages<br/>carry outputs"]
     end
     ORCH <-->|"ordered resources in,<br/>files, plans and outputs back<br/>(one plugin program per target)"| PLUG
     subgraph PLUG["plugins"]
@@ -40,10 +40,10 @@ flowchart TB
 |---|---|---|---|
 | 1. Read | each file is read as YAML or JSON | [files](index.md#files) | all |
 | 2. Decode | each document becomes a typed object; unknown fields are errors | [`apiVersion`, `kind`, `metadata`, `spec`](index.md#the-document) | all |
-| 3. Validate | the shape of each document, and the links between documents | ids, [`dependsOn`](dependson.md), [`notifies`](notifies.md), [`targetHost`](outputs-and-hand-offs.md) | `validate` stops here |
-| 4. Stage | each document becomes a stage; stages are put in order | `kind`, [`targetHost`](outputs-and-hand-offs.md) | |
-| 5. Order | the resources of a document are sorted; a cycle is refused | [`dependsOn`](dependson.md), [`when`](conditions.md) | |
-| 6. Hand over | the document's plugin is found and given the ordered resources | `spec.target`, the [flavour](index.md#the-meridian-language) | |
+| 3. Validate | the shape of each document, the links between documents, and that no dependencies form a cycle | ids, [`dependsOn`](dependson.md), [`notifies`](notifies.md), the syntax of [`when`](conditions.md), [`targetHost`](outputs-and-hand-offs.md) | `validate` stops here |
+| 4. Stage | the documents the [selector](index.md#labels-and-selectors) picks become stages; stages are put in order | `kind`, `metadata.labels`, [`targetHost`](outputs-and-hand-offs.md) | |
+| 5. Check the target | the document's plugin is found; its category must take the document's kind, and it must compile for the document's `targetVersion` | `spec.target`, `kind`, [`targetVersion`](index.md#targetversion) | |
+| 6. Decide and order | every `when` is decided from the `--data` files and the resources left are sorted, then handed to the plugin | [`when`, `ifMissing`](conditions.md), [`dependsOn`](dependson.md), the [flavour](index.md#the-meridian-language) | |
 | 7. Compile | the plugin checks every resource against what its tool can do, and writes the tool's files | [`type`, `state`, `params`](resources.md), [references](references.md), [`notifies`](notifies.md), [`runtimeWhen`](conditions.md) | `compile` stops here |
 | 8. Run | the plugin runs the tool: a preview, or the real thing | | `plan`, `apply` |
 | 9. Hand on | the tool reports outputs; waiting stages receive them | [`outputs`](outputs-and-hand-offs.md) | `apply` |
@@ -79,8 +79,8 @@ $ meridian validate examples/workflow/vm-then-web.yaml
 
 Validation is about the language only. No plugin is loaded, so nothing here
 knows what Terraform or Ansible can do. It answers: is this a well-formed
-Meridian document, do its internal links point somewhere, and do the documents
-given together fit together?
+Meridian document, do its internal links point somewhere, can its resources be
+put in an order at all, and do the documents given together fit together?
 
 Every problem in every file is reported in one pass, each with the file, line,
 column and field:
@@ -108,14 +108,34 @@ Infrastructure first satisfies every such need.
 A ResourceSet whose `targetHost` names an output that does not exist yet is
 **deferred**: set aside, not failed, and not compiled against a guess.
 
-There is a step the design places here that is not wired into the command yet:
-**resolution**, where values are merged from layers of data (per environment,
-per node) and each resource's `when` is decided from facts about the node. The
-engine for the layered data exists in the core. Until it is connected, a
-document says exactly what it says, with no outside data, and a resource that
-carries `when` is refused at step 5. See [conditions](conditions.md).
+With `-l` only the documents whose labels match become stages. The others stay
+loaded, so a selected ResourceSet can still name one as the source of its host.
+See [labels and selectors](index.md#labels-and-selectors).
 
-## Step 5: resources are ordered
+## Step 5: the target is checked
+
+The plugin named by `spec.target` is found, and two things it declares about
+itself are checked before it is handed anything:
+
+- **its category against the document's kind.** A ResourceSet aimed at an
+  infrastructure as code or container orchestration tool, or an Infrastructure
+  document aimed at a configuration management tool, is refused. A
+  containerization tool takes either. [The table](index.md#the-document).
+- **its versions against the document's `targetVersion`**, when the document
+  sets one. [`targetVersion`](index.md#targetversion).
+
+## Step 6: conditions are decided and resources are ordered
+
+Every [`when`](conditions.md) is decided from the values given with `--data`. A
+resource whose condition is false is taken out, and an entry of another
+resource that named it follows its `ifMissing`: refused by default, dropped with
+`skip`. What is left is unconditional.
+
+One part of the design is still not wired into the command: **layered data**,
+where values are merged from layers (per environment, per node), and **facts**
+gathered from the node. The engine for the layers exists in the core. Until
+they are connected, a `when` can read what is in the `--data` files and nothing
+about the node.
 
 The resources of one document are sorted so that every `dependsOn` is
 satisfied. A resource is placed as early as its dependencies allow, and among
@@ -134,16 +154,17 @@ the order handed to the plugin is:
 motd, pkg, conf, svc
 ```
 
-A cycle is refused here, by name:
+A cycle never gets this far. It is refused at step 3, by `validate` and by
+every other command, with the resources named:
 
 ```
-cycle.yaml:8:7: dependency cycle among 2 resources: a -> b -> a
+cycle.yaml:8:7: spec.resources[0].dependsOn: dependency cycle among 2 resources: a -> b -> a
 ```
 
 `notifies` plays no part in this sort. It is a reaction, not an order, so two
 resources may notify each other.
 
-## Steps 6 and 7: the plugin compiles
+## Step 7: the plugin compiles
 
 `spec.target` names a plugin, a separate program called
 `meridian-target-<name>`. If none is installed the stage fails there:
@@ -231,7 +252,7 @@ kind: Infrastructure
 metadata:
   name: machine
 spec:
-  target: terraform                       # step 6: which plugin
+  target: terraform                       # step 5: which plugin
   resources:
     - id: aws
       type: provider                      # step 7: the IaC flavour's settings resource
@@ -269,7 +290,7 @@ spec:
       params:
         name: nginx
         enabled: true
-      dependsOn:                          # step 5: order within this document
+      dependsOn:                          # step 6: order within this document
         - resource: nginx_pkg
 ```
 
@@ -329,9 +350,12 @@ flowchart LR
 | Segment | Kind | Runs | Can hand on outputs | Can receive a host |
 |---|---|---|---|---|
 | Infrastructure as code | `Infrastructure` | first | yes | no |
-| Containerization | `Infrastructure` | first | yes | no (`podman` also takes a ResourceSet, to reach another machine) |
+| Containerization | `Infrastructure`, or a `ResourceSet` to run on a named machine's daemon | first; as a ResourceSet, after | yes, as Infrastructure | as a ResourceSet |
 | Container orchestration | `Infrastructure` | first | yes | no |
 | Configuration management | `ResourceSet` | after every Infrastructure document | no | yes |
+
+The pairing is enforced: a document of a kind its target's segment does not
+take is refused at step 5. [The table](index.md#the-document).
 
 So the workflows the language can express today are: any number of
 Infrastructure documents, then any number of ResourceSets, where a ResourceSet

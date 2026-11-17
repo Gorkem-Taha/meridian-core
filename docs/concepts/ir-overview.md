@@ -112,7 +112,10 @@ when the document is compiled, and anything else in `${...}` is refused
 ## What is not here yet
 
 The design includes hierarchical data (values merged from layers, per
-environment or per node) and compile-time `when` conditions evaluated against
-gathered facts. The engine for the data hierarchy exists, but neither is wired
-into the `meridian` command yet, so a document that uses `when` is refused.
-`runtimeWhen` works today on the targets that support it.
+environment or per node) and facts gathered from the node. The engine for the
+data hierarchy exists, but neither is wired into the `meridian` command yet.
+
+What works today: a compile-time [`when`](../reference/dsl/index.md#when-and-runtimewhen)
+is decided from the files given with `--data`, so it can depend on anything you
+can put in a file and on nothing about the node (`facts.*` is refused), and
+`runtimeWhen` works on the targets that support it.

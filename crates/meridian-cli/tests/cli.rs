@@ -108,8 +108,8 @@ fn plugins_lists_what_each_plugin_is_and_can_do() {
     assert_eq!(
         text,
         format!(
-            "fake\n  category:  configuration-management\n  can:       compile, plan, apply, outputs\n  \
-             resources: file\n  sdk:       0.1.0 (protocol 2)\n  binary:    {}\n",
+            "fake\n  category:  containerization\n  can:       compile, plan, apply, outputs\n  \
+             resources: file\n  versions:  1, 2.4\n  sdk:       0.1.0 (protocol 2)\n  binary:    {}\n",
             binary.display()
         )
     );
@@ -235,5 +235,223 @@ fn a_missing_plugin_is_a_clear_failure_and_usage_errors_exit_2() {
         stderr(&missing).contains("nope.yaml"),
         "{}",
         stderr(&missing)
+    );
+}
+
+#[test]
+fn validate_finds_a_dependency_cycle_without_loading_a_plugin() {
+    let cycle = WORKFLOW.replace(
+        "    - id: key\n      type: file\n",
+        "    - id: key\n      type: file\n      dependsOn:\n        - resource: lock\n    \
+         - id: lock\n      type: file\n      dependsOn:\n        - resource: key\n",
+    );
+    assert_ne!(cycle, WORKFLOW);
+    let dir = scratch("validate-cycle", &cycle);
+    // No plugin directory at all: the check is the core's own.
+    let out = Command::new(env!("CARGO_BIN_EXE_meridian"))
+        .args(["validate", "site.yaml"])
+        .current_dir(&dir)
+        .env("MERIDIAN_PLUGIN_DIR", dir.join("no-plugins-here"))
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert_eq!(stdout(&out), "");
+    assert_eq!(
+        stderr(&out),
+        "error: site.yaml:12:7: spec.resources[1].dependsOn: dependency cycle among 2 \
+         resources: key -> lock -> key\n"
+    );
+
+    // The same document is refused the same way by every other command.
+    let out = meridian(&dir, &["compile", "site.yaml"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(stderr(&out).contains("dependency cycle among 2 resources"));
+}
+
+#[test]
+fn validate_refuses_a_notify_event_no_target_can_fire_on() {
+    let odd = WORKFLOW.replace(
+        "    - id: key\n      type: file\n",
+        "    - id: key\n      type: file\n      notifies:\n        - resource: vm\n          \
+         action: restart\n          on: always\n",
+    );
+    let dir = scratch("validate-on", &odd);
+    let out = meridian(&dir, &["validate", "site.yaml"]);
+    assert_eq!(out.status.code(), Some(1));
+    assert!(
+        stderr(&out).contains("spec.resources[1].notifies[0].on: unknown event \"always\""),
+        "{}",
+        stderr(&out)
+    );
+    fs::write(
+        dir.join("site.yaml"),
+        odd.replace("on: always", "on: changed"),
+    )
+    .unwrap();
+    let out = meridian(&dir, &["validate", "site.yaml"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+}
+
+const LABELLED: &str = r#"apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+  labels:
+    tier: web
+spec:
+  target: fake
+  targetHost: {from: inline, host: web01}
+  resources:
+    - id: motd
+      type: file
+      params: {content: web}
+    - id: debug
+      type: file
+      when: "data.env != 'prod'"
+      params: {content: on}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: db
+  labels:
+    tier: db
+spec:
+  target: fake
+  targetHost: {from: inline, host: db01}
+  resources:
+    - id: motd
+      type: file
+      params: {content: db}
+"#;
+
+#[test]
+fn a_selector_runs_only_the_documents_whose_labels_match() {
+    let dir = scratch("selector", LABELLED);
+    fs::write(dir.join("prod.yaml"), "env: prod\n").unwrap();
+    let compile = |args: &[&str]| {
+        let mut all = vec!["compile", "site.yaml", "--data", "prod.yaml"];
+        all.extend_from_slice(args);
+        meridian(&dir, &all)
+    };
+
+    let both = compile(&[]);
+    assert!(both.status.success(), "{}", stderr(&both));
+    let text = stdout(&both);
+    assert!(
+        text.contains("web (ResourceSet") && text.contains("db (ResourceSet"),
+        "{text}"
+    );
+
+    for flags in [
+        &["-l", "tier=db"][..],
+        &["--selector", "tier!=web"],
+        &["-l", "tier", "-l", "tier=db"],
+    ] {
+        let only = compile(flags);
+        assert!(only.status.success(), "{}", stderr(&only));
+        let text = stdout(&only);
+        assert!(
+            text.starts_with("db (ResourceSet, target fake on db01)\n"),
+            "{text}"
+        );
+        assert!(!text.contains("web ("), "{text}");
+    }
+
+    // Selecting nothing is said out loud, not reported as a success.
+    let none = compile(&["-l", "tier=cache"]);
+    assert_eq!(none.status.code(), Some(1));
+    assert_eq!(
+        stderr(&none),
+        "error: no document's labels match the selector tier=cache\n"
+    );
+    let bad = compile(&["-l", "=web"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(
+        stderr(&bad).contains("has no usable label name"),
+        "{}",
+        stderr(&bad)
+    );
+}
+
+#[test]
+fn a_when_is_decided_from_the_data_files_before_anything_is_compiled() {
+    let dir = scratch("when", LABELLED);
+    fs::write(dir.join("base.yaml"), "env: dev\n").unwrap();
+    fs::write(dir.join("prod.json"), "{\"env\": \"prod\"}").unwrap();
+    let files = |args: &[&str]| {
+        let mut all = vec!["compile", "site.yaml", "-l", "tier=web", "--out", "build"];
+        all.extend_from_slice(args);
+        let out = meridian(&dir, &all);
+        let _ = fs::remove_dir_all(dir.join("build-seen"));
+        if dir.join("build").exists() {
+            fs::rename(dir.join("build"), dir.join("build-seen")).unwrap();
+        }
+        out
+    };
+    let compiled = |name: &str| dir.join("build-seen/web/files").join(name).exists();
+
+    // In dev the debug file is part of the output.
+    let dev = files(&["--data", "base.yaml"]);
+    assert!(dev.status.success(), "{}", stderr(&dev));
+    assert!(compiled("motd") && compiled("debug"), "{}", stdout(&dev));
+
+    // A later data file replaces an earlier one's key, and in prod the
+    // resource is simply not there.
+    let prod = files(&["--data", "base.yaml", "--data", "prod.json"]);
+    assert!(prod.status.success(), "{}", stderr(&prod));
+    assert!(compiled("motd") && !compiled("debug"), "{}", stdout(&prod));
+
+    // With no data the condition cannot be decided, and nothing is guessed.
+    let none = files(&[]);
+    assert_eq!(none.status.code(), Some(1));
+    assert!(
+        stdout(&none).contains(
+            "FAILED: site.yaml:14:7: spec.resources[1].when: resource \"debug\": data.env is \
+             not set"
+        ),
+        "{}",
+        stdout(&none)
+    );
+
+    // A data file that is not a mapping is refused by name.
+    fs::write(dir.join("list.yaml"), "- a\n- b\n").unwrap();
+    let bad = files(&["--data", "list.yaml"]);
+    assert_eq!(bad.status.code(), Some(1));
+    assert_eq!(
+        stderr(&bad),
+        "error: the data file list.yaml must hold a mapping of names to values, and it holds \
+         a list\n"
+    );
+    let gone = files(&["--data", "absent.yaml"]);
+    assert_eq!(gone.status.code(), Some(1));
+    assert!(stderr(&gone).starts_with("error: reading the data file absent.yaml: "));
+}
+
+#[test]
+fn a_target_version_the_target_does_not_compile_for_is_refused() {
+    let versioned = |version: &str| {
+        LABELLED.replacen(
+            "  target: fake\n",
+            &format!("  target: fake\n  targetVersion: \"{version}\"\n"),
+            1,
+        )
+    };
+    let dir = scratch("target-version", &versioned("2.4.1"));
+    fs::write(dir.join("data.yaml"), "env: prod\n").unwrap();
+    let args = ["compile", "site.yaml", "--data", "data.yaml"];
+    let ok = meridian(&dir, &args);
+    assert!(ok.status.success(), "{}{}", stdout(&ok), stderr(&ok));
+
+    fs::write(dir.join("site.yaml"), versioned("9")).unwrap();
+    let bad = meridian(&dir, &args);
+    assert_eq!(bad.status.code(), Some(1));
+    assert!(
+        stdout(&bad).contains(
+            "FAILED: the document asks for targetVersion \"9\", and target \"fake\" compiles \
+             for: 1, 2.4"
+        ),
+        "{}",
+        stdout(&bad)
     );
 }

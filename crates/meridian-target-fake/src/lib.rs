@@ -42,8 +42,15 @@ impl Emitter for Fake {
         }
     }
 
+    // The fake stands in for a provisioning tool in one stage of a test and
+    // for a configuration tool in the next. Containerization is the one
+    // category that takes both kinds of document, so that is what it states.
     fn category(&self) -> Category {
-        Category::ConfigurationManagement
+        Category::Containerization
+    }
+
+    fn target_versions(&self) -> Vec<String> {
+        vec!["1".to_owned(), "2.4".to_owned()]
     }
 
     fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, CompileError> {

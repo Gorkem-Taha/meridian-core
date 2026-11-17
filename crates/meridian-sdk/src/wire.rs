@@ -43,6 +43,7 @@ pub fn graph_to_wire(g: &ResourceGraph) -> pb::ResourceGraph {
         name: g.name.clone(),
         host: g.host.clone(),
         target: g.target.clone(),
+        target_version: g.target_version.clone(),
         resources: g
             .resources
             .iter()
@@ -92,6 +93,7 @@ pub fn graph_from_wire(g: pb::ResourceGraph) -> Result<ResourceGraph, String> {
         name: g.name,
         host: g.host,
         target: g.target,
+        target_version: g.target_version,
         outputs: g
             .outputs
             .into_iter()

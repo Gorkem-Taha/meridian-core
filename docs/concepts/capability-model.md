@@ -21,9 +21,27 @@ Every plugin states a few facts about its tool:
 - whether it can check a condition on the node at the moment of apply
   (`runtimeWhen`)
 - whether it can plan, apply, and report outputs
+- its category: infrastructure as code, configuration management,
+  containerization or container orchestration
+- the versions of its tool it compiles for, if that matters for the tool
 
 `meridian plugins` prints them, and the
 [capability matrix](../reference/capability-matrix.md) is generated from them.
+
+The last two are checked by Meridian itself, before the plugin sees a document.
+The category decides which kind of document the plugin is handed: a ResourceSet
+aimed at a tool that provisions, or an Infrastructure document aimed at a tool
+that configures one machine, is refused
+([the pairing](../reference/dsl/index.md#the-document)). The versions decide
+which [`targetVersion`](../reference/dsl/index.md#targetversion) a document may
+ask for; a plugin that declares none is never asked for one. A plugin author
+states them by implementing `category()` and `target_versions()` on the SDK's
+`Emitter`.
+
+The same rule covers the fields of the language that belong to Meridian and not
+to a tool. `metadata.labels`, `when`, `ifMissing` and a notify's `on` each do
+what the [language reference](../reference/dsl/index.md) says on every target,
+or the document is refused. No field is read and then ignored.
 
 ## What happens when a document asks for more
 

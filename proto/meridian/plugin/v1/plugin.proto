@@ -97,6 +97,11 @@ message ResourceGraph {
   repeated Edge edges = 5;
   // outputs is what the document promises to later stages.
   repeated OutputDeclaration outputs = 6;
+  // target_version is the document's spec.targetVersion: the version of the
+  // tool the author wants the document compiled for. It is empty when the
+  // document does not ask for one. The host has already checked it against
+  // the versions the plugin declares in Describe.
+  string target_version = 7;
 }
 
 // Capabilities is a target's honest declaration of what it can express. It is
@@ -177,6 +182,14 @@ message DescribeResponse {
   Capabilities capabilities = 5;
   Category category = 6;
   Operations operations = 7;
+  // target_versions lists the versions of its tool the plugin compiles for,
+  // such as "3" or "1.9". A document's spec.targetVersion must be one of
+  // them, or a more specific version under one of them ("3.1" under "3"). A
+  // plugin that lists none does not say, and the host then refuses a document
+  // that asks for a version rather than pretend to honour it. A plugin built
+  // before this field existed reports none, so the protocol version did not
+  // change.
+  repeated string target_versions = 8;
 }
 
 message EmitRequest {

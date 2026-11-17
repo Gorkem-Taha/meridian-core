@@ -516,6 +516,9 @@ write_files:
       export APP_HOME=${HOME}/app
 ```
 
+Without the second `$` that document is refused, because `HOME` is not a
+resource in it. Nothing is written out unresolved.
+
 The one value this target takes from another document is its host. Write
 `targetHost` with `from: infrastructure` and the host is the named output of an
 Infrastructure document that ran earlier in the same workflow. See

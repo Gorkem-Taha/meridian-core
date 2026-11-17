@@ -33,6 +33,16 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Configuration, CompileE
         instances: Vec::new(),
     };
     let mut runner_seen = false;
+    // The generation of DSC the document asked for, as the engine that runs
+    // it. The host only hands over a version this target declared.
+    let asked = match graph.target_version.split('.').next() {
+        Some("2") => Some("DscV2"),
+        Some("3") => Some("DscV3"),
+        _ => None,
+    };
+    if let Some(engine) = asked {
+        configuration.settings.engine = engine.to_owned();
+    }
 
     let ids: Vec<&str> = graph
         .resources
@@ -53,6 +63,19 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Configuration, CompileE
             }
             runner_seen = true;
             read_settings(r, &mut configuration.settings)?;
+            if let Some(engine) = asked {
+                if configuration.settings.engine != engine {
+                    return Err(refuse(
+                        r,
+                        "conflicting-engine",
+                        format!(
+                            "the document's targetVersion {:?} means the engine {engine}, and \
+                             the runner asks for {}. Say it once: drop one of the two",
+                            graph.target_version, configuration.settings.engine
+                        ),
+                    ));
+                }
+            }
             continue;
         }
         if !is_dsc_type(&r.r#type) {
@@ -137,6 +160,7 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Configuration, CompileE
 }
 
 fn read_settings(r: &Resource, settings: &mut Settings) -> Result<(), CompileError> {
+    // A runner that does not name an engine leaves the one already chosen.
     for (name, value) in &r.params {
         let Value::String(text) = value else {
             return Err(refuse(

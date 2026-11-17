@@ -4,8 +4,8 @@
 
 This is the reference for everything a Meridian document can say: every field,
 what it must hold, and what happens when it does not. It describes what the
-`meridian` command accepts today. Where a field is read but not acted on yet,
-this page says so.
+`meridian` command accepts today. Every field on this page does something: a
+field Meridian cannot honour for a document is refused, not ignored.
 
 The language has one core and four **flavours**. The core is the same for every
 tool: the document, its resources, how they are ordered, how they refer to each
@@ -66,7 +66,6 @@ flowchart TD
 - [`outputs`](#outputs)
 - [Workflows: several documents](#workflows-several-documents)
 - [Which check happens when](#which-check-happens-when)
-- [Fields that are read but not used yet](#fields-that-are-read-but-not-used-yet)
 
 ## Files
 
@@ -128,23 +127,38 @@ how a machine that exists is configured, and names that machine with
 
 Which kind goes with which segment:
 
-| Segment | Kind |
-|---|---|
-| Configuration management | `ResourceSet` |
-| Infrastructure as code, containerization, container orchestration | `Infrastructure` |
+| Segment | `Infrastructure` | `ResourceSet` |
+|---|---|---|
+| Infrastructure as code | yes | refused |
+| Container orchestration | yes | refused |
+| Containerization | yes | yes: the project runs on the daemon of the host the document names |
+| Configuration management | refused | yes |
 
-Meridian does not enforce this pairing today: the kind decides which fields
-`spec` may hold and when the document runs, and the target decides everything
-else. A configuration management target given an Infrastructure document fails
-because it has no host; an Infrastructure target given a ResourceSet compiles,
-but cannot declare outputs. Write the pairing in the table.
+Meridian enforces this pairing. Every plugin declares the segment it belongs to
+(`meridian plugins` shows it as the plugin's category), and a document of a kind
+that segment does not take is refused when it is compiled, before the plugin
+sees it:
+
+```
+this is a ResourceSet document, and its target is an infrastructure-as-code
+tool: it creates what should exist and is not pointed at one machine, so it
+takes kind: Infrastructure, without a targetHost
+```
+
+A tool that provisions has no machine to be pointed at, and a tool that
+configures one machine has nothing to provision. Before this check, the wrong
+pairing compiled into something that meant less than the document said. A
+plugin built before categories existed declares none, and takes either kind.
+
+The check needs the plugin, so `compile`, `plan` and `apply` make it and
+`validate` does not.
 
 ## `metadata`
 
 | Field | Required | Value |
 |---|---|---|
 | `name` | yes | the document's name. It must be unique among the documents of the same kind given to one command. Other documents refer to it (`targetHost.ref`), compiled files are written under it, and state is kept under it |
-| `labels` | no | a mapping of text to text. Read and checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+| `labels` | no | a mapping of text to text, for choosing which documents a command runs. See [labels and selectors](#labels-and-selectors) |
 
 Some targets build a name in their own files from `metadata.name`, and are
 stricter about it than Meridian is. Puppet and Chef, for example, need
@@ -152,12 +166,51 @@ lower-case letters, digits and underscores, because the name becomes a class or
 cookbook name. A name a target cannot use is refused when the document is
 compiled, not rewritten.
 
+### Labels and selectors
+
+```yaml
+metadata:
+  name: web
+  labels:
+    tier: web
+    env: prod
+```
+
+Labels mean nothing to Meridian on their own, and they are not passed to the
+tool. They exist so that one command can run part of a workflow.
+`compile`, `plan` and `apply` take `-l` (or `--selector`):
+
+```
+meridian apply site.yaml -l tier=web
+meridian plan  site.yaml -l env=prod,tier!=db
+```
+
+| Requirement | Selects a document whose labels |
+|---|---|
+| `key=value` (also `key==value`) | set `key` to exactly `value` |
+| `key!=value` | do not set `key` to `value`. A document without the label is selected |
+| `key` | set `key`, to anything |
+| `!key` | do not set `key` |
+
+Requirements separated by commas must all hold, and so must the requirements of
+every `-l` given. Rules:
+
+- A document that is not selected does not run, and is not reported.
+- It is still loaded and checked, and it can still be referred to. A selected
+  ResourceSet whose `targetHost` names an unselected Infrastructure document
+  finds its host from that document's last apply, and is deferred if there has
+  not been one.
+- A selector that selects nothing is an error, `no document's labels match the
+  selector tier=cache`, not a run that did nothing and reported success.
+- A malformed selector (`=web`, an empty requirement) is an error.
+- `validate` takes no selector: it always checks every document.
+
 ## `spec` of an Infrastructure document
 
 | Field | Required | Value |
 |---|---|---|
 | `target` | yes | the name of the plugin that compiles and runs the document, such as `terraform`. `meridian plugins` lists what is installed |
-| `targetVersion` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet) |
+| `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
 | `resources` | yes | a list of at least one [resource](#resources) |
 | `outputs` | no | a list of [outputs](#outputs) |
 
@@ -168,11 +221,53 @@ compiled, not rewritten.
 | Field | Required | Value |
 |---|---|---|
 | `target` | yes | the plugin, such as `ansible` |
-| `targetVersion` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet) |
+| `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
 | `targetHost` | yes, to compile | the machine. See [`targetHost`](#targethost) |
 | `resources` | yes | a list of at least one [resource](#resources) |
 
 `outputs` is not a field of a ResourceSet.
+
+## `targetVersion`
+
+```yaml
+spec:
+  target: dsc
+  targetVersion: "3"
+```
+
+Some tools changed so much between versions that the same document has to be
+compiled differently. `targetVersion` says which version the document is written
+for. Quote it: an unquoted `3.0` is still read as the text `3.0`, but quoting
+keeps `1.10` from ever being taken for `1.1`.
+
+A plugin declares the versions it compiles for, and `meridian plugins` lists
+them on its `versions:` line. The rules:
+
+- The version must be one the plugin declares, or a more specific version under
+  one of them. A plugin that declares `3` takes `3`, `3.0` and `3.1.4`. Versions
+  are compared part by part: `30` is not under `3`, and `1.10` is not under
+  `1.1`.
+- The document may be more specific than the plugin, not less: a plugin that
+  declares `3.1` does not take `3`.
+- A version the plugin does not compile for is refused:
+  `the document asks for targetVersion "4", and target "dsc" compiles for: 2, 3`.
+- A plugin that declares no versions cannot honour the field, so a document
+  that sets it is refused: `target "terraform" does not say which versions of
+  its tool it compiles for, so the request cannot be honoured; remove
+  targetVersion`. Accepting a version nothing checks would be a silent loss.
+- The version is handed to the plugin, which may compile differently for it.
+  What it changes is on the target's page.
+- A document with no `targetVersion` is compiled the plugin's default way.
+
+Which targets declare versions today:
+
+| Target | Versions | What the version changes |
+|---|---|---|
+| `dsc` | `2`, `3` | the engine that evaluates the resources: [DSC](../../targets/dsc.md#the-version-of-dsc) |
+| every other target | none | `targetVersion` is refused |
+
+The check needs the plugin, so `compile`, `plan` and `apply` make it and
+`validate` does not.
 
 ## `targetHost`
 
@@ -233,7 +328,7 @@ compiled: `document "web" declares no targetHost`.
 | `params` | no | a mapping: the type's settings. Free-form as far as the core is concerned; the target checks it |
 | `dependsOn` | no | a list. See [`dependsOn`](#dependson) |
 | `notifies` | no | a list. See [`notifies`](#notifies) |
-| `when` | no | text. Not available yet. See [`when` and `runtimeWhen`](#when-and-runtimewhen) |
+| `when` | no | text: a condition Meridian decides before compiling. A resource whose condition is false is left out. See [`when` and `runtimeWhen`](#when-and-runtimewhen) |
 | `runtimeWhen` | no | text, in the tool's own language. Only on targets that can check a condition while applying |
 
 In depth: [resources](resources.md).
@@ -260,7 +355,7 @@ nothing else. In depth, with the sort worked through: [`dependsOn`](dependson.md
 | Field | Required | Value |
 |---|---|---|
 | `resource` | yes | the `id` of another resource in the same document |
-| `ifMissing` | no | `error` (the default) or `skip`. Checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+| `ifMissing` | no | `error` (the default) or `skip`: what happens when a [`when`](#when-and-runtimewhen) removed the resource this entry names. See [`ifMissing`](#ifmissing) |
 
 Rules:
 
@@ -268,7 +363,12 @@ Rules:
   resource "b"`.
 - A resource cannot depend on itself.
 - The dependencies of a document must not form a cycle. A cycle is reported with
-  the resources in it: `dependency cycle among 2 resources: a -> b -> a`.
+  the resources in it, in the order they would have to be applied:
+  `dependency cycle among 2 resources: a -> b -> a`. `meridian validate` finds
+  it, and so does every other command. Every resource counts, whatever its
+  `when` says: an order that only works while one condition happens to be false
+  is still a mistake. Only `dependsOn` can form a cycle; two resources that
+  notify each other are fine.
 - A dependency cannot point into another document. Documents are ordered by
   [kind](#workflows-several-documents), and connected only by outputs.
 
@@ -292,12 +392,18 @@ the sort that `dependsOn` drives. In depth: [`notifies`](notifies.md).
 |---|---|---|
 | `resource` | yes | the `id` of another resource in the same document |
 | `action` | yes | what to do to it. The words a target accepts depend on the tool and on the type of the notified resource |
-| `on` | no | text. [Not used yet](#fields-that-are-read-but-not-used-yet); a notify always fires on a change |
-| `ifMissing` | no | `error` (the default) or `skip`. Checked, [not used yet](#fields-that-are-read-but-not-used-yet) |
+| `on` | no | `changed`, which is also what leaving it out means |
+| `ifMissing` | no | `error` (the default) or `skip`: what happens when a [`when`](#when-and-runtimewhen) removed the notified resource. See [`ifMissing`](#ifmissing) |
 
 Rules:
 
 - The resource must exist in the document, and cannot be the notifier itself.
+- `on` names the event that fires the notify. There is one: `changed`, the
+  notifier really changed. Every tool's mechanism (an Ansible handler, a Puppet
+  refresh, a Chef notification) fires on a change and on nothing else, so any
+  other value is refused when the document is validated: `unknown event
+  "always" (expected "changed", ...)`. Write `on: changed` to say it out loud,
+  or leave it out.
 - A target accepts only the actions its tool can really perform. `reload` aimed
   at a service is refused on Puppet, which can only restart on refresh; it is
   not turned into a restart.
@@ -317,14 +423,98 @@ through as written. Only some configuration management targets have such a
 moment; every other target refuses a resource that carries one. See
 [configuration management](configuration-management.md#runtimewhen).
 
-**`when`** is meant to be decided by Meridian before anything is compiled, from
-facts gathered about the node, so that a resource is either in the compiled
-output or not. That stage is not wired into the command yet. A document that
-uses `when` passes `validate` and is refused by `compile`, `plan` and `apply`:
+**`when`** is decided by Meridian before anything is compiled, so a resource is
+either in the compiled output or it is not, and no target ever sees a
+condition. It works on every target.
+
+```yaml
+- id: debug_log
+  type: file
+  when: "data.env != 'prod'"
+  params:
+    path: /var/log/app/debug.log
+```
+
+### What a `when` can say
+
+A condition reads the values given to the command with `--data` and compares
+them. Quote the whole condition in YAML, because `!` and `'` mean something to
+YAML at the start of a value.
+
+| You write | Meaning |
+|---|---|
+| `data.env`, `data.region.name` | a value from the data files: a key, then keys inside mappings |
+| `true`, `false`, `null` | themselves |
+| `3`, `-1`, `1.5` | numbers. `3` and `3.0` are equal |
+| `'prod'`, `"prod"` | text. `\'` and `\"` put a quote inside |
+| `a == b`, `a != b` | whether two values are the same |
+| `!a` | not |
+| `a && b`, `a \|\| b` | and, or. `&&` binds tighter than `\|\|`; the right side is only read when the left leaves the answer open |
+| `( ... )` | grouping |
+| `defined(data.key)` | whether the data sets that key |
+
+Rules:
+
+- A condition must come out as `true` or `false`. Text, a number or `null` is
+  not a yes or a no: `data.env is a string, not true or false; compare it with
+  == or !=`.
+- A key the data does not set is an error, not a "no": `data.env is not set
+  (give it with --data, or test for it with defined(data.env))`. Guard an
+  optional key with `defined(data.x) && data.x == 'y'`.
+- There is no `<`, `>`, arithmetic or function other than `defined`. A condition
+  that needs more than this belongs in the data: compute the answer where the
+  data is produced and give it as a boolean.
+- `facts.*` is refused: Meridian does not gather facts from a node yet, so a
+  condition cannot depend on the node. To decide on the node while applying,
+  use `runtimeWhen` on a target that supports it.
+- The condition's syntax is checked by `meridian validate`. Its answer needs the
+  data, so it is decided by `compile`, `plan` and `apply`.
+
+### Giving the data
 
 ```
-resource "a" still carries an unevaluated `when` expression
+meridian apply site.yaml --data common.yaml --data prod.yaml
 ```
+
+A data file is YAML or JSON holding one mapping of names to values. `--data` may
+be given more than once; a key in a later file replaces the same key from an
+earlier file, whole (mappings are not merged). The same data is also handed to
+every plugin when it compiles.
+
+### What removing a resource does
+
+A resource whose `when` is false is not in the compiled output, and neither are
+its own `dependsOn` and `notifies`. What matters is the entries of *other*
+resources that name it.
+
+### `ifMissing`
+
+```yaml
+- id: app_conf
+  type: file
+  dependsOn:
+    - resource: legacy_dir
+      ifMissing: skip
+```
+
+| Value | When the named resource was removed by its `when` |
+|---|---|
+| `error` (the default) | the document is refused: `resource "app_conf" depends on "legacy_dir", which its when removed from this run; set ifMissing: skip on this entry if the resource should carry on without it` |
+| `skip` | the entry is dropped and the resource carries on without it |
+
+It is the same on `dependsOn` and on `notifies`. The default is `error` because
+a resource depending on something that is not there is far more often a mistake
+than an intention. Any other value is refused when the document is validated.
+`ifMissing` has no effect on an entry whose resource is present, and it never
+excuses an entry that names a resource the document does not declare at all.
+
+Two more consequences of removing a resource:
+
+- An output, or a `${...}` reference, that reads a removed resource is refused
+  by the target as a reference to a resource that is not there.
+- If every resource is removed, the document compiles to nothing, and applying
+  it tells the tool that nothing should exist. On a tool that deletes what is no
+  longer declared, that is a deletion.
 
 ## References
 
@@ -430,10 +620,17 @@ and [`examples/workflow/`](../../../examples/workflow) holds its files.
 | At least one resource; every resource has an `id` and a `type`; ids are unique | yes | yes |
 | `dependsOn` and `notifies` name a resource of the document, and not their own | yes | yes |
 | Document names are unique within a kind; output names are unique | yes | yes |
+| The dependencies form no cycle | yes | yes |
+| A notify's `on` is `changed`; an `ifMissing` is `error` or `skip` | yes | yes |
+| A `when` is written in the condition language | yes | yes |
 | `targetHost` is complete, and names a real document and output | yes | yes |
 | A plugin for `target` is installed | no | yes |
 | A ResourceSet has a `targetHost` | no | yes |
-| The dependencies form no cycle | no | yes |
+| The document's kind is one the target's segment takes | no | yes |
+| The target compiles for the `targetVersion` | no | yes |
+| Every `when` has an answer, from the `--data` files | no | yes |
+| An entry naming a resource its `when` removed says `ifMissing: skip` | no | yes |
+| The selector, if one is given, selects at least one document | no | yes |
 | The target takes the `type`, the `state`, every param, the notify's action, `runtimeWhen` | no | yes |
 | Every `${...}` points at something | no | yes |
 
@@ -448,16 +645,3 @@ Every error names the file, the line and column, and the field:
 ```
 web.yaml:12:19: spec.resources[0].dependsOn[0].resource: resource "a" depends on unknown resource "s2"
 ```
-
-## Fields that are read but not used yet
-
-These are part of the language, so a document may carry them and their shape is
-checked. Nothing acts on them today, and a document must not rely on them.
-
-| Field | What is checked | What it is for |
-|---|---|---|
-| `metadata.labels` | a mapping of text to text | selecting and grouping documents |
-| `spec.targetVersion` | text | choosing between versions of a tool |
-| `resources[].when` | text; then refused at compile | a condition decided before compiling, from gathered facts |
-| `dependsOn[].ifMissing`, `notifies[].ifMissing` | `error` or `skip` | what to do with an edge whose other end `when` removed |
-| `notifies[].on` | text | which kind of change fires the notify |

@@ -6,6 +6,12 @@
 //! one use what an earlier one produced: every Infrastructure document first,
 //! then every ResourceSet, each group in the order it was written.
 //!
+//! Before a document reaches its plugin the orchestrator settles everything
+//! that is the core's to settle: whether the document's labels select it for
+//! this run, whether its kind is one the target's category takes, whether the
+//! target compiles for the version the document asks for, and which resources
+//! their `when` conditions leave in.
+//!
 //! The orchestrator knows nothing about any tool. It routes on what a plugin
 //! declares, hands it an artifact and a directory, and reads back changes and
 //! outputs. Everything tool-shaped happens behind the plugin boundary.
@@ -13,6 +19,7 @@
 //! A run stops at the first stage that fails. Stages after it are reported as
 //! not run, never attempted against infrastructure in an unknown state.
 
+mod select;
 mod state;
 
 use std::collections::BTreeMap;
@@ -22,8 +29,11 @@ use std::path::{Path, PathBuf};
 use meridian_ast::ResourceGraph;
 use meridian_ir::{Bundle, Document, Infrastructure, ResourceSet, TARGET_HOST_FROM_INFRASTRUCTURE};
 use meridian_plugin_host::{to_sdk, EmitError, Registry, RunFailure};
-use meridian_sdk::{Artifact, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning};
+use meridian_sdk::{
+    Artifact, Category, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning,
+};
 
+pub use select::Selector;
 pub use state::{artifact_hash, RunState, StageRecord};
 
 /// How far a run goes.
@@ -143,7 +153,8 @@ pub struct Options {
     /// The directory holding each stage's work directory and the run-state
     /// file. It is created if it does not exist.
     pub state_dir: PathBuf,
-    /// Resolved hierarchy data, handed to every target when it compiles.
+    /// The data `when` conditions are decided against, also handed to every
+    /// target when it compiles.
     pub data: Data,
 }
 
@@ -162,6 +173,22 @@ pub fn run(
     options: &Options,
     observer: &mut dyn Observer,
 ) -> RunReport {
+    run_selected(bundle, registry, mode, options, &Selector::all(), observer)
+}
+
+/// [`run`], for only the documents whose labels `selector` matches.
+///
+/// A document the selector leaves out is not a stage, but it stays loaded: a
+/// selected ResourceSet can still name it as the source of its target host,
+/// and finds that host from what the document's last apply left behind.
+pub fn run_selected(
+    bundle: &Bundle,
+    registry: &Registry,
+    mode: Mode,
+    options: &Options,
+    selector: &Selector,
+    observer: &mut dyn Observer,
+) -> RunReport {
     let mut run = Run {
         bundle,
         registry,
@@ -174,7 +201,7 @@ pub fn run(
     let mut report = RunReport::default();
     let mut failed: Option<StageId> = None;
 
-    for stage in stages(bundle) {
+    for stage in stages(bundle, selector) {
         let id = stage.id();
         let target = stage.target().to_owned();
         if let Some(because_of) = &failed {
@@ -230,20 +257,92 @@ impl Stage<'_> {
             Stage::ResourceSet(d) => &d.spec.target,
         }
     }
+
+    fn target_version(&self) -> &str {
+        match self {
+            Stage::Infrastructure(d) => &d.spec.target_version,
+            Stage::ResourceSet(d) => &d.spec.target_version,
+        }
+    }
+}
+
+/// How many documents of `bundle` a selector picks. A run that picks none
+/// does nothing, which a caller will usually want to say out loud.
+pub fn selected(bundle: &Bundle, selector: &Selector) -> usize {
+    stages(bundle, selector).len()
+}
+
+/// Whether a document of this kind can be aimed at a target of this
+/// category, and if not, why.
+///
+/// The two kinds answer different questions. An Infrastructure document says
+/// what should exist; a ResourceSet says how a machine that exists is
+/// configured. A tool that provisions has no machine to be pointed at, and a
+/// tool that configures one machine has nothing to provision, so the wrong
+/// pairing is refused before the plugin sees it instead of compiling into
+/// something that quietly means less than the document says.
+///
+/// Containerization takes both: a container project either stands on its
+/// own (Infrastructure) or runs on the daemon of a host the document names
+/// (ResourceSet). A plugin that does not state a category was built before
+/// categories existed, and is not second-guessed.
+pub fn kind_fits(kind: StageKind, category: Category) -> Result<(), String> {
+    let wants = match (kind, category) {
+        (StageKind::ResourceSet, Category::InfrastructureAsCode)
+        | (StageKind::ResourceSet, Category::ContainerOrchestration) => StageKind::Infrastructure,
+        (StageKind::Infrastructure, Category::ConfigurationManagement) => StageKind::ResourceSet,
+        _ => return Ok(()),
+    };
+    let why = match wants {
+        StageKind::Infrastructure => {
+            "it creates what should exist and is not pointed at one machine, so it takes \
+             kind: Infrastructure, without a targetHost"
+        }
+        StageKind::ResourceSet => {
+            "it configures a machine that already exists, so it takes kind: ResourceSet, \
+             with a targetHost"
+        }
+    };
+    let (document, tool) = match kind {
+        StageKind::ResourceSet => ("a ResourceSet", "an infrastructure-as-code"),
+        StageKind::Infrastructure => ("an Infrastructure", "a configuration-management"),
+    };
+    let tool = match category {
+        Category::ContainerOrchestration => "a container-orchestration",
+        _ => tool,
+    };
+    Err(format!(
+        "this is {document} document, and its target is {tool} tool: {why}"
+    ))
+}
+
+/// Whether `asked`, a document's `targetVersion`, is one of the versions a
+/// target declares or a more specific version under one of them: `3.1` is
+/// under `3`, and `1.10` is not under `1.1`.
+pub fn version_fits(asked: &str, declared: &[String]) -> bool {
+    declared.iter().any(|have| {
+        asked == have
+            || asked
+                .strip_prefix(have.as_str())
+                .is_some_and(|rest| rest.starts_with('.'))
+    })
 }
 
 /// Every Infrastructure document, then every ResourceSet, each in the order
 /// written. A ResourceSet can only depend on an Infrastructure document, so
 /// this order satisfies every dependency a workflow can express.
-fn stages(bundle: &Bundle) -> Vec<Stage<'_>> {
+fn stages<'a>(bundle: &'a Bundle, selector: &Selector) -> Vec<Stage<'a>> {
+    let selected = |doc: &&Document| selector.matches(doc.labels());
     let infrastructure = bundle
         .documents
         .iter()
+        .filter(selected)
         .filter_map(Document::as_infrastructure)
         .map(Stage::Infrastructure);
     let resource_sets = bundle
         .documents
         .iter()
+        .filter(selected)
         .filter_map(Document::as_resource_set)
         .map(Stage::ResourceSet);
     infrastructure.chain(resource_sets).collect()
@@ -296,13 +395,61 @@ impl Run<'_> {
             );
         };
 
+        let info = target.info();
+        if let Err(why) = kind_fits(id.kind, info.category) {
+            return fail(report, why);
+        }
+        let asked = stage.target_version();
+        if !asked.is_empty() {
+            if info.target_versions.is_empty() {
+                return fail(
+                    report,
+                    format!(
+                        "the document asks for targetVersion {asked:?}, but target {:?} does \
+                         not say which versions of its tool it compiles for, so the request \
+                         cannot be honoured; remove targetVersion",
+                        stage.target()
+                    ),
+                );
+            }
+            if !version_fits(asked, &info.target_versions) {
+                return fail(
+                    report,
+                    format!(
+                        "the document asks for targetVersion {asked:?}, and target {:?} \
+                         compiles for: {}",
+                        stage.target(),
+                        info.target_versions.join(", ")
+                    ),
+                );
+            }
+        }
+
+        // Decide every `when`, so the tree holds only what will be applied.
+        let pruned = |resources: &[meridian_ir::Resource]| {
+            meridian_ir::prune(resources, &self.options.data).map_err(|e| e.to_string())
+        };
+
         // Resolve what the stage needs from earlier ones, then build its tree.
         let (graph, inputs) = match stage {
-            Stage::Infrastructure(doc) => match ResourceGraph::build_infrastructure(doc) {
-                Ok(graph) => (graph, Data::new()),
-                Err(e) => return fail(report, e.to_string()),
-            },
+            Stage::Infrastructure(doc) => {
+                let mut doc = doc.clone();
+                doc.spec.resources = match pruned(&doc.spec.resources) {
+                    Ok(resources) => resources,
+                    Err(why) => return fail(report, why),
+                };
+                match ResourceGraph::build_infrastructure(&doc) {
+                    Ok(graph) => (graph, Data::new()),
+                    Err(e) => return fail(report, e.to_string()),
+                }
+            }
             Stage::ResourceSet(doc) => {
+                let mut doc = doc.clone();
+                doc.spec.resources = match pruned(&doc.spec.resources) {
+                    Ok(resources) => resources,
+                    Err(why) => return fail(report, why),
+                };
+                let doc = &doc;
                 let (host, inputs) = match self.host_of(doc) {
                     Ok(found) => found,
                     Err(Halt::Failed(why)) => return fail(report, why),

@@ -13,6 +13,10 @@ pub const TARGET_HOST_FROM_INFRASTRUCTURE: &str = "infrastructure";
 /// `targetHost.from` value that names an already-existing node directly.
 pub const TARGET_HOST_FROM_INLINE: &str = "inline";
 
+/// The only event a notify can fire on: the notifying resource really
+/// changed. It is also what a notify with no `on` means.
+pub const NOTIFY_ON_CHANGED: &str = "changed";
+
 /// The two tiers of the IR: provisioning and host configuration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Kind {
@@ -89,6 +93,9 @@ pub struct Dependency {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Notification {
     pub resource: String,
+    /// The event that fires the notify. Empty means [`NOTIFY_ON_CHANGED`],
+    /// which is also the only value validation accepts: every target's
+    /// notification mechanism fires on a change and on nothing else.
     pub on: String,
     pub action: String,
     pub if_missing: IfMissing,
@@ -203,6 +210,22 @@ impl Document {
         match self {
             Document::Infrastructure(d) => &d.metadata.name,
             Document::ResourceSet(d) => &d.metadata.name,
+        }
+    }
+
+    /// `metadata.labels`.
+    pub fn labels(&self) -> &BTreeMap<String, String> {
+        match self {
+            Document::Infrastructure(d) => &d.metadata.labels,
+            Document::ResourceSet(d) => &d.metadata.labels,
+        }
+    }
+
+    /// `spec.targetVersion`; empty when the document does not ask for one.
+    pub fn target_version(&self) -> &str {
+        match self {
+            Document::Infrastructure(d) => &d.spec.target_version,
+            Document::ResourceSet(d) => &d.spec.target_version,
         }
     }
 

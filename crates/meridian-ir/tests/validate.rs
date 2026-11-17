@@ -172,3 +172,131 @@ fn a_bundle_rejects_duplicate_document_names() {
     assert!(err.contains("duplicate ResourceSet document name"), "{err}");
     assert!(err.contains("first declared at bundle.yaml:1:1"), "{err}");
 }
+
+/// A document whose resources are `(id, depends on ...)`.
+fn chain(resources: &[(&str, &[&str])]) -> String {
+    let mut doc = format!("{HEAD}  resources:\n");
+    for (id, deps) in resources {
+        doc.push_str(&format!("    - id: {id}\n      type: package\n"));
+        if !deps.is_empty() {
+            doc.push_str("      dependsOn:\n");
+            for dep in *deps {
+                doc.push_str(&format!("        - resource: {dep}\n"));
+            }
+        }
+    }
+    doc
+}
+
+#[test]
+fn rejects_a_dependency_cycle_and_names_the_resources_in_it() {
+    // Two resources waiting for each other.
+    let err = validate(&parse_one(&chain(&[("a", &["b"]), ("b", &["a"])])))
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        err,
+        "doc.yaml:7:7: spec.resources[0].dependsOn: dependency cycle among 2 resources: a -> b -> a"
+    );
+
+    // A longer loop, with resources outside it left out of the report.
+    let doc = chain(&[
+        ("base", &[]),
+        ("a", &["c", "base"]),
+        ("b", &["a"]),
+        ("c", &["b"]),
+        ("leaf", &["c"]),
+    ]);
+    let err = validate(&parse_one(&doc)).unwrap_err();
+    assert_eq!(err.len(), 1, "one cycle is one diagnostic: {err}");
+    assert!(
+        err.to_string()
+            .ends_with("dependency cycle among 3 resources: a -> b -> c -> a"),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_cycle_is_found_through_the_whole_bundle_check_too() {
+    let docs = parse(
+        "doc.yaml",
+        chain(&[("a", &["b"]), ("b", &["a"])]).as_bytes(),
+    )
+    .unwrap();
+    let err = Bundle::new(docs).validate().unwrap_err().to_string();
+    assert!(err.contains("dependency cycle among 2 resources"), "{err}");
+}
+
+#[test]
+fn accepts_dependencies_that_only_look_like_a_cycle() {
+    // A diamond: two paths to one resource, and no way back.
+    validate(&parse_one(&chain(&[
+        ("top", &[]),
+        ("left", &["top"]),
+        ("right", &["top"]),
+        ("bottom", &["left", "right"]),
+    ])))
+    .unwrap();
+
+    // A notification loop is legal: notify is a trigger, not an order.
+    let doc = format!(
+        "{HEAD}  resources:\n    - id: a\n      type: service\n      notifies:\n        - resource: b\n          action: restart\n    - id: b\n      type: service\n      notifies:\n        - resource: a\n          action: restart\n"
+    );
+    validate(&parse_one(&doc)).unwrap();
+}
+
+#[test]
+fn a_notify_fires_on_a_change_and_on_nothing_else() {
+    let notify = |on: &str| {
+        format!(
+            "{HEAD}  resources:\n    - id: conf\n      type: file\n      notifies:\n        - resource: svc\n          action: restart\n{on}    - id: svc\n      type: service\n"
+        )
+    };
+    validate(&parse_one(&notify(""))).unwrap();
+    validate(&parse_one(&notify("          on: changed\n"))).unwrap();
+
+    let err = validate(&parse_one(&notify("          on: always\n")))
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.starts_with(
+            "doc.yaml:10:11: spec.resources[0].notifies[0].on: unknown event \"always\" (expected \"changed\""
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn a_when_is_read_when_the_document_is_validated() {
+    let when = |condition: &str| {
+        format!("{HEAD}  resources:\n    - id: a\n      type: package\n      when: {condition}\n")
+    };
+    for good in [
+        "data.install",
+        "\"data.env == 'prod' && !data.legacy\"",
+        "\"defined(data.region) || data.count != 3\"",
+    ] {
+        validate(&parse_one(&when(good))).unwrap();
+    }
+    for (bad, want) in [
+        (
+            "\"data.env ==\"",
+            "spec.resources[0].when: the condition ends where a value was expected",
+        ),
+        (
+            "\"facts.os == 'linux'\"",
+            "spec.resources[0].when: facts are not available",
+        ),
+        (
+            "installed",
+            "spec.resources[0].when: unknown name \"installed\"",
+        ),
+        (
+            "\"data.a & data.b\"",
+            "spec.resources[0].when: unexpected \"&\"",
+        ),
+    ] {
+        let err = validate(&parse_one(&when(bad))).unwrap_err().to_string();
+        assert!(err.contains(want), "{bad}: {err}");
+    }
+}

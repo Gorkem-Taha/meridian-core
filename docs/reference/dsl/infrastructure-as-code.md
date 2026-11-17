@@ -7,7 +7,7 @@ they created, and can report facts about the result. This page is how the
 | | |
 |---|---|
 | Category, as `meridian plugins` prints it | `infrastructure-as-code` |
-| Kind of document | `Infrastructure` |
+| Kind of document | `Infrastructure`. A `ResourceSet` is refused: these tools create things, and are not pointed at one machine |
 | `type` and `params` | the tool's own, passed through |
 | Outputs | yes |
 
@@ -18,6 +18,10 @@ they created, and can report facts about the result. This page is how the
 | `terraform` | the Terraform type | `aws_instance` | `provider`, `backend` | [terraform](../../targets/terraform.md) |
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` | `stack` (optional) | [cloudformation](../../targets/cloudformation.md) |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` | `deployment` (required) | [bicep](../../targets/bicep.md) |
+| `opentofu` | the OpenTofu type | `aws_instance` | `provider`, `backend`, `encryption` | [opentofu](../../targets/opentofu.md) |
+| `pulumi` | the Pulumi type token | `aws:ec2:Instance` | `stack`, `config` | [pulumi](../../targets/pulumi.md) |
+| `arm` | the Azure type, with the API version in the `apiVersion` param | `Microsoft.Network/publicIPAddresses` | `deployment`, `parameter` | [arm](../../targets/arm.md) |
+| `packer` | the part of a build and its Packer type | `source.amazon-ebs`, `provisioner.shell` | `variable`, `local`, `plugin` | [packer](../../targets/packer.md) |
 
 ## Native passthrough
 

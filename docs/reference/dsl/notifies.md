@@ -23,8 +23,8 @@ does not carry data (a [reference](references.md)).
 |---|---|---|
 | `resource` | yes | the `id` of the resource to act on, in the same document |
 | `action` | yes | what to do to it. One word, from the list the target accepts for that type of resource |
-| `on` | no | text. [Not acted on yet](index.md#fields-that-are-read-but-not-used-yet): a notify fires on any change |
-| `ifMissing` | no | `error` (the default) or `skip`. Checked for spelling, [not acted on yet](index.md#fields-that-are-read-but-not-used-yet) |
+| `on` | no | `changed`, which is also what leaving it out means. It is the one event a notify can fire on: every tool's mechanism fires when the notifier really changed and on nothing else, so any other value is refused by `validate` (`unknown event "always" (expected "changed", ...)`) |
+| `ifMissing` | no | `error` (the default) or `skip`: what happens when a [`when`](conditions.md#when) removed the notified resource. See [`ifMissing`](conditions.md#ifmissing) |
 
 The resource that carries `notifies` is the **notifier**. The one it names is
 the **notified** resource.

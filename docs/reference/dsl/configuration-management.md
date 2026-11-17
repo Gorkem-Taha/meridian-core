@@ -18,6 +18,8 @@ packages, files and services. This page is how the
 | `ansible` | the six shared types | [ansible](../../targets/ansible.md) |
 | `puppet` | the six shared types | [puppet](../../targets/puppet.md) |
 | `chef` | the six shared types | [chef](../../targets/chef.md) |
+| `salt` | the six shared types | [salt](../../targets/salt.md) |
+| `openvox` | the six shared types, compiled the way `puppet` compiles them | [openvox](../../targets/openvox.md) |
 | `cloud-init` | the six shared types, limited to what a first boot can do | [cloud-init](../../targets/cloud-init.md) |
 | `dsc` | DSC's own resources | [dsc](../../targets/dsc.md) |
 
@@ -26,7 +28,8 @@ which.
 
 ## The shared dialect: six types
 
-`ansible`, `puppet`, `chef` and `cloud-init` take the same six resource types. A
+`ansible`, `puppet`, `openvox`, `chef`, `salt` and `cloud-init` take the same six
+resource types. A
 resource written with them compiles for any of them, so changing `spec.target` is
 all it takes to move a document from one tool to another, within what each tool
 can do. This is the one place where the language is "write once".
@@ -187,5 +190,6 @@ target's page lists the exact commands under "Running".
 - A way to create the machine. That is an Infrastructure document, joined to
   this one through `targetHost` with `from: infrastructure`
   ([two-stage workflow](../../quickstart/first-two-stage.md)).
-- `when`, the condition decided before compiling. It is
-  [not available yet](index.md#when-and-runtimewhen).
+- A `when` that depends on the node. [`when`](index.md#when-and-runtimewhen) is
+  decided from the `--data` files before compiling, on every target; facts
+  about the node are not gathered yet.

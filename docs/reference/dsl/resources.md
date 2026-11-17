@@ -55,7 +55,7 @@ target's segment:
 
 | Segment | `type` is | Reference |
 |---|---|---|
-| Configuration management, shared dialect (`ansible`, `puppet`, `chef`, `cloud-init`) | one of six words: `package`, `file`, `service`, `user`, `group`, `exec` | [flavour](configuration-management.md), [types](../resource-types.md) |
+| Configuration management, shared dialect (`ansible`, `puppet`, `openvox`, `chef`, `salt`, `cloud-init`) | one of six words: `package`, `file`, `service`, `user`, `group`, `exec` | [flavour](configuration-management.md), [types](../resource-types.md) |
 | Configuration management, DSC | `Module/Resource` | [flavour](configuration-management.md#the-native-dialect-dsc) |
 | Infrastructure as code | the tool's own type: `aws_instance`, `AWS::EC2::Instance`, `Microsoft.Network/publicIPAddresses@2023-09-01` | [flavour](infrastructure-as-code.md) |
 | Containerization | an element of the project: `service`, `network`, `volume`, `config`, `secret` | [flavour](containerization.md) |
