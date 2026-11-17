@@ -81,14 +81,18 @@ attribute does not exist, the tool says so when it plans.
 
 | Target | `${id}` | `${id.path}` | Inside longer text | Not a path |
 |---|---|---|---|---|
-| `terraform` | the resource's address | an attribute: `aws_instance.web.public_ip`, or `data.aws_ami.ubuntu.id` for a data source | Terraform interpolation | Terraform's expression language |
+| `terraform`, `opentofu` | the resource's address | an attribute: `aws_instance.web.public_ip`, or `data.aws_ami.ubuntu.id` for a data source | Terraform interpolation | Terraform's expression language |
 | `cloudformation` | `Ref` | `Fn::GetAtt` | `Fn::Sub` | pseudo parameters: `${AWS::Region}` |
 | `bicep` | the symbolic name | a property read | Bicep interpolation | Bicep's expression language: `${resourceGroup().location}` |
+| `arm` | `resourceId(...)` | the resource's `id`, `name`, `type`, `apiVersion`, or a path into its state, read with `reference(...)` | `format(...)` | ARM's own expressions are written in square brackets, not in `${}` |
+| `pulumi` | the resource | a property of the resource | Pulumi YAML interpolation, unchanged | refused: use Pulumi's `fn::` functions |
+| `packer` | | a `variable`, a `local` or a `data.<type>`; in an output, what the manifest records for a source | Packer's template syntax | refused |
 | `docker` | the element's name | in an output only: a published port, or a path into the container's inspection | the name placed in the text | refused |
 | `kubernetes` | the object's name | in a param, only `metadata.name` and `metadata.namespace`; in an output, any path into the live object | the value placed in the text | refused |
+| `helm` | another object's name | `metadata.name` and `metadata.namespace` of an object; `${values.path}`, `${release.name}`, `${chart.version}` from its settings resources; in an output, any path into the live object | a Helm template action placed in the text | refused |
 | `dsc` | | `${id.Property}`: a property the other resource reported | | |
 | `podman` | the unit's name | in an output: a path into `podman inspect` | the name placed in the text | |
-| `ansible`, `puppet`, `chef`, `salt`, `cloud-init` | refused | `${id.param}` only: the value the document gives that param, placed at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
+| `ansible`, `puppet`, `openvox`, `chef`, `salt`, `cloud-init` | refused | `${id.param}` only: the value the document gives that param, placed at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
 
 Each target's page has its own table under "References".
 
@@ -112,7 +116,8 @@ flowchart LR
 
 ## Configuration management: the shared types
 
-`ansible`, `puppet`, `chef`, `salt` and `cloud-init` have nothing to read at
+`ansible`, `puppet`, `openvox`, `chef`, `salt` and `cloud-init` have nothing to
+read at
 apply time:
 a package or a file is only what the document says about it. So on these targets
 a reference is settled when the document is compiled, by the plugin, and the

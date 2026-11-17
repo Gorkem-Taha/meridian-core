@@ -98,16 +98,18 @@ tool can really do to that type of resource.
 | | | `exec` | `run` |
 | `chef` | native | `service` | `restart`, `reload`, `start`, `stop` |
 | | | `exec` | `run` |
-| `puppet` | native | `service` | `restart` (or `refresh`) |
+| `puppet`, `openvox` | native | `service` | `restart` (or `refresh`) |
+| | | `exec` | `run` |
+| `salt` | native | `service` | `restart`, `reload`, `start`, `stop` |
 | | | `exec` | `run` |
 | `dsc` | native | any DSC resource | `refresh` |
 | `cloud-init` | synthetic | `service` | `start`, `stop`, `restart`, `reload` |
 | | | `exec` | `run` |
 | `docker` | native from a service, synthetic from a config, secret, network or volume | `service` | `restart` |
 | `podman` | native | a unit | `restart` |
-| `kubernetes` | synthetic | a Deployment, StatefulSet or DaemonSet | `restart` |
-| `terraform` | synthetic | a managed resource | `replace` |
-| `cloudformation`, `bicep` | refused | | |
+| `kubernetes`, `helm` | synthetic | a Deployment, StatefulSet or DaemonSet | `restart` |
+| `terraform`, `opentofu` | synthetic | a managed resource | `replace` |
+| `cloudformation`, `bicep`, `arm`, `pulumi`, `packer` | refused | | |
 
 **The action is kept, never approximated.** `reload` on Puppet is refused, not
 turned into a restart, because a restart does more than the document asked for:

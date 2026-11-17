@@ -138,7 +138,8 @@ how the tool thinks about order:
 | Target | `dependsOn` becomes |
 |---|---|
 | `ansible`, `chef` | the order of the tasks or recipe. These tools run top to bottom, so resources with no dependency between them still run one after another, and the compile says which |
-| `puppet` | `require` |
+| `puppet`, `openvox` | `require` |
+| `salt` | `require`; the states are also written in apply order |
 | `cloud-init` | nothing written: each resource is placed at the step of the boot that handles it; a dependency that points backwards through those steps is refused |
 | `dsc` | the runner's `dependsOn` |
 
@@ -146,7 +147,8 @@ how the tool thinks about order:
 
 Every tool in the segment that runs against a live machine has its own
 mechanism for reacting to a change, so a notify is **native** there: an Ansible
-handler, Puppet's `notify`, Chef's `notifies`, the DSC runner's `notify`.
+handler, Puppet's and OpenVox's `notify`, Chef's `notifies`, Salt's `watch` and
+`onchanges`, the DSC runner's `notify`.
 `cloud-init` has none and runs once, so its notify is **synthetic**: the action
 becomes a command that runs once after every other command, unconditionally, and
 the compile warns.
@@ -155,7 +157,8 @@ the compile warns.
 |---|---|
 | `ansible` | `restart`, `reload`, `start`, `stop` on a service; `run` on an exec |
 | `chef` | `restart`, `reload`, `start`, `stop` on a service; `run` on an exec |
-| `puppet` | `restart` (or `refresh`) on a service; `run` on an exec. `reload`, `start` and `stop` are refused: Puppet's refresh restarts a service and takes no argument |
+| `salt` | `restart`, `reload`, `start`, `stop` on a service; `run` on an exec |
+| `puppet`, `openvox` | `restart` (or `refresh`) on a service; `run` on an exec. `reload`, `start` and `stop` are refused: Puppet's refresh restarts a service and takes no argument |
 | `dsc` | `refresh`: the notified resource's `Set` runs even when its `Test` says there is nothing to do |
 | `cloud-init` | `start`, `stop`, `restart`, `reload` on a service; `run` on an exec |
 
@@ -173,8 +176,9 @@ tools.
 |---|---|---|
 | `ansible` | a task's `when:` expression | `"ansible_facts['os_family'] == 'Debian'"` |
 | `chef` | the Ruby of an `only_if` guard | `"node['platform_family'] == 'debian'"` |
+| `salt` | a Jinja expression over grains and pillar, which the minion evaluates when it renders the file | `"grains['os_family'] == 'RedHat'"` |
 | `dsc` | a `preCondition` in the runner's function language | `"equals (nodeName) 'web'"` |
-| `puppet` | refused. A catalog is compiled before it reaches the node, so nothing is left to evaluate at apply time | |
+| `puppet`, `openvox` | refused. A catalog is compiled before it reaches the node, so nothing is left to evaluate at apply time | |
 | `cloud-init` | refused. cloud-init evaluates nothing per resource | |
 
 ## Plan and apply

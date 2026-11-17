@@ -16,6 +16,25 @@ is written for them.
 | Target | `type` is | Example | Settings resource | Page |
 |---|---|---|---|---|
 | `kubernetes` | API version and kind | `apps/v1/Deployment`, `v1/Service` | `cluster` (optional) | [kubernetes](../../targets/kubernetes.md) |
+| `helm` | API version and kind, the same as `kubernetes` | `apps/v1/Deployment`, `v1/Service` | `values`, `chart`, `release`, `kustomization` (each optional, at most one) | [helm](../../targets/helm.md) |
+
+## Two ways to deliver the same objects
+
+Both targets take the same objects, spelt the same way, so a document moves from
+one to the other by changing `spec.target` and its settings resources.
+
+| | `kubernetes` | `helm` |
+|---|---|---|
+| Compiles to | plain manifests | a Helm chart |
+| Installed with | `kubectl apply` | `helm upgrade --install`, as one release with history and rollback |
+| Removing a resource from the document | the object stays until you delete it | Helm deletes the object |
+| Values and Kustomize overlays | no | yes: a `values` resource, read with `${values.path}`, and a `kustomization` resource |
+| `dependsOn` | orders the manifests in the file | accepted only where Helm's own install order by kind already agrees; otherwise refused |
+| References in a param | another object's name and namespace | those, plus chart values, the release and the chart, each written as a Helm template action |
+| Plan | a server-side dry run | a comparison with what Helm last installed |
+
+The rest of this page uses the `kubernetes` target for its examples.
+[The `helm` page](../../targets/helm.md) has the same sections for charts.
 
 ## A resource is an object
 
