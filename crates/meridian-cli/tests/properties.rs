@@ -69,7 +69,14 @@ fn awkward_text() -> impl Strategy<Value = String> {
         ])
         .prop_map(str::to_owned),
     ]
+    // Text that opens an interpolation is an expression to be decided, not
+    // text a document carries; `tests/interpolation.rs` covers it. Here the
+    // opening is written the way a document writes a literal one.
+    .prop_map(|text| text.replace(INTERPOLATION, LITERAL_INTERPOLATION))
 }
+
+const INTERPOLATION: &str = concat!("$", "{{");
+const LITERAL_INTERPOLATION: &str = concat!("$$", "{{");
 
 fn scalar() -> impl Strategy<Value = Value> {
     prop_oneof![
@@ -446,7 +453,8 @@ fn sketch() -> impl Strategy<Value = Sketch> {
         btree_map(name(), value(), 0..4),
         vec((any::<prop::sample::Index>(), any::<Option<bool>>()), 0..3),
         vec((any::<prop::sample::Index>(), name()), 0..2),
-        prop_oneof![Just(String::new()), "[ -~]{1,12}"],
+        prop_oneof![Just(String::new()), "[ -~]{1,12}"]
+            .prop_map(|text| text.replace(INTERPOLATION, LITERAL_INTERPOLATION)),
     );
     (
         name(),

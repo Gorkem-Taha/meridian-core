@@ -188,21 +188,37 @@ impl Template {
                 .map_err(|why| format!("in {OPEN} {source} {CLOSE}: {why}"));
         }
         let mut out = String::new();
+        // Whether the text last added was placed by an interpolation. A
+        // placed value that ends in a dollar, followed by text that opens a
+        // brace (or the other way round), would join into a reference that
+        // neither side wrote, so the join is made literal as well.
+        let mut last_placed = false;
+        let mut add = |out: &mut String, text: &str, is_placed: bool| {
+            if text.is_empty() {
+                return;
+            }
+            if literal && (is_placed || last_placed) && out.ends_with('$') && text.starts_with('{')
+            {
+                out.push('$');
+            }
+            out.push_str(text);
+            last_placed = is_placed;
+        };
         for part in &self.parts {
             match part {
-                Part::Text(text) => out.push_str(text),
+                Part::Text(text) => add(&mut out, text, false),
                 Part::Expr { source, expr } => {
                     let fail = |why: String| format!("in {OPEN} {source} {CLOSE}: {why}");
                     match expr.eval(scope).map_err(fail)? {
                         value @ Value::String(_) => {
                             if let Value::String(s) = placed(value) {
-                                out.push_str(&s);
+                                add(&mut out, &s, true);
                             }
                         }
                         value @ (Value::Bool(_)
                         | Value::Int(_)
                         | Value::Uint(_)
-                        | Value::Float(_)) => out.push_str(&value.canonical()),
+                        | Value::Float(_)) => add(&mut out, &value.canonical(), true),
                         Value::Null => {
                             return Err(fail(
                                 "the value is null, which has no text form; give a default \

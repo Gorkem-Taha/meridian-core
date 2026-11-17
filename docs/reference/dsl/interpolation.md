@@ -158,6 +158,12 @@ inside a list or a mapping, or joined into longer text.
 |---|---|---|---|
 | `cd ${{ data.dir }}` | `dir: ${HOME}/bin` | `cd $${HOME}/bin` | `cd ${HOME}/bin` |
 | `cd ${app.dir}` | | `cd ${app.dir}` | the `dir` param of resource `app` |
+| `${{ data.sign }}{app.dir}` | `sign: $` | `$${app.dir}` | `${app.dir}`, as text |
+
+The last row is a value that holds no reference by itself but would complete
+one with the text beside it: a placed value that ends in `$`, followed by text
+or another placed value that opens with `{`. The join is made literal too, so
+two harmless halves cannot meet as a reference nobody wrote.
 
 Each tool gets its own spelling of the literal: Terraform, for instance, is
 given `$${HOME}`, which is how Terraform writes a literal `${HOME}`.

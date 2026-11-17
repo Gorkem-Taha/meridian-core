@@ -276,6 +276,58 @@ fn a_placed_value_can_be_made_literal_so_data_never_becomes_a_reference() {
 }
 
 #[test]
+fn a_placed_value_cannot_join_with_its_neighbour_into_a_reference() {
+    let scope = Scope::new().with(
+        "data",
+        map(&[
+            ("dollar", text("$")),
+            ("price", text("cost $")),
+            ("open", text("{web.id}")),
+            ("two", text("$$")),
+            ("empty", text("")),
+            ("n", Value::Int(5)),
+        ]),
+    );
+    let literal = |source: &str| {
+        Template::parse(source)
+            .unwrap()
+            .eval_literal(&scope)
+            .unwrap()
+    };
+    // A value that ends in a dollar, before text that opens a brace.
+    assert_eq!(literal("${{ data.dollar }}{web.id}"), text("$${web.id}"));
+    assert_eq!(
+        literal("${{ data.price }}{web.id}"),
+        text("cost $${web.id}")
+    );
+    // Text cannot end in a dollar right before an interpolation: that is
+    // the escaped opening, which is left as written.
+    assert_eq!(literal("x$${{ data.open }}"), text("x$${{ data.open }}"));
+    // Two values, neither of which holds a reference alone.
+    assert_eq!(
+        literal("${{ data.dollar }}${{ data.open }}"),
+        text("$${web.id}")
+    );
+    // The same answer as making the joined text literal in one go.
+    assert_eq!(literal("${{ data.two }}{a}"), text("$$${a}"));
+    // An empty value between a dollar and a brace the author wrote is the
+    // author's own reference: data supplied nothing of it.
+    assert_eq!(literal("${{ data.empty }}${web.id}"), text("${web.id}"));
+    // A dollar or a brace that joins nothing is left alone.
+    assert_eq!(literal("${{ data.dollar }} {a}"), text("$ {a}"));
+    assert_eq!(literal("${{ data.dollar }}${{ data.n }}"), text("$5"));
+    assert_eq!(literal("{${{ data.dollar }}}"), text("{$}"));
+    // Placed as it is, when literal placement is not asked for.
+    assert_eq!(
+        Template::parse("${{ data.dollar }}{web.id}")
+            .unwrap()
+            .eval(&scope)
+            .unwrap(),
+        text("${web.id}")
+    );
+}
+
+#[test]
 fn sole_source_is_the_expression_when_the_text_is_nothing_else() {
     let sole = |s: &str| Template::parse(s).unwrap().sole_source().map(str::to_owned);
     assert_eq!(sole("${{ data.a == 1 }}"), Some("data.a == 1".to_owned()));
