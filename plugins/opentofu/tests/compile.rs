@@ -597,9 +597,10 @@ fn encryption_is_written_inside_the_settings_block() {
         text(encryption, "method.aes_gcm.main.keys"),
         "${key_provider.pbkdf2.main}"
     );
-    assert_eq!(text(encryption, "state.method"), "${method.aes_gcm.main}");
+    // A method is a fixed name to OpenTofu, which refuses a template there.
+    assert_eq!(text(encryption, "state.method"), "method.aes_gcm.main");
     assert_eq!(at(encryption, "state.enforced"), &Value::Bool(true));
-    assert_eq!(text(encryption, "plan.method"), "${method.aes_gcm.main}");
+    assert_eq!(text(encryption, "plan.method"), "method.aes_gcm.main");
 }
 
 #[test]

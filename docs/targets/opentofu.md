@@ -149,8 +149,9 @@ can be used on them directly:
 ```
 
 A name is left alone where it does not stand for a value: a function being called, an
-attribute after a dot, a key of an object, a name bound by `for`, and anything inside a
-quoted string. Expressions that start with one of OpenTofu's own namespaces (`var`,
+attribute after a dot, a key of an object, a name bound by `for`, and the text of a quoted
+string. A `${…}` template inside a quoted string is an expression again, so
+`${[for zone in ["a", "b"] : "${region}${zone}"]}` works as it reads. Expressions that start with one of OpenTofu's own namespaces (`var`,
 `local`, `data`, `module`, `path`, `terraform`, `tofu`, `each`, `count`, `self`,
 `ephemeral`, `key_provider`, `method`) are handed over as written, so anything OpenTofu
 can express remains available. A resource may not use one of those names as its `id`.
@@ -252,6 +253,10 @@ its settings, and `state`, `plan` and `remote_state_data_sources` each name the 
 that protects them. `fallback` and `enforced` are supported, as is the `unencrypted`
 method OpenTofu provides for moving an existing state into or out of encryption.
 
+A `method` is always one fixed reference, `${method.<type>.<name>}`. OpenTofu chooses the
+method before it evaluates anything, so an expression cannot choose it; `keys` and a key
+provider's own settings may be computed.
+
 The block is checked when the document is compiled, so these mistakes are caught before
 anything runs:
 
@@ -259,7 +264,7 @@ anything runs:
 |---|---|
 | `unknown-reference` | `state`, `plan`, a `fallback` or a remote state names a method the block does not declare, or a method takes its `keys` from a key provider the block does not declare |
 | `missing-param` | the block protects nothing; a target names no `method`; an `aes_gcm` method has no `keys` |
-| `invalid-param` | an argument is not part of an encryption block; a `method` or `keys` is not written as a reference; `enforced` is not true or false |
+| `invalid-param` | an argument is not part of an encryption block; a `method` is an expression, or it or `keys` is not written as a reference; `enforced` is not true or false |
 | `duplicate-encryption` | the document declares two encryption blocks |
 
 And these are compiled, with a warning:

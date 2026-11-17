@@ -244,6 +244,7 @@ impl Emitter for OpenTofu {
         let mut warnings = sort::apply_ordering(graph, &mut config)?;
         validate::validate(&config)?;
         warnings.extend(encryption::check(&config)?);
+        encryption::normalise(&mut config);
         Ok(Emitted {
             artifact: Artifact {
                 files: emit::serialise(&config),

@@ -42,11 +42,11 @@
       },
       "plan": {
         "enforced": true,
-        "method": "${method.aes_gcm.main}"
+        "method": "method.aes_gcm.main"
       },
       "state": {
         "enforced": true,
-        "method": "${method.aes_gcm.main}"
+        "method": "method.aes_gcm.main"
       }
     }
   },

@@ -100,6 +100,19 @@ impl Checker<'_> {
         };
         let (head, rest) = expr::head(expression);
         if !expr::is_path(expression) {
+            // OpenTofu reads a method as a fixed name, before it can work
+            // anything out, so an expression there can never be right. Keys
+            // are an ordinary argument and may be computed.
+            if namespace == "method" {
+                return Err(self.refuse(
+                    "invalid-param",
+                    format!(
+                        "{whose} must be one fixed reference such as {example}; OpenTofu \
+                         chooses the method before it evaluates anything, so an expression \
+                         cannot choose it"
+                    ),
+                ));
+            }
             return Ok(None);
         }
         let named = rest.strip_prefix('.').unwrap_or(rest);
@@ -318,12 +331,13 @@ pub(crate) fn check(config: &Config) -> Result<Vec<Warning>, CompileError> {
         )));
     }
     for name in providers.keys().filter(|p| !used_providers.contains(*p)) {
-        // A key provider can also feed another key provider, which is not
-        // followed here, so this is only said when no expression could be
-        // reading it.
+        // A key provider can also feed another key provider, or be chosen by
+        // an expression too involved to follow, so this is only said when
+        // nothing in the block could be reading it.
         let reference = format!("key_provider.{name}");
         let read_elsewhere = providers
             .values()
+            .chain(methods.values())
             .any(|settings| mentions(settings, &reference));
         if !read_elsewhere {
             warnings.push(warn(format!(
@@ -358,6 +372,49 @@ pub(crate) fn check(config: &Config) -> Result<Vec<Warning>, CompileError> {
     }
 
     Ok(warnings)
+}
+
+/// Writes every `method` of a checked encryption block the way OpenTofu reads
+/// it in the JSON syntax.
+///
+/// A document names a method as it names anything, `${method.aes_gcm.main}`.
+/// OpenTofu takes a method as a fixed name and refuses a template there, so
+/// the configuration carries the bare `method.aes_gcm.main`.
+pub(crate) fn normalise(config: &mut Config) {
+    fn target(value: &mut Value) {
+        let Value::Map(settings) = value else {
+            return;
+        };
+        if let Some(Value::String(method)) = settings.get_mut("method") {
+            if let Some(inner) = method.strip_prefix("${").and_then(|m| m.strip_suffix('}')) {
+                *method = inner.trim().to_owned();
+            }
+        }
+        if let Some(fallback) = settings.get_mut("fallback") {
+            target(fallback);
+        }
+    }
+
+    let Some(block) = config
+        .blocks
+        .iter_mut()
+        .find(|b| b.kind == Kind::Encryption)
+    else {
+        return;
+    };
+    for argument in ["state", "plan"] {
+        if let Some(value) = block.body.get_mut(argument) {
+            target(value);
+        }
+    }
+    if let Some(Value::Map(remote)) = block.body.get_mut("remote_state_data_sources") {
+        if let Some(default) = remote.get_mut("default") {
+            target(default);
+        }
+        if let Some(Value::Map(sources)) = remote.get_mut("remote_state_data_source") {
+            sources.values_mut().for_each(target);
+        }
+    }
 }
 
 /// Whether any string inside a value mentions `needle`.
@@ -474,13 +531,68 @@ mod tests {
     }
 
     #[test]
-    fn an_expression_too_involved_to_follow_is_left_to_opentofu() {
+    fn keys_may_be_computed_and_a_method_may_not() {
         let json = format!(
-            r#"{{{PROVIDER},{METHOD},
-              "state":{{"method":"${{var.encrypt ? method.aes_gcm.main : method.unencrypted.off}}"}},
+            r#"{{{PROVIDER},
+              "method":{{"aes_gcm":{{"main":{{"keys":"${{var.rotate ? key_provider.pbkdf2.main : key_provider.pbkdf2.next}}"}}}}}},
+              "state":{{"method":"${{method.aes_gcm.main}}"}},
               "plan":{{"method":"${{method.aes_gcm.main}}"}}}}"#
         );
+        // The keys expression is too involved to follow, so the provider it
+        // may use is not reported as unused.
         assert_eq!(warnings(&json), Vec::<String>::new());
+
+        let err = refusal(&format!(
+            r#"{{{PROVIDER},{METHOD},
+              "state":{{"method":"${{var.encrypt ? method.aes_gcm.main : method.unencrypted.off}}"}}}}"#
+        ));
+        assert_eq!(err.rule, "invalid-param");
+        assert!(
+            err.msg.starts_with(
+                "state.method must be one fixed reference such as ${method.aes_gcm.main}"
+            ),
+            "{}",
+            err.msg
+        );
+    }
+
+    #[test]
+    fn a_method_is_written_as_the_fixed_name_opentofu_reads() {
+        let json = format!(
+            r#"{{{PROVIDER},"method":{{"aes_gcm":{{"main":{{"keys":"${{key_provider.pbkdf2.main}}"}}}},"unencrypted":{{"off":{{}}}}}},
+              "state":{{"method":"${{method.aes_gcm.main}}","fallback":{{"method":"${{ method.unencrypted.off }}"}}}},
+              "plan":{{"method":"${{method.aes_gcm.main}}"}},
+              "remote_state_data_sources":{{
+                 "default":{{"method":"${{method.aes_gcm.main}}"}},
+                 "remote_state_data_source":{{"network":{{"method":"${{method.aes_gcm.main}}"}}}}}}}}"#
+        );
+        let mut config = config(&json);
+        check(&config).unwrap();
+        normalise(&mut config);
+        let body = Value::Map(config.blocks[0].body.clone());
+        let at = |path: &str| {
+            path.split('.')
+                .fold(&body, |v, key| &v.as_map().unwrap()[key])
+                .as_str()
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(at("state.method"), "method.aes_gcm.main");
+        assert_eq!(at("state.fallback.method"), "method.unencrypted.off");
+        assert_eq!(at("plan.method"), "method.aes_gcm.main");
+        assert_eq!(
+            at("remote_state_data_sources.default.method"),
+            "method.aes_gcm.main"
+        );
+        assert_eq!(
+            at("remote_state_data_sources.remote_state_data_source.network.method"),
+            "method.aes_gcm.main"
+        );
+        // Keys are an ordinary argument and stay a template.
+        assert_eq!(
+            at("method.aes_gcm.main.keys"),
+            "${key_provider.pbkdf2.main}"
+        );
     }
 
     #[test]

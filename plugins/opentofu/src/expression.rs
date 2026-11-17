@@ -10,7 +10,8 @@
 //! This is not a parser for OpenTofu's expression language. It reads just
 //! enough to tell a name that stands for a value from one that does not: a
 //! function being called, an attribute after a dot, a key of an object, a
-//! name a `for` binds, and anything inside a quoted string.
+//! name a `for` binds, and the text of a quoted string. A template inside a
+//! quoted string is an expression again and is read the same way.
 
 use std::collections::BTreeSet;
 
@@ -30,10 +31,18 @@ struct Name {
 
 /// Every name in the expression that stands for a value.
 fn names(expr: &str) -> Vec<Name> {
-    let bytes: Vec<(usize, char)> = expr.char_indices().collect();
     let mut found = Vec::new();
-    // Names bound by `for <a>[, <b>] in`, which shadow anything outside.
-    let mut bound: BTreeSet<&str> = BTreeSet::new();
+    let mut bound = BTreeSet::new();
+    scan(expr, 0, &mut bound, &mut found);
+    found
+}
+
+/// Scans one expression, which starts `base` bytes into the whole. `bound`
+/// holds the names a `for <a>[, <b>] in` has bound so far; they shadow
+/// anything outside, here and in any template nested in a string.
+fn scan<'a>(expr: &'a str, base: usize, bound: &mut BTreeSet<&'a str>, found: &mut Vec<Name>) {
+    let bytes: Vec<(usize, char)> = expr.char_indices().collect();
+    let offset = |index: usize| bytes.get(index).map_or(expr.len(), |(at, _)| *at);
     let mut binding = false;
     // The last character that was not white space, to judge what a name
     // follows.
@@ -42,14 +51,47 @@ fn names(expr: &str) -> Vec<Name> {
     while i < bytes.len() {
         let (at, c) = bytes[i];
         if c == '"' {
-            // A quoted string, to its closing quote. A template inside it is
-            // left as written.
+            // A quoted string, to its closing quote. Its text is not names,
+            // but a template inside it is an expression again.
             i += 1;
             while i < bytes.len() && bytes[i].1 != '"' {
-                if bytes[i].1 == '\\' {
+                let here = bytes[i].1;
+                let next = bytes.get(i + 1).map(|(_, c)| *c);
+                if here == '\\' {
+                    i += 2;
+                } else if here == '$' && next == Some('$') {
+                    // A doubled dollar sign escapes the template after it.
+                    i += 2;
+                    if bytes.get(i).map(|(_, c)| *c) == Some('{') {
+                        i += 1;
+                    }
+                } else if here == '$' && next == Some('{') {
+                    let start = i + 2;
+                    let mut depth = 1usize;
+                    let mut end = start;
+                    while end < bytes.len() {
+                        match bytes[end].1 {
+                            '{' => depth += 1,
+                            '}' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        end += 1;
+                    }
+                    scan(
+                        &expr[offset(start)..offset(end)],
+                        base + offset(start),
+                        bound,
+                        found,
+                    );
+                    i = end + 1;
+                } else {
                     i += 1;
                 }
-                i += 1;
             }
             i += 1;
             previous = Some('"');
@@ -66,7 +108,7 @@ fn names(expr: &str) -> Vec<Name> {
         while j < bytes.len() && is_continue(bytes[j].1) {
             j += 1;
         }
-        let end = bytes.get(j).map_or(expr.len(), |(at, _)| *at);
+        let end = offset(j);
         let word = &expr[at..end];
         // What follows the name, past any white space.
         let mut k = j;
@@ -88,12 +130,14 @@ fn names(expr: &str) -> Vec<Name> {
         } else if binding {
             bound.insert(word);
         } else if !(after_dot || called || assigned || key || bound.contains(word)) {
-            found.push(Name { start: at, end });
+            found.push(Name {
+                start: base + at,
+                end: base + end,
+            });
         }
         previous = Some('a');
         i = j;
     }
-    found
 }
 
 /// Rewrites each of the document's names in an expression through `address`,
@@ -134,7 +178,16 @@ mod tests {
                 "enabled ? web_vm.id : null",
                 "var.enabled ? aws_instance.web_vm.id : null",
             ),
-            ("\"${region}-a\"", "\"${region}-a\""),
+            // A template inside a string is an expression again.
+            ("\"${region}-a\"", "\"${var.region}-a\""),
+            (
+                "[for zone in [\"a\", \"b\"] : \"${region}${zone}\"]",
+                "[for zone in [\"a\", \"b\"] : \"${var.region}${zone}\"]",
+            ),
+            (
+                "\"${upper(\"${web_vm.name}\")}\"",
+                "\"${upper(\"${aws_instance.web_vm.name}\")}\"",
+            ),
             (
                 "[region, web_vm.id]",
                 "[var.region, aws_instance.web_vm.id]",
@@ -166,6 +219,8 @@ mod tests {
             "merge({region = \"x\"}, local.tags)",
             // Inside a string.
             "\"region web_vm\"",
+            // An escaped template is text.
+            "\"$${region}\"",
             "\"say \\\"region\\\"\"",
             // Names OpenTofu knows and the document does not.
             "upper(var.image)",
