@@ -1,0 +1,59 @@
+# Conditions on infrastructure.
+#
+# The same condition language as on a configured machine, decided at the same
+# moment: before Terraform is handed anything. A resource whose `when` is
+# false is not in main.tf.json at all.
+#
+#   meridian compile examples/conditions/network-by-size.yaml \
+#     --data examples/conditions/network-by-size.data.yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        region: eu-west-1
+
+    - id: main
+      type: aws_vpc
+      params:
+        cidr_block: 10.20.0.0/16
+
+    # Only when some subnet in the data is public: map() turns the list of
+    # subnets into a list of true and false, and any() asks if one is true.
+    - id: gateway
+      type: aws_internet_gateway
+      when: "any(map(data.subnets, 's', s.public))"
+      params:
+        vpc_id: ${main.id}
+
+    # Only when the bastion's address really is inside the network.
+    - id: bastion_rule
+      type: aws_security_group
+      when: "defined(data.bastion_ip) && cidrContains(data.vpc_cidr, data.bastion_ip)"
+      params:
+        name: bastion
+        vpc_id: ${main.id}
+
+    # A NAT gateway costs money: only for more than one private subnet, and
+    # never in a sandbox account.
+    - id: nat_address
+      type: aws_eip
+      when: "length(filter(data.subnets, 's', !s.public)) > 1 && data.account != 'sandbox'"
+      params:
+        domain: vpc
+
+    # A choice between two answers, compared with a third.
+    - id: flow_logs
+      type: aws_cloudwatch_log_group
+      when: "(data.env == 'prod' ? 90 : 7) >= data.min_retention_days"
+      params:
+        name: /vpc/flow-logs
+
+  outputs:
+    - name: vpc_id
+      value: ${main.id}

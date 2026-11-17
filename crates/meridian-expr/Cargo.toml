@@ -1,0 +1,16 @@
+[package]
+name = "meridian-expr"
+description = "Meridian's expression language: the one engine behind every condition and interpolation"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-value = { path = "../meridian-value" }
+base64 = "0.22"
+regex = "1"
+sha2 = "0.10"
+
+[lints]
+workspace = true
