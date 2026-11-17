@@ -1,0 +1,26 @@
+{
+  "context": "prod",
+  "kubeconfig": "",
+  "namespace": "web",
+  "objects": {
+    "configmap/web-config": "web_config",
+    "deployment.apps/web": "web",
+    "service/web": "web_svc"
+  },
+  "outputs": [
+    {
+      "name": "web_url",
+      "parts": [
+        {
+          "text": "http://"
+        },
+        {
+          "get": "service",
+          "name": "web",
+          "namespace": "",
+          "path": ".status.loadBalancer.ingress[0].ip"
+        }
+      ]
+    }
+  ]
+}
