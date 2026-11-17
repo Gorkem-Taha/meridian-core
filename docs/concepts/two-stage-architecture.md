@@ -6,12 +6,12 @@ them as two stages. This page says why they are not one.
 ## They answer different questions
 
 An Infrastructure document answers "what should exist?" Its tools (Terraform,
-CloudFormation, Bicep, Docker, Kubernetes, Helm) create things through an API, keep
+CloudFormation, Bicep, ARM templates, Pulumi, Docker, Kubernetes, Helm) create things through an API, keep
 track of what they created, and can tell you facts about the result: an address,
 an id, a URL.
 
 A ResourceSet answers "how should this machine be set up?" Its tools (Ansible,
-Puppet, Chef, DSC) log in to a machine, or run on it, and converge packages,
+Puppet, OpenVox, Chef, DSC) log in to a machine, or run on it, and converge packages,
 files and services. They need the machine to exist first, and they need to know
 where it is.
 

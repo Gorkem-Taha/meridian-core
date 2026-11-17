@@ -1,0 +1,37 @@
+{
+  "location": "",
+  "mode": "Incremental",
+  "name": "web-vm-prod",
+  "parameters": {
+    "admin_password": "securestring"
+  },
+  "resourceGroup": "web-rg",
+  "resources": {
+    "web_ip": {
+      "name": "web-ip",
+      "type": "Microsoft.Network/publicIPAddresses"
+    },
+    "web_logs": {
+      "name": "[concat('weblogs', uniqueString(resourceGroup().id, 'web-vnet'))]",
+      "type": "Microsoft.Storage/storageAccounts"
+    },
+    "web_nic": {
+      "name": "web-nic",
+      "type": "Microsoft.Network/networkInterfaces"
+    },
+    "web_nsg": {
+      "name": "web-nsg",
+      "type": "Microsoft.Network/networkSecurityGroups"
+    },
+    "web_vm": {
+      "name": "web-vm",
+      "type": "Microsoft.Compute/virtualMachines"
+    },
+    "web_vnet": {
+      "name": "web-vnet",
+      "type": "Microsoft.Network/virtualNetworks"
+    }
+  },
+  "scope": "resourceGroup",
+  "subscription": ""
+}

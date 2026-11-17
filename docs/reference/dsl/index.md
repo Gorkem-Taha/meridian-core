@@ -551,14 +551,12 @@ Rules:
   the next, declare an [output](#outputs).
 
 The configuration management targets that use the shared resource types
-(`ansible`, `puppet`, `chef`, `cloud-init`) have nothing to read during the apply: a resource
-there is only what the document says. So on those targets a reference is
-settled when the document is compiled. `${id.param}` becomes the value the
-document gives that param on resource `id`, and nothing else is accepted: a
-bare `${id}`, a deeper path, a function call, a param the resource does not
-set, or a resource the document does not declare is refused with the rule
-`invalid-reference`. `$${` comes out as a literal `${`. The details are in
-[the resource types reference](../resource-types.md#references).
+(`ansible`, `puppet`, `chef`, `salt`, `cloud-init`) have nothing to read at
+apply time,
+so there a reference is settled when the document is compiled: `${id.param}`
+becomes the value the document gives that param on the resource `id`. A bare
+`${id}`, a deeper path, a param the resource does not set, or anything that is
+not a path is refused.
 
 In depth, with what each target rewrites a reference into:
 [references](references.md).

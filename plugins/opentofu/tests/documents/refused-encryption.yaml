@@ -1,0 +1,26 @@
+# The state names a method the block never declares.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: refused-encryption
+spec:
+  target: opentofu
+  resources:
+    - id: state_passphrase
+      type: variable
+      params:
+        type: string
+        sensitive: true
+    - id: sealed
+      type: encryption
+      params:
+        key_provider:
+          pbkdf2:
+            main:
+              passphrase: ${state_passphrase}
+        method:
+          aes_gcm:
+            main:
+              keys: ${key_provider.pbkdf2.main}
+        state:
+          method: ${method.aes_gcm.primary}

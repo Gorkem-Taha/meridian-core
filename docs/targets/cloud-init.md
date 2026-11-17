@@ -489,34 +489,16 @@ runcmd:
 
 ## References
 
-A resource for this target is only what the document says: nothing can be read
-from the machine before it has booted. So a reference is settled when the
-document is compiled, the same way as on the `ansible`, `puppet` and `chef`
-targets. `${id.param}` becomes the value the document gives that param on
-resource `id`:
+`${id.param}` in a param becomes the value the document gives that param on the
+resource `id`, when the document is compiled. A reference that cannot be settled
+that way is refused. This is the same on the `ansible`, `puppet`, `chef` and
+`salt` targets, and the
+[shared types](../reference/resource-types.md#references) page has the rules.
 
-```yaml
-- id: app_dir
-  type: file
-  state: directory
-  params:
-    path: /srv/app
-
-- id: unit_env
-  type: file
-  params:
-    path: /etc/default/app
-    content: "APP_HOME=${app_dir.path}\n"    # APP_HOME=/srv/app
-```
-
-Anything else is refused with the rule `invalid-reference`: a resource the
-document does not declare, a param that resource does not set, a bare `${id}`,
-a deeper path, or a function call. A reference does not order the two
-resources; use `dependsOn` for that. The full rules are in
-[the resource types reference](../reference/resource-types.md#references).
-
-A `${...}` meant for the shell, or for the program that reads a file, is
-written `$${...}`, which comes out as a literal `${...}`:
+On this target a `${...}` in a file's content or in a command is most often
+meant for the shell or for the program that reads the file. Write it `$${...}`
+and it reaches the user-data as `${...}`. Left as `${HOME}` it is refused,
+because `HOME` is not a resource of the document:
 
 ```yaml
 - id: profile

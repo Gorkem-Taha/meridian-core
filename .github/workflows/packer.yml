@@ -1,0 +1,59 @@
+name: packer
+
+# The Packer plugin against the real packer. It is a workflow of its own so
+# that the plugin's check on its own output does not depend on any other
+# plugin's tool being installed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/packer/**'
+      - 'examples/packer/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/packer.yml'
+
+permissions:
+  contents: read
+
+env:
+  PACKER_VERSION: 1.11.2
+  CHECKPOINT_DISABLE: 1
+
+jobs:
+  real-packer:
+    name: validate and build with packer
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Install packer
+        run: |
+          curl -fsSL -o /tmp/packer.zip "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_linux_amd64.zip"
+          curl -fsSL -o /tmp/packer.sums "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_SHA256SUMS"
+          (cd /tmp && grep "packer_${PACKER_VERSION}_linux_amd64.zip" packer.sums | sed 's# .*# packer.zip#' | sha256sum -c -)
+          mkdir -p "$HOME/.local/bin"
+          unzip -o -q /tmp/packer.zip packer -d "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/packer" version
+
+      # The tests that are ignored everywhere else because they need packer.
+      - name: Test against packer
+        run: cargo test -p meridian-target-packer --locked --test packer -- --ignored
+
+      # The same example through the meridian command, as a person would run it.
+      - name: Build an example with the meridian command
+        run: |
+          cargo build --locked -p meridian-cli -p meridian-target-packer
+          work="$(mktemp -d)"
+          cp examples/packer/hello.yaml "$work/"
+          cd "$work"
+          "$GITHUB_WORKSPACE/target/debug/meridian" plan hello.yaml | tee plan.txt
+          grep -q '+ create box: null image' plan.txt
+          "$GITHUB_WORKSPACE/target/debug/meridian" apply hello.yaml | tee apply.txt
+          grep -q 'output builder = "null"' apply.txt

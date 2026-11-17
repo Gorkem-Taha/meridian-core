@@ -18,6 +18,8 @@ packages, files and services. This page is how the
 | `ansible` | the six shared types | [ansible](../../targets/ansible.md) |
 | `puppet` | the six shared types | [puppet](../../targets/puppet.md) |
 | `chef` | the six shared types | [chef](../../targets/chef.md) |
+| `salt` | the six shared types | [salt](../../targets/salt.md) |
+| `openvox` | the six shared types, compiled the way `puppet` compiles them | [openvox](../../targets/openvox.md) |
 | `cloud-init` | the six shared types, limited to what a first boot can do | [cloud-init](../../targets/cloud-init.md) |
 | `dsc` | DSC's own resources | [dsc](../../targets/dsc.md) |
 
@@ -26,7 +28,8 @@ which.
 
 ## The shared dialect: six types
 
-`ansible`, `puppet`, `chef` and `cloud-init` take the same six resource types. A
+`ansible`, `puppet`, `openvox`, `chef`, `salt` and `cloud-init` take the same six
+resource types. A
 resource written with them compiles for any of them, so changing `spec.target` is
 all it takes to move a document from one tool to another, within what each tool
 can do. This is the one place where the language is "write once".
@@ -92,11 +95,9 @@ Anything outside the six types and their params is refused when the document is
 compiled: an unknown type, a param the type does not have, a state the tool
 cannot express. Nothing is dropped.
 
-In this dialect a resource has nothing to read during the apply, so a reference
-is settled when the document is compiled: `${id.param}` becomes the value the
-document gives that param on resource `id`. Anything else in `${...}`, or a
-reference to a resource or param that is not there, is refused with the rule
-`invalid-reference`, and `$${` is a literal `${`. See
+In this dialect a reference is settled when the document is compiled:
+`${id.param}` becomes the value the document gives that param on the resource
+`id`. Anything else in `${...}` is refused, and `$${` is a literal `${`. See
 [references](references.md#configuration-management-the-shared-types).
 
 ### cloud-init: the same types, once, at first boot

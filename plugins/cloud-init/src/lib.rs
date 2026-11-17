@@ -199,8 +199,8 @@ impl Emitter for CloudInit {
     /// The resolved hierarchy data is not consumed: Meridian bakes resolved
     /// values into the tree as literals before a plugin sees it.
     fn emit(&self, graph: &ResourceGraph, _data: &Data) -> Result<Emitted, CompileError> {
-        // A resource here is only what the document says, so a reference is
-        // settled now, the same way the other shared-type targets settle it.
+        // A resource here has nothing to read at apply time, so a reference
+        // is settled now, from what the document declares, or refused.
         let graph = &meridian_sdk::expr::resolve_declared(graph, NAME)?;
         let transformed = transform::transform(graph)?;
         let mut warnings = transformed.warnings;

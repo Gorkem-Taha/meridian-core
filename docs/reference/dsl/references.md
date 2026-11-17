@@ -88,7 +88,7 @@ attribute does not exist, the tool says so when it plans.
 | `kubernetes` | the object's name | in a param, only `metadata.name` and `metadata.namespace`; in an output, any path into the live object | the value placed in the text | refused |
 | `dsc` | | `${id.Property}`: a property the other resource reported | | |
 | `podman` | the unit's name | in an output: a path into `podman inspect` | the name placed in the text | |
-| `ansible`, `puppet`, `chef`, `cloud-init` | refused | `${id.param}`: the value the document gives that param, settled at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
+| `ansible`, `puppet`, `chef`, `salt`, `cloud-init` | refused | `${id.param}` only: the value the document gives that param, placed at compile time. See [below](#configuration-management-the-shared-types) | the value placed in the text | refused |
 
 Each target's page has its own table under "References".
 
@@ -112,10 +112,14 @@ flowchart LR
 
 ## Configuration management: the shared types
 
-`ansible`, `puppet`, `chef` and `cloud-init` have nothing to read at apply time:
-a package or a file is only what the document says about it. So on these
-targets a reference is settled when the document is compiled: `${id.param}`
-becomes the value the document gives that param on resource `id`.
+`ansible`, `puppet`, `chef`, `salt` and `cloud-init` have nothing to read at
+apply time:
+a package or a file is only what the document says about it. So on these targets
+a reference is settled when the document is compiled, by the plugin, and the
+tool never sees it.
+
+`${id.param}` becomes the value the document gives that param on the resource
+`id`:
 
 ```yaml
 - id: site_root
@@ -131,20 +135,25 @@ becomes the value the document gives that param on resource `id`.
     content: hello
 ```
 
-| Rule | |
+| You write | You get |
 |---|---|
-| A reference that is a param's whole value | keeps the type of what it reads: `groups: ${app_user.groups}` is a list |
-| A reference inside longer text | must read a single value |
-| References may chain | one that comes back to itself is refused |
-| `$${` | a literal `${`, as a shell script in a file's `content` needs |
-| `runtimeWhen` | not touched: it is the tool's own language |
-| Order | a reference does not order the two resources; use [`dependsOn`](dependson.md) |
+| `${id.param}` as a whole value | that param's value, with its type: a list stays a list |
+| `${id.param}` inside longer text | the value placed in the text; it must be a single value |
+| a reference to a param that itself holds a reference | followed until it is settled; a chain that comes back to itself is refused |
+| `$${` | a literal `${`, as a shell variable in a file's `content` needs |
+| `${id}`, `${id.param.deeper}`, `${id.list[0]}` | refused: a reference here is `${id.param}` and nothing else |
+| a resource the document does not declare, or a param it does not set | refused |
+| `${upper(x.name)}` | refused: these targets have no expression language |
 
-Anything that cannot be settled is refused with the rule `invalid-reference`,
-never written out as text: a resource the document does not declare, a param
-that resource does not set, a bare `${id}`, a deeper path, or a function call.
-The same rules, with each target's detail, are in
-[the resource types reference](../resource-types.md#references).
+Every refusal is the rule `invalid-reference`, with the line:
+
+```
+site.yaml:11:7: puppet: resource "index" [invalid-reference]: param "path": ${nowhere.path} refers to a resource "nowhere", which this document does not declare; for a literal ${ write $${
+```
+
+Unlike DSC, a reference here does not order the two resources. The value is
+known before anything runs, so there is nothing to wait for. Use
+[`dependsOn`](dependson.md) when the order matters.
 
 ## A worked example
 

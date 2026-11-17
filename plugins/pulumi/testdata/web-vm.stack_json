@@ -1,0 +1,6 @@
+{
+  "backend": "",
+  "project": "web-vm",
+  "secretsProvider": "",
+  "stack": "prod"
+}

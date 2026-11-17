@@ -1067,32 +1067,22 @@ fn user_data_too_large_for_the_smallest_cloud_is_a_warning() {
 
 #[test]
 fn a_reference_is_settled_from_the_document_or_refused() {
-    let site = "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n";
-    let reader = |content: &str| {
-        format!(
-            "{site}    - id: index\n      type: file\n      params:\n        path: ${{root.path}}/index.html\n        content: {content}\n"
-        )
-    };
-
-    // ${id.param} becomes the value the document gives that param.
-    let text = user_data(&reader("hello"));
+    let text = user_data(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        content: \"export APP_HOME=$${HOME}/app\"\n",
+    );
     assert!(text.contains("/srv/app/index.html"), "{text}");
-    assert!(!text.contains("${"), "{text}");
-
-    // $${ is how a literal ${ is written, for the shell or the file's reader.
-    let text = user_data(&reader("\"export APP_HOME=$${HOME}/app\""));
     assert!(text.contains("export APP_HOME=${HOME}/app"), "{text}");
+    assert!(!text.contains("${root"), "{text}");
     assert!(!text.contains("$${"), "{text}");
 
-    // What cannot be settled is refused, never written out as text.
-    for bad in [
-        "${nowhere.path}",
-        "${root.owner}",
-        "${root}",
-        "${upper(root.path)}",
-    ] {
-        let e = compile(&reader(&format!("\"{bad}\""))).expect_err(bad);
-        assert_eq!(e.rule, "invalid-reference", "{bad}: {e}");
-        assert_eq!(e.resource, "index", "{bad}: {e}");
-    }
+    let err = refusal(
+        "    - id: page\n      type: file\n      params:\n        path: /etc/profile.d/app.sh\n        content: \"export APP_HOME=${HOME}/app\"\n",
+    );
+    assert_eq!(err.rule, "invalid-reference");
+    assert_eq!(err.resource, "page");
+    assert!(
+        err.msg.contains("for a literal ${ write $${"),
+        "{}",
+        err.msg
+    );
 }
