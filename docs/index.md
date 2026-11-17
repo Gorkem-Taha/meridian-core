@@ -3,7 +3,7 @@
 <img src="branding/logos/meridian-core.svg" width="96" alt="Meridian logo">
 
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
-cloud-init, Terraform, CloudFormation, Bicep, Docker Compose, Kubernetes and Helm, and then drives
+cloud-init, Terraform, CloudFormation, Bicep, Pulumi, Docker Compose, Kubernetes and Helm, and then drives
 the tool you chose to plan and apply it.
 
 ## Honest scope statement
@@ -55,8 +55,8 @@ byte. The reasons, the layout and the order of work are in
 
 | Targets | |
 |---|---|
-| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md), [cloud-init](targets/cloud-init.md) |
-| Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
+| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md), [salt](targets/salt.md), [cloud-init](targets/cloud-init.md) |
+| Infrastructure as code | [terraform](targets/terraform.md), [opentofu](targets/opentofu.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md), [pulumi](targets/pulumi.md), [packer](targets/packer.md) |
 | Containers | [docker](targets/docker.md), [podman](targets/podman.md), [kubernetes](targets/kubernetes.md), [helm](targets/helm.md) (with Kustomize) |
 
 Every target page opens with what the target does and does not support. Every example the
@@ -81,6 +81,10 @@ plugins.
 The merge bar for a target plugin, and the changes that need a second reviewer, are in
 [`CONTRIBUTING.md`](../CONTRIBUTING.md). Security reports go through
 [`SECURITY.md`](../SECURITY.md), not the issue tracker.
+
+These pages are published as a site and as the repository's wiki by a pipeline;
+[how the wiki is published](contributing/documentation-site.md) describes it and what a
+new page needs.
 
 ## Reading order
 

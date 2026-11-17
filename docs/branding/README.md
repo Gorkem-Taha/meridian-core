@@ -7,12 +7,16 @@ project's own: one DSL for everything.
 | --- | --- | --- |
 | Core | <img src="logos/meridian-core.svg" width="48" alt="Meridian Core logo"> | Platform |
 | Terraform | <img src="logos/meridian-terraform.svg" width="48" alt="Meridian Terraform plugin logo"> | Infrastructure as code |
+| OpenTofu | <img src="logos/meridian-opentofu.svg" width="48" alt="Meridian OpenTofu plugin logo"> | Infrastructure as code |
 | Bicep | <img src="logos/meridian-bicep.svg" width="48" alt="Meridian Bicep plugin logo"> | Infrastructure as code |
 | CloudFormation | <img src="logos/meridian-cloudformation.svg" width="48" alt="Meridian CloudFormation plugin logo"> | Infrastructure as code |
+| Packer | <img src="logos/meridian-packer.svg" width="48" alt="Meridian Packer plugin logo"> | Infrastructure as code |
+| Pulumi | <img src="logos/meridian-pulumi.svg" width="48" alt="Meridian Pulumi plugin logo"> | Infrastructure as code |
 | DSC | <img src="logos/meridian-dsc.svg" width="48" alt="Meridian DSC plugin logo"> | Configuration management |
 | Ansible | <img src="logos/meridian-ansible.svg" width="48" alt="Meridian Ansible plugin logo"> | Configuration management |
 | Puppet | <img src="logos/meridian-puppet.svg" width="48" alt="Meridian Puppet plugin logo"> | Configuration management |
 | Chef | <img src="logos/meridian-chef.svg" width="48" alt="Meridian Chef plugin logo"> | Configuration management |
+| Salt | <img src="logos/meridian-salt.svg" width="48" alt="Meridian Salt plugin logo"> | Configuration management |
 | cloud-init | <img src="logos/meridian-cloud-init.svg" width="48" alt="Meridian cloud-init plugin logo"> | Configuration management |
 | Docker | <img src="logos/meridian-docker.svg" width="48" alt="Meridian Docker plugin logo"> | Containers |
 | Podman | <img src="logos/meridian-podman.svg" width="48" alt="Meridian Podman plugin logo"> | Containers |

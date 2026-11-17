@@ -1,0 +1,74 @@
+name: salt
+
+# The Salt plugin against Salt itself. The ordinary test run needs no Salt
+# installed; this one installs it and runs the same suite with the tests that
+# hand compiled state files to the real tool switched on.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - plugins/salt/**
+      - crates/**
+      - fixtures/**
+      - docs/targets/salt.md
+      - examples/salt/**
+      - Cargo.toml
+      - Cargo.lock
+      - .github/workflows/salt.yml
+
+permissions:
+  contents: read
+
+jobs:
+  real-salt:
+    name: salt-call and salt-ssh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Salt
+        run: |
+          pip install salt
+          salt-call --version
+
+      # salt-ssh is tested against this machine: a key made for the run, an
+      # SSH server that accepts it, and nothing that outlives the job.
+      - name: Accept SSH from this machine
+        run: |
+          command -v sshd >/dev/null || sudo apt-get install -y --no-install-recommends openssh-server
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keygen -q -t ed25519 -N '' -f ~/.ssh/meridian_test
+          cat ~/.ssh/meridian_test.pub >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          sudo systemctl start ssh || sudo service ssh start
+          ssh -i ~/.ssh/meridian_test -o StrictHostKeyChecking=no -o BatchMode=yes 127.0.0.1 true
+
+      # Dry-running a package state refreshes the package index, which needs
+      # root. Only the test that dry-runs the shared fixtures uses this; the
+      # tests that really apply something run as the ordinary user, against a
+      # scratch directory.
+      - name: Make a salt-call that runs as root
+        run: |
+          {
+            echo '#!/bin/sh'
+            echo "exec sudo -n env PATH=\"$PATH\" LD_LIBRARY_PATH=\"${LD_LIBRARY_PATH:-}\" \"$(command -v salt-call)\" \"\$@\""
+          } > "$RUNNER_TEMP/salt-call-as-root"
+          chmod +x "$RUNNER_TEMP/salt-call-as-root"
+          cat "$RUNNER_TEMP/salt-call-as-root"
+
+      - name: Test with Salt
+        run: |
+          export MERIDIAN_TEST_SALT_CALL="$(command -v salt-call)"
+          export MERIDIAN_TEST_SALT_CALL_ROOT="$RUNNER_TEMP/salt-call-as-root"
+          export MERIDIAN_TEST_SALT_SSH="$(command -v salt-ssh)"
+          export MERIDIAN_TEST_SALT_SSH_ARGS="--priv $HOME/.ssh/meridian_test --user $(id -un) -i"
+          cargo test -p meridian-target-salt --locked

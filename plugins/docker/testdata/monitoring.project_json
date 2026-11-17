@@ -1,0 +1,15 @@
+{
+  "context": "",
+  "directory": "",
+  "host": "ssh://metrics01.example.com",
+  "name": "monitoring",
+  "outputs": [],
+  "profiles": [],
+  "services": [
+    "exporter",
+    "prometheus",
+    "grafana"
+  ],
+  "wait": true,
+  "wait_timeout": 0
+}
