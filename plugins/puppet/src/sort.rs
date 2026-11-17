@@ -110,6 +110,16 @@ pub(crate) fn apply_ordering(
 /// Walks the graph one readiness level at a time. A resource that is never
 /// placed is one a cycle is holding back.
 fn check_acyclic(graph: &ResourceGraph, order: &[&str]) -> Result<(), CompileError> {
+    // The core refuses a repeated id, and the counting below relies on it.
+    let mut seen = HashSet::new();
+    if let Some(repeated) = graph.resources.iter().find(|r| !seen.insert(r.id.as_str())) {
+        return Err(fail(
+            "duplicate-resource",
+            &repeated.id,
+            &repeated.pos,
+            format!("resource id {:?} is used twice", repeated.id),
+        ));
+    }
     let mut indegree: HashMap<&str, usize> = order.iter().map(|id| (*id, 0)).collect();
     let mut dependents: HashMap<&str, Vec<&str>> = HashMap::new();
     for edge in graph.edges_of_kind(EdgeKind::HardOrder) {

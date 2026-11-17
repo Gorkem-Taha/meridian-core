@@ -1,0 +1,308 @@
+# A three-tier application across four tools, as one workflow.
+#
+#   1. OpenTofu creates the network, a database machine and a web machine.
+#   2. Salt configures PostgreSQL on the database machine.
+#   3. Ansible prepares the web machine to run containers.
+#   4. Docker Compose runs the application on the web machine.
+#
+# No document names a machine. Each ResourceSet takes its host from an output
+# of the first document, read after OpenTofu has applied it. `meridian plan`
+# shows stages 2 to 4 as deferred until then.
+#
+# The labels let one command run part of the workflow:
+#
+#   meridian apply three-tier.yaml                    # everything, in order
+#   meridian apply three-tier.yaml -l tier=db         # only the database
+#   meridian apply three-tier.yaml -l 'stage!=provision'   # skip OpenTofu
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+  labels:
+    stage: provision
+spec:
+  target: opentofu
+  resources:
+    - id: region
+      type: variable
+      params:
+        type: string
+        default: eu-west-1
+
+    - id: prefix
+      type: local
+      params:
+        value: shop-${region}
+
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: ${region}
+
+    - id: ubuntu
+      type: data.aws_ami
+      params:
+        most_recent: true
+        owners: ["099720109477"]
+        filter:
+          - name: name
+            values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+
+    - id: vpc
+      type: aws_vpc
+      params:
+        cidr_block: 10.20.0.0/16
+        tags:
+          Name: ${prefix}
+
+    - id: subnet
+      type: aws_subnet
+      params:
+        vpc_id: ${vpc.id}
+        cidr_block: 10.20.1.0/24
+
+    - id: web_sg
+      type: aws_security_group
+      params:
+        name: ${prefix}-web
+        vpc_id: ${vpc.id}
+        ingress:
+          - from_port: 80
+            to_port: 80
+            protocol: tcp
+            cidr_blocks: ["0.0.0.0/0"]
+
+    # Only the web tier may reach the database.
+    - id: db_sg
+      type: aws_security_group
+      params:
+        name: ${prefix}-db
+        vpc_id: ${vpc.id}
+        ingress:
+          - from_port: 5432
+            to_port: 5432
+            protocol: tcp
+            security_groups: ["${web_sg.id}"]
+
+    - id: db_vm
+      type: aws_instance
+      params:
+        ami: ${ubuntu.id}
+        instance_type: t3.medium
+        subnet_id: ${subnet.id}
+        vpc_security_group_ids: ["${db_sg.id}"]
+        tags:
+          Name: ${prefix}-db
+
+    - id: web_vm
+      type: aws_instance
+      params:
+        ami: ${ubuntu.id}
+        instance_type: t3.small
+        subnet_id: ${subnet.id}
+        vpc_security_group_ids: ["${web_sg.id}"]
+        tags:
+          Name: ${prefix}-web
+      # Nothing in the params says so: bring the database machine up first.
+      dependsOn:
+        - resource: db_vm
+
+    - id: web_ip
+      type: aws_eip
+      params:
+        instance: ${web_vm.id}
+
+  outputs:
+    - name: db_address
+      value: ${db_vm.private_ip}
+    - name: web_address
+      value: ${web_ip.public_ip}
+    - name: web_url
+      value: http://${web_ip.public_dns}/
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: database
+  labels:
+    stage: configure
+    tier: db
+spec:
+  target: salt
+  targetHost:
+    from: infrastructure
+    ref: network
+    output: db_address
+  resources:
+    - id: postgres_pkg
+      type: package
+      params:
+        name: postgresql
+
+    - id: data_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/postgres
+        owner: postgres
+        group: postgres
+        mode: "0700"
+      dependsOn:
+        - resource: postgres_pkg
+
+    - id: access
+      type: file
+      params:
+        path: /etc/postgresql/14/main/conf.d/shop.conf
+        content: |
+          listen_addresses = '*'
+          data_directory = '${data_dir.path}'
+          max_connections = 200
+        owner: postgres
+        mode: "0640"
+      dependsOn:
+        - resource: data_dir
+      notifies:
+        - resource: postgres_svc
+          action: restart
+
+    - id: postgres_svc
+      type: service
+      state: running
+      params:
+        name: postgresql
+        enabled: true
+      dependsOn:
+        - resource: postgres_pkg
+
+    - id: create_db
+      type: exec
+      params:
+        command: createdb --owner=postgres shop
+        creates: /srv/postgres/.shop-created
+      dependsOn:
+        - resource: postgres_svc
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web_host
+  labels:
+    stage: configure
+    tier: web
+spec:
+  target: ansible
+  targetHost:
+    from: infrastructure
+    ref: network
+    output: web_address
+  resources:
+    - id: deploy_group
+      type: group
+      params:
+        name: deploy
+
+    - id: deploy_user
+      type: user
+      params:
+        name: deploy
+        home: /home/deploy
+        shell: /bin/bash
+        groups: [deploy, docker]
+      dependsOn:
+        - resource: deploy_group
+        - resource: docker_pkg
+
+    - id: docker_pkg
+      type: package
+      params:
+        name: docker.io
+
+    - id: daemon_conf
+      type: file
+      params:
+        path: /etc/docker/daemon.json
+        content: |
+          {"log-driver": "journald", "live-restore": true}
+        mode: "0644"
+      dependsOn:
+        - resource: docker_pkg
+      notifies:
+        - resource: docker_svc
+          action: restart
+
+    - id: docker_svc
+      type: service
+      state: running
+      params:
+        name: docker
+        enabled: true
+      dependsOn:
+        - resource: docker_pkg
+
+    - id: app_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/shop
+        owner: ${deploy_user.name}
+        mode: "0750"
+      dependsOn:
+        - resource: deploy_user
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: shop
+  labels:
+    stage: deploy
+    tier: web
+spec:
+  target: docker
+  # The same machine Ansible prepared. This stage is listed after it, so it
+  # runs after it.
+  targetHost:
+    from: infrastructure
+    ref: network
+    output: web_address
+  resources:
+    - id: frontend
+      type: network
+      params: {}
+
+    - id: site
+      type: config
+      params:
+        content: |
+          server {
+            listen 80;
+            location / { proxy_pass http://app:8000; }
+          }
+      notifies:
+        - resource: proxy
+          action: restart
+
+    - id: app
+      type: service
+      params:
+        image: ghcr.io/example/shop:2.3.0
+        environment:
+          DATABASE_NAME: shop
+        networks:
+          - ${frontend}
+
+    - id: proxy
+      type: service
+      params:
+        image: nginx:1.27
+        ports:
+          - "80:80"
+        configs:
+          - source: ${site}
+            target: /etc/nginx/conf.d/default.conf
+        networks:
+          - ${frontend}
+      dependsOn:
+        - resource: app

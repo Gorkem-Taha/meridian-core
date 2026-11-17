@@ -234,3 +234,18 @@ fn the_target_version_chooses_the_engine() {
         e.msg
     );
 }
+
+#[test]
+fn a_condition_on_the_runner_is_refused_not_dropped() {
+    let err = refusal(&format!(
+        "    - id: settings\n      type: runner\n      params:\n        engine: DscV3\n      runtimeWhen: \"equals (nodeName) 'web'\"\n{SERVICE}"
+    ));
+    assert_eq!(err.rule, "unsupported-runtime-condition");
+    assert_eq!(err.resource, "settings");
+    assert!(
+        err.msg
+            .contains("Put the condition on the DSC resources it should guard"),
+        "{}",
+        err.msg
+    );
+}
