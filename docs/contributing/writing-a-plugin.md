@@ -1,0 +1,403 @@
+# Writing a plugin
+
+A plugin teaches Meridian one tool. It compiles a Meridian document into the
+files that tool reads, and it runs the tool to plan and apply them. This guide
+takes you from nothing to a pull request, one step at a time. It assumes you
+know the tool you are adding and can read Rust. It does not assume you know
+Meridian's internals: a plugin depends on one crate, `meridian-sdk`, and nothing
+else of Meridian's.
+
+If you have not used Meridian yet, spend ten minutes on
+[Your first ResourceSet](../quickstart/first-resourceset.md) first. Writing a
+plugin is much easier once you have seen a document compiled and applied.
+
+## What you are building
+
+```mermaid
+flowchart LR
+    doc[Meridian document] --> core[core: parse, validate, order]
+    core -->|ResourceGraph| t[transform]
+    subgraph plugin [your plugin, one process]
+      t --> s[sort] --> v[validate] --> e[emit]
+      r[runner]
+    end
+    e -->|Artifact: files as data| host[host]
+    host -->|Artifact + work directory| r
+    r --> tool[the real tool]
+```
+
+A plugin has two halves, and they never mix.
+
+| Half | Trait | What it does | Side effects |
+|---|---|---|---|
+| Compiling | [`Emitter`](../../crates/meridian-sdk/src/types.rs) | turns a `ResourceGraph` into an `Artifact` (paths and file contents, as data), or refuses | none, ever |
+| Running | [`Runner`](../../crates/meridian-sdk/src/run.rs) | writes the artifact to a work directory and drives the tool to `plan`, `apply` and report `outputs` | whatever the tool does |
+
+By the time a document reaches your plugin, the core has already parsed it,
+validated it, resolved the target host to a literal and put the resources in an
+order that satisfies every `dependsOn`. Your job is mapping and serialisation.
+
+There is one rule that matters more than any other, and reviewers will hold
+you to it:
+
+> A document either compiles to something that does what it says, or it does
+> not compile and the author is told why. A plugin never emits output that
+> quietly does less.
+
+In practice that means refusing, with a `CompileError`, anything your tool
+cannot express: a resource type it does not have, a param you do not map, a
+`notifies` it cannot act on. A refusal is not a failure of your plugin. It is
+the plugin working. The background is in
+[The capability model](../concepts/capability-model.md).
+
+## Before you start
+
+1. **Check that nobody else is already on it.** Look through the
+   [open pull requests](https://github.com/ZanattaMichael/meridian-core/pulls)
+   and [issues](https://github.com/ZanattaMichael/meridian-core/issues) for the
+   tool's name. If there is no issue, open one with the "New plugin" form and
+   say you are taking it, so two people do not write the same plugin.
+2. **Decide the category.** It is one of `infrastructure-as-code` (it creates
+   infrastructure), `configuration-management` (it configures a machine that
+   exists), `containerization` (containers on one host) or
+   `container-orchestration` (containers across a cluster). The core uses the
+   category to decide which workflows a plugin can join.
+3. **Decide the vocabulary.** There are two families, described in
+   [Documents, resources and targets](../concepts/ir-overview.md):
+   - Configuration management targets share six abstract types (`package`,
+     `file`, `service`, `user`, `group`, `exec`), so the same document compiles
+     for Ansible, Puppet or Chef. A new tool of that kind should take the same
+     six, as far as it can. They are specified in
+     [Configuration management resource types](../reference/resource-types.md).
+   - Every other target is native: a resource's `type` is the tool's own type
+     and its `params` are the tool's own arguments, written exactly as the
+     tool's documentation writes them. Do not invent a new abstraction.
+
+## Step 1: set up
+
+You need a stable Rust toolchain and Python 3. Nothing else: the test suite
+uses stand-ins for every tool, so you do not need Terraform, Ansible or anything
+like them installed.
+
+```
+git clone https://github.com/<you>/meridian-core
+cd meridian-core
+cargo test --workspace
+```
+
+If that does not pass on a fresh clone, stop and
+[open an issue](https://github.com/ZanattaMichael/meridian-core/issues/new/choose).
+It is a bug in the project, not in your setup.
+
+## Step 2: scaffold the plugin
+
+Do not start from an empty directory. Run:
+
+```
+python3 tools/new_plugin.py nomad --category container-orchestration
+```
+
+with your tool's name in place of `nomad`. The name is what documents will
+write in `spec.target`: lower case, digits and hyphens.
+
+This copies the [template plugin](../../crates/meridian-plugin-template/README.md)
+and renames everything in it. You get:
+
+| Path | What it is |
+|---|---|
+| `plugins/nomad/` | the crate. Its binary is `meridian-target-nomad`, the name the host looks for |
+| `plugins/nomad/src/` | `lib.rs`, the four stages (`transform.rs`, `sort.rs`, `validate.rs`, `emit.rs`), `runner.rs` and `main.rs` |
+| `plugins/nomad/tests/` | `compile.rs` and `run.rs` |
+| `plugins/nomad/testdata/` | golden files: the recorded output of the tests |
+| `examples/nomad/site.yaml` | an example document, which a test compiles with the real plugin |
+| `docs/targets/nomad.md` | the tool's documentation page, as a stub |
+
+It also adds the crate to the workspace in `Cargo.toml`. Prove it works before
+you change anything:
+
+```
+cargo test -p meridian-target-nomad
+cargo build -p meridian-cli -p meridian-target-nomad
+target/debug/meridian plugins
+target/debug/meridian compile examples/nomad/site.yaml --out build
+```
+
+`meridian plugins` lists your plugin with its category and what it can do, and
+`build/site/` holds the files it compiled. At this point the plugin still
+drives the template's imaginary tool, `filesync`. From here on you replace
+that tool with yours, one file at a time. Every place that needs a decision is
+marked `TODO(plugin)`:
+
+```
+grep -rn "TODO(plugin)" plugins/nomad docs/targets/nomad.md
+```
+
+## Step 3: write the example you want to work
+
+Edit `examples/nomad/site.yaml` into a small, realistic document for your
+tool, written the way you want users to write it. Then write down, by hand,
+the files you expect it to compile to. That pair is your specification, and it
+becomes the first golden test.
+
+Two things to know about example files:
+
+- A test reads the target from the line that starts `  target: `, so do not
+  put a comment after it on the same line.
+- Use `kind: ResourceSet` with a `targetHost` for a tool that configures a
+  machine, and `kind: Infrastructure` for one that creates things. Copy the
+  shape from an existing example of the same category under
+  [`examples/`](../../examples).
+
+## Step 4: the compile stages
+
+The stages are always the same four, in this order, each in its own file.
+`Emitter::emit` in `lib.rs` just calls them in turn. Start by replacing the
+`Entry` struct in `lib.rs` with a model of your tool's own file format.
+
+### transform.rs
+
+Maps each `Resource` to your model, or refuses it. A resource is plain data:
+
+| Field | Meaning |
+|---|---|
+| `id` | the author's name for it, unique in the document |
+| `type` | the resource type |
+| `state` | the desired state, such as `present`; empty when the author gave none |
+| `params` | a sorted map of name to [`Value`](../../crates/meridian-value/src/lib.rs) |
+| `runtime_when` | a condition to check on the node during the apply; empty when there is none |
+| `pos` | the file, line and column the author wrote it at |
+
+Almost every refusal lives in this stage. Build one with the `refuse` helper
+the template gives you. It carries a stable rule name, a message and the
+author's position, so the operator is pointed at their own line:
+
+```rust
+return Err(refuse(
+    r,
+    "unsupported-state",
+    format!("has the state {other:?} (supported: present, absent)"),
+));
+```
+
+Use the rule names the other plugins already use where they fit:
+`unsupported-resource-type`, `unsupported-state`, `unsupported-action`,
+`unsupported-runtime-condition`, `missing-param`. Say what is supported in the
+message, as above, so the author knows what to write instead.
+
+If your tool can report values, such as an address or an id, also compile each
+entry of `graph.outputs` into the tool's own output mechanism here. A string
+may carry `${resource.path}` references to things only the tool knows;
+[`meridian_sdk::expr`](../../crates/meridian-sdk/src/expr.rs) finds them, and
+your plugin rewrites each one into the tool's own spelling.
+
+### sort.rs
+
+Applies your tool's ordering rules and decides what a `notifies` becomes.
+
+Resources arrive in an order that already satisfies `dependsOn`. A tool that
+reads its input from top to bottom needs nothing more. A tool with its own way
+to say "after" writes the edges into its model here.
+
+A notify means "when this resource changes, do that to the other one". You
+have three honest choices, and one dishonest one:
+
+| The tool | Do this | Declare |
+|---|---|---|
+| reacts to a change by itself (an Ansible handler) | compile the edge to it | `native_notify: true` |
+| can be made to (a checksum in a label that forces a restart) | build it, and return a `Warning` saying what the operator will see | `synthetic_notify: true` |
+| cannot | refuse the document | neither |
+| | accept the edge and ignore it | never |
+
+How the existing plugins handle each case is in
+[Dependencies and notifications](../concepts/dependencies.md).
+
+### validate.rs
+
+Checks what only your tool's rules can say, on the whole model: names the tool
+would reject, two resources claiming one thing, a required pairing. The aim is
+that a document the tool would refuse is refused here instead, before anything
+runs, with the author's line number.
+
+### emit.rs
+
+Serialises the model to files, and does nothing else. It cannot fail, because
+every decision has already been made.
+
+The output must be byte-for-byte the same every time. Write in a fixed order
+and never iterate a `HashMap`. For YAML, depend on `meridian-yaml`, which has
+the deterministic writer the first-party plugins share. Paths in the artifact
+are relative and must stay inside it.
+
+### Capabilities, category and resource types
+
+Back in `lib.rs`, fill in the three declarations. They are published in the
+[capability matrix](../reference/capability-matrix.md), and users decide by
+them, so each one is a promise:
+
+- `supported_resource_types()`: every type you map, sorted. For a native
+  target whose types are open-ended, describe the shape, as Bicep does with
+  `<Namespace>/<type>@<api-version>`.
+- `capabilities()`: `native_notify`, `synthetic_notify` and
+  `runtime_condition`. Declare only what a test in your crate proves.
+- `category()`: the one you chose before you started.
+
+## Step 5: the runner
+
+`runner.rs` hands the artifact to the real tool. The host gives you a
+`RunContext`:
+
+| Field | Meaning |
+|---|---|
+| `document` | the document's name |
+| `host` | the machine being configured; empty for a document that creates infrastructure |
+| `work_dir` | a directory kept between runs, for the artifact and the tool's own state |
+| `inputs` | values handed over from earlier stages of a workflow |
+
+and you implement up to three operations. Declare only the ones you implement
+in `operations()`; the host never calls the others.
+
+| Operation | Contract |
+|---|---|
+| `plan` | report what an apply would change, and change nothing. If the tool cannot preview, set `Plan::unknown` so an empty list is never read as "in sync" |
+| `apply` | make it so, and report what changed and any outputs |
+| `outputs` | read the values the last apply produced from the tool's own state, without applying |
+
+[`meridian_sdk::tool`](../../crates/meridian-sdk/src/tool.rs) has what nearly
+every runner needs:
+
+- `write_artifact` puts the artifact in the work directory, removes files the
+  previous artifact wrote and this one does not, and leaves the tool's own
+  state alone.
+- `Tool` runs a command, relays its output to the operator line by line, and
+  turns a non-zero exit into a `RunError` that says what was run.
+
+Three rules for a runner:
+
+1. **Never build a shell command string.** Pass arguments one by one with
+   `arg`. If you truly need a shell, for example to run something over SSH,
+   that code gets a second reviewer.
+2. **Secrets go through `secret_arg`**, so they cannot appear in a log line or
+   an error. Mark an output `sensitive` when the tool does, and Meridian masks
+   it everywhere it prints.
+3. **Do not guess at the tool's output.** Ask the tool for JSON where it can
+   give it (`Tool::capture_stdout`). When you must read prose, treat a line you
+   do not understand as an error. Skipping it would report a change as no
+   change.
+
+Let the operator point at the program with an environment variable named
+`MERIDIAN_<TOOL>`, as the template does. The tests rely on it too.
+
+## Step 6: tests
+
+The template's tests show both kinds. Keep them and add to them.
+
+**Compile tests** (`tests/compile.rs`) call the emitter directly.
+
+- Golden tests compile a document and compare the output byte for byte with
+  the files in `testdata/`. Record them with
+
+  ```
+  UPDATE_GOLDEN=1 cargo test -p meridian-target-nomad
+  ```
+
+  then read the diff before you commit it. Golden files are reviewed like
+  code, because they are what your users will get.
+- Refusals are golden files too (`assert_golden_refusal`), because the wording
+  an operator reads is output like any other.
+- Compile the shared documents in [`fixtures/`](../../fixtures) that make
+  sense for your category, as the template does with `web_stack`. Every plugin
+  either compiles a fixture or refuses it for a stated reason.
+- Add one small test per refusal and per mapping decision. Name each test as a
+  sentence that says what is true, as the existing ones do.
+
+**Run tests** (`tests/run.rs`) drive the runner against a stand-in: a shell
+script, written by `meridian_plugin_testkit::stand_in`, that records how it
+was called and prints what the real tool would print. Capture the real tool's
+output once, by hand, and paste it into the stand-in, so the test is honest
+about what the tool says.
+
+**Real-tool tests** are welcome but not required for a first pull request. If
+you add one, gate it behind an environment variable and give it its own
+workflow file, as [`cloud-init.yml`](../../.github/workflows/cloud-init.yml)
+and [`podman.yml`](../../.github/workflows/podman.yml) do. A plugin that has
+only been tested against a stand-in must say so on its documentation page.
+
+## Step 7: documentation
+
+A plugin without documentation is not finished, and will not be merged. Fill
+in `docs/targets/<name>.md`. The stub has the sections every target page has.
+The rules:
+
+- It opens with **What it does and does not support**. Say what it refuses as
+  plainly as what it does.
+- Every example on the page is a file under `examples/<name>/`, so a test
+  compiles it and it cannot rot.
+- List every refusal rule the plugin can raise and what the author should do
+  about it.
+- Name the versions of the tool you tested with, and how.
+
+Then list the new target where users look for targets. Each is one line:
+
+| File | What to add |
+|---|---|
+| [`README.md`](../../README.md) | a row in the plugin table |
+| [`docs/index.md`](../index.md) | the target, under its category in the Targets table |
+| [`docs/quickstart/install.md`](../quickstart/install.md) | what the target needs installed |
+| [`docs/concepts/ir-overview.md`](../concepts/ir-overview.md) and [`dependencies.md`](../concepts/dependencies.md) | the target, where the others of its category are listed |
+| `crates/meridian-cli/tests/capability_matrix.rs` | a `row(...)` for the plugin, and a dev-dependency on it in `crates/meridian-cli/Cargo.toml` |
+
+The capability matrix itself is generated. After adding the row, record it:
+
+```
+UPDATE_GOLDEN=1 cargo test -p meridian-cli --test capability_matrix
+```
+
+## Step 8: check everything and open the pull request
+
+These are the checks CI runs. Run them all before you push:
+
+```
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+python3 tools/check_links.py
+```
+
+Then open a pull request. A draft is fine, and opening one early is the best
+way to get help. The pull request form has a checklist; the plugin part of it
+is this list:
+
+- [ ] The example compiles, and its golden files are what the tool should get
+- [ ] Everything the tool cannot express is refused, with a test for each refusal
+- [ ] `capabilities()`, `category()` and `supported_resource_types()` claim only what a test proves
+- [ ] The runner builds no shell command strings, or says where it does and why
+- [ ] `docs/targets/<name>.md` is complete and opens with what is and is not supported
+- [ ] The target is listed in the README, the docs index, the install page and the capability matrix
+- [ ] The four CI commands pass locally
+
+What happens next, and how review works, is in
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md#what-happens-to-your-pull-request).
+
+## Reading other plugins
+
+When you are unsure how to do something, a first-party plugin has probably
+done it. Good ones to read:
+
+| To see | Read |
+|---|---|
+| the smallest complete plugin | [`crates/meridian-plugin-template`](../../crates/meridian-plugin-template/src/lib.rs) |
+| a native target with a synthetic notify and outputs | [`plugins/docker`](../../plugins/docker/src/lib.rs) |
+| the six abstract types, a native notify and a runtime condition | [`plugins/ansible`](../../plugins/ansible/src/lib.rs) |
+| references between resources and to outputs | [`plugins/terraform`](../../plugins/terraform/src/lib.rs) |
+| a runner that works over SSH, with a real-tool workflow | [`plugins/podman`](../../plugins/podman/src/lib.rs) |
+
+## A plugin in another language, or outside this repository
+
+A plugin is a separate process that speaks gRPC, and the protocol is defined
+in [`proto/meridian/plugin/v1/plugin.proto`](../../proto/meridian/plugin/v1/plugin.proto).
+So a plugin can be written in any language, and can live in its own
+repository: build a binary named `meridian-target-<name>`, put it beside
+`meridian` or in a directory named by `--plugin-dir`, and the host finds it.
+The Rust SDK is the supported path today, and the only one with a test kit.
+If you write one in another language, please open an issue and tell us what
+was hard; that is how the protocol gets better.

@@ -1,0 +1,39 @@
+name: Feature request
+description: Something Meridian or one of its plugins should be able to do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task, not the solution. A document you wish you could write is the best description there is.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where does it belong?
+      options:
+        - The language (every target)
+        - The meridian command or the orchestrator
+        - A plugin that exists (name it below)
+        - The plugin SDK
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target
+      description: The plugin involved, if any.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: If a target cannot express this, say what should happen there. In Meridian the answer is a refusal with a reason, never output that quietly does less.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Would you like to work on it?
+      options:
+        - label: I would like to open a pull request for this

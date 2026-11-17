@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/ZanattaMichael/meridian-core/security/advisories/new
+    about: Please do not open a public issue for a security problem. Report it privately here.
+  - name: How to contribute
+    url: https://github.com/ZanattaMichael/meridian-core/blob/main/CONTRIBUTING.md
+    about: From a fresh clone to a merged pull request, including how to write a plugin.

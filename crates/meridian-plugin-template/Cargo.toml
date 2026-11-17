@@ -1,0 +1,21 @@
+[package]
+name = "meridian-plugin-template"
+description = "A small working Meridian plugin to copy when writing a new one"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "meridian-target-template"
+path = "src/main.rs"
+
+[dependencies]
+meridian-sdk = { path = "../meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
+
+[lints]
+workspace = true
