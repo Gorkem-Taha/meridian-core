@@ -214,7 +214,7 @@ not change when workflows, fan-out and retries arrive.
 | `rollback.started` | a step is about to be put back | `kind`, `to` (the artifact hash) |
 | `rollback.succeeded` | it was put back | `kind`, `to`, `changes` |
 | `rollback.failed` | putting it back failed; the rollback stops | `kind`, `to`, `reason` |
-| `rollback.unavailable` | it could not be put back, and was left | `kind`, `reason`: `first-apply`, `no-snapshot`, `applied-since`, `document-missing`, `host-unknown`, `no-plugin`, `state-failed` or `earlier-rollback-failed` |
+| `rollback.unavailable` | it could not be put back, and was left | `kind`, `reason`: `first-apply`, `no-snapshot`, `applied-since`, `document-missing`, `host-unknown`, `imports-unknown`, `no-plugin`, `state-failed` or `earlier-rollback-failed` |
 | `run.succeeded`, `run.failed` | the run ends | `steps`, `failed`, `rolledBack` |
 | `lock.released` | the run is about to release the lock | `id` |
 

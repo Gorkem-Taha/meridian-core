@@ -69,7 +69,11 @@ targetHost:
 ## Order within a workflow
 
 Every Infrastructure document in a workflow runs before any ResourceSet,
-whatever order the files are given in. A workflow is simply the documents passed
+whatever order the files are given in, unless a document
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) a value from
+another: a document always runs after the ones it needs, so a cloud-init
+ResourceSet runs before the Infrastructure document that creates the machine
+with its user-data. A workflow is simply the documents passed
 to one `meridian` command, in one file separated by `---` or in several files.
 
 ## What this does not do

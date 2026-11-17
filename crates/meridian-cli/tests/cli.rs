@@ -108,7 +108,7 @@ fn plugins_lists_what_each_plugin_is_and_can_do() {
     assert_eq!(
         text,
         format!(
-            "fake\n  category:  containerization\n  can:       compile, plan, apply, outputs\n  \
+            "fake\n  category:  containerization\n  can:       compile, plan, apply, outputs, imports\n  \
              resources: file\n  versions:  1, 2.4\n  sdk:       0.1.0 (protocol 2)\n  binary:    {}\n",
             binary.display()
         )
@@ -453,5 +453,94 @@ fn a_target_version_the_target_does_not_compile_for_is_refused() {
         ),
         "{}",
         stdout(&bad)
+    );
+}
+
+#[test]
+fn version_shows_every_version_stream_of_the_build() {
+    let dir = scratch("version", WORKFLOW);
+    let out = meridian(&dir, &["version"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(
+        stdout(&out),
+        format!(
+            "meridian {}\n  language         meridian/v1  supported\n  plugin sdk       {}\n  plugin protocol  2\n",
+            env!("CARGO_PKG_VERSION"),
+            meridian_sdk::VERSION
+        )
+    );
+}
+
+#[test]
+fn an_api_version_this_build_does_not_read_is_refused_with_the_reason() {
+    for (version, why) in [
+        (
+            "meridian/v2",
+            "it is newer than this build, which understands meridian/v1; upgrade meridian",
+        ),
+        (
+            "meridian/v1.0",
+            "versions are whole numbers, as in \"meridian/v1\"",
+        ),
+        ("apps/v1", "expected \"meridian/v1\""),
+    ] {
+        let dir = scratch(
+            "api-version",
+            &WORKFLOW.replacen(
+                "apiVersion: meridian/v1",
+                &format!("apiVersion: {version}"),
+                1,
+            ),
+        );
+        let out = meridian(&dir, &["validate", "site.yaml"]);
+        assert!(!out.status.success());
+        assert_eq!(
+            stderr(&out),
+            format!(
+                "error: site.yaml:1:1: apiVersion: unsupported apiVersion {version:?}: {why}\n"
+            )
+        );
+    }
+}
+
+#[test]
+fn migrate_leaves_current_documents_alone_and_refuses_what_it_cannot_do() {
+    let dir = scratch("migrate", WORKFLOW);
+    for args in [
+        &["migrate", "site.yaml"][..],
+        &["migrate", "site.yaml", "--check"],
+        &["migrate", "site.yaml", "--to", "meridian/v1"],
+    ] {
+        let out = meridian(&dir, args);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(stdout(&out), "site.yaml: already at meridian/v1\n");
+    }
+    assert_eq!(fs::read_to_string(dir.join("site.yaml")).unwrap(), WORKFLOW);
+
+    let out = meridian(&dir, &["migrate", "site.yaml", "--to", "meridian/v2"]);
+    assert!(!out.status.success());
+    assert_eq!(
+        stderr(&out),
+        "error: --to: unsupported apiVersion \"meridian/v2\": it is newer than this build, \
+         which understands meridian/v1; upgrade meridian\n"
+    );
+
+    fs::write(
+        dir.join("k8s.yaml"),
+        "apiVersion: apps/v1\nkind: Deployment\n",
+    )
+    .unwrap();
+    let out = meridian(&dir, &["migrate", "k8s.yaml", "missing.yaml"]);
+    assert!(!out.status.success());
+    let err = stderr(&out);
+    assert!(
+        err.contains(
+            "error: k8s.yaml: apiVersion \"apps/v1\" is not a Meridian language version\n"
+        ),
+        "{err}"
+    );
+    assert!(
+        err.contains("error: missing.yaml: cannot read file: "),
+        "{err}"
     );
 }

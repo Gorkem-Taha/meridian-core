@@ -84,7 +84,10 @@ optional [`meridian-report-server`](docs/reference/report-server.md) receives th
 A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
 `targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever
 that output turns out to be; until that infrastructure has been applied it is reported as
-deferred. Values a tool marks sensitive are masked wherever Meridian prints.
+deferred. A document can also be handed a value from any other document with `spec.imports`:
+a file it compiles to, such as cloud-init user-data for the machine Terraform creates, or an
+output. It reaches the tool as the tool's own variable, and the documents run in the order
+that needs. Values a tool marks sensitive are masked wherever Meridian prints.
 
 ## Layout
 
@@ -114,7 +117,7 @@ The plugins are under `plugins/`, one crate each, built as a binary named
 Meridian's, which is the same position a third-party plugin is in.
 
 A plugin is a separate process. The host launches the binary, reads one handshake line
-saying where it is listening, checks the protocol version, and then talks to it over gRPC.
+saying where it is listening, agrees a protocol version with it, and then talks to it over gRPC.
 The protocol is defined in [`proto/`](proto/meridian/plugin/v1/plugin.proto), so a plugin
 can be written in any language that can serve it. A plugin binary is not meant to be run
 by hand: its stdout carries the protocol, and it exits when the host closes its stdin.

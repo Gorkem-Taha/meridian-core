@@ -20,6 +20,8 @@
 //! the stages before it were built on the one that would not go back.
 
 use meridian_ir::Document;
+
+use crate::Stop;
 use meridian_sdk::{Change, Data, LogLine, RunContext, Value};
 
 use crate::backend::Backend;
@@ -211,6 +213,25 @@ pub(crate) fn items_of(run: &mut Run<'_>, of: &RunRecord) -> Vec<Item> {
             },
             _ => (String::new(), Data::new()),
         };
+        // And what it is handed from other documents, likewise.
+        let mut inputs = inputs;
+        match run.imports_of(document) {
+            Ok(imports) => inputs.extend(imports),
+            Err(Stop::Failed { why, .. }) => {
+                items.push(unavailable(why, "imports-unknown"));
+                continue;
+            }
+            Err(Stop::Deferred { waiting_on, output }) => {
+                items.push(unavailable(
+                    format!(
+                        "it imports the output {output:?} of {waiting_on}, whose tool can no \
+                         longer report it"
+                    ),
+                    "imports-unknown",
+                ));
+                continue;
+            }
+        }
         let context = match run.context(&step.id, &step.target, &host, inputs) {
             Ok(context) => context,
             Err(why) => {

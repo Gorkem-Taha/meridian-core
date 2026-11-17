@@ -314,9 +314,10 @@ There are two ways, and they can be combined.
   export MERIDIAN_AZ_PARAMETERS="@prod.parameters.json admin_user=ops"
   ```
 
-- **From an earlier stage of a workflow.** When an earlier stage produced an output with
-  the same name as one of the template's parameters, that output is the parameter's value.
-  This is how a value made by another tool reaches a template.
+- **From another document of the workflow.** A value the document
+  [imports](../reference/dsl/outputs-and-hand-offs.md#imports) under the name of one of
+  the template's parameters is that parameter's value. This is how a value made by
+  another tool, or a file another document compiles to, reaches a template.
 
 Operator values are never shown in a log or an error, and neither is the value of a
 `securestring` or `secureObject` parameter.

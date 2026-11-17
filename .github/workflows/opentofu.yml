@@ -43,4 +43,4 @@ jobs:
         env:
           MERIDIAN_TEST_TOFU: tofu
           MERIDIAN_TEST_TOFU_NETWORK: '1'
-        run: cargo test -p meridian-target-opentofu --locked --test real -- --nocapture
+        run: cargo test -p meridian-target-opentofu --locked --test real --test imports -- --nocapture

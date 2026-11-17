@@ -106,6 +106,8 @@ impl Emitter for Fake {
 /// The running half. Its state is `state.json` in the work directory.
 pub struct FakeRunner {
     pub operations: Operations,
+    /// Whether the tool takes inputs, which it then echoes when it applies.
+    pub accepts_inputs: bool,
 }
 
 /// What the last apply wrote, by artifact path.
@@ -191,6 +193,10 @@ fn outputs_of(state: &BTreeMap<String, Value>, context: &RunContext) -> Vec<Outp
 impl Runner for FakeRunner {
     fn operations(&self) -> Operations {
         self.operations
+    }
+
+    fn accepts_inputs(&self) -> bool {
+        self.accepts_inputs
     }
 
     fn plan(
@@ -294,7 +300,8 @@ impl Runner for FakeRunner {
 
 /// Serves the plugin, offering the operations `FAKE_OPERATIONS` names
 /// (`none`, `plan`, or anything else for all of them), so a host can be
-/// checked against a plugin that offers only some.
+/// checked against a plugin that offers only some. `FAKE_INPUTS=none` makes
+/// it a plugin that does not take inputs.
 pub fn serve_from_env() -> Result<(), ServeError> {
     let operations = match std::env::var("FAKE_OPERATIONS").as_deref() {
         Ok("none") => None,
@@ -307,7 +314,10 @@ pub fn serve_from_env() -> Result<(), ServeError> {
     };
     let plugin = Plugin::new(Fake);
     match operations {
-        Some(operations) => serve(plugin.with_runner(FakeRunner { operations })),
+        Some(operations) => serve(plugin.with_runner(FakeRunner {
+            operations,
+            accepts_inputs: std::env::var("FAKE_INPUTS").as_deref() != Ok("none"),
+        })),
         None => serve(plugin),
     }
 }

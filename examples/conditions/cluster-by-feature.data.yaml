@@ -1,0 +1,11 @@
+# The values the conditions of cluster-by-feature.yaml read.
+namespace: shop
+replicas: 3
+labels:
+  tier: web
+  env: prod
+features:
+  metrics: {}
+quota_exempt:
+  - kube-system
+  - monitoring

@@ -190,6 +190,12 @@ message DescribeResponse {
   // before this field existed reports none, so the protocol version did not
   // change.
   repeated string target_versions = 8;
+  // accepts_inputs says the plugin hands RunContext.inputs to its tool, as
+  // the tool's own variables or parameters. A document that declares
+  // spec.imports is refused for a plugin that does not say so, because the
+  // values would otherwise be dropped without a word. A plugin built before
+  // this field existed reports false, so the protocol version did not change.
+  bool accepts_inputs = 9;
 }
 
 message EmitRequest {
