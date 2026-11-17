@@ -26,6 +26,12 @@ byte. The reasons, the layout and the order of work are in
 [design plan §11](plans/design-plan.md#11-system-architecture-rust) and
 [§12.1](plans/design-plan.md#121-rust-migration-sequencing).
 
+## Plugins
+
+| Plugin | Category | Guide |
+|---|---|---|
+| Podman | containerization | [Podman plugin](plugins/podman.md) |
+
 ## Planning documents
 
 | Document | What it settles |

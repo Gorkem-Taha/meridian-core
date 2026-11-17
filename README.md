@@ -18,6 +18,7 @@ start with the [design plan](docs/plans/design-plan.md).
 |---|---|---|---|
 | `ansible` | configuration management | `playbook.yml`, `inventory.ini` | `ansible-playbook` |
 | `puppet` | configuration management | `manifests/init.pp`, `site.pp` | `puppet apply`, or `bolt apply` for another host |
+| [`podman`](docs/plugins/podman.md) | containerization | Quadlet units: `<id>.container`, `.pod`, `.volume`, `.network`, `.image`, `.build`, `.kube` | `systemctl` and `podman`, over `ssh` for another host |
 
 ## The `meridian` command
 

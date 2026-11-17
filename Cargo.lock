@@ -706,6 +706,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-podman"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
 name = "meridian-target-puppet"
 version = "0.1.0"
 dependencies = [
