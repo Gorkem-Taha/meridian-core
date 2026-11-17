@@ -1,8 +1,0 @@
-{
-  "directory": "",
-  "name": "monitoring",
-  "outputs": {},
-  "profiles": [],
-  "wait": true,
-  "wait_timeout": 0
-}

@@ -1,0 +1,72 @@
+# A Windows web server configured with DSC, run through DscPipelineRunner.
+#
+# Every resource's type is the DSC resource, Module/Resource, and its params
+# are the resource's own properties. Desired state is one of them (Ensure),
+# so a resource takes no `state`.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: dsc
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    # Not a DSC resource: which engine evaluates the resources, and how the
+    # runner reaches the host. The credential is a name the runner resolves
+    # itself; the secret never appears here.
+    - id: settings
+      type: runner
+      params:
+        engine: DscV2
+        target: WinRM
+        credential: svcDeploy
+
+    - id: iis
+      type: PSDscResources/WindowsFeature
+      params:
+        Name: Web-Server
+        Ensure: Present
+
+    - id: site_root
+      type: PSDesiredStateConfiguration/File
+      params:
+        DestinationPath: C:\inetpub\app
+        Type: Directory
+        Ensure: Present
+      dependsOn:
+        - resource: iis
+
+    - id: site_config
+      type: PSDesiredStateConfiguration/File
+      params:
+        DestinationPath: C:\inetpub\app\web.config
+        Contents: <configuration><system.webServer/></configuration>
+        Ensure: Present
+      dependsOn:
+        - resource: site_root
+      # When the file really changes, the service's Set runs even though the
+      # service is already running.
+      notifies:
+        - resource: w3svc
+          action: refresh
+
+    - id: w3svc
+      type: PSDscResources/Service
+      params:
+        Name: W3SVC
+        State: Running
+        StartupType: Automatic
+
+    # Evaluated by the runner just before the resource. The condition is a
+    # PowerShell predicate in the runner's own function language.
+    - id: app_pool
+      type: WebAdministrationDsc/WebAppPool
+      params:
+        Name: app
+        Ensure: Present
+        State: Started
+      dependsOn:
+        - resource: iis
+      runtimeWhen: "equals (nodeName) 'web'"

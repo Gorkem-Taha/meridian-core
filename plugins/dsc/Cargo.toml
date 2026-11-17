@@ -1,6 +1,6 @@
 [package]
-name = "meridian-target-compose"
-description = "The Meridian plugin for Docker Compose: compiles a document to a Compose file and brings the project up with docker compose"
+name = "meridian-target-dsc"
+description = "The Meridian plugin for DSC: compiles a document to a DscPipelineRunner configuration and runs it with Invoke-DscRunner"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,7 +11,6 @@ meridian-sdk = { path = "../../crates/meridian-sdk" }
 meridian-yaml = { path = "../../crates/meridian-yaml" }
 
 [dev-dependencies]
-meridian-plugin-host = { path = "../../crates/meridian-plugin-host" }
 meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
 
 [lints]
