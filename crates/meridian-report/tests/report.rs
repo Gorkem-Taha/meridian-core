@@ -386,3 +386,46 @@ fn sink_settings_are_checked_and_a_bad_one_never_echoes_its_value() {
     let twice = specs(&["a".to_owned(), "a".to_owned()], &[], &[]).unwrap_err();
     assert_eq!(twice, "the sink \"a\" was asked for twice");
 }
+
+#[test]
+fn a_policy_denial_is_a_failed_step_with_counts_and_never_a_message() {
+    let events = Stream::new()
+        .run("run.started", &[("mode", text("apply"))])
+        .step("step.started", "base", &[])
+        .step(
+            "policy.passed",
+            "base",
+            &[("denials", Value::Int(0)), ("warnings", Value::Int(2))],
+        )
+        .step("step.succeeded", "base", &[])
+        .step("step.started", "app", &[])
+        .step(
+            "policy.denied",
+            "app",
+            &[("denials", Value::Int(1)), ("warnings", Value::Int(0))],
+        )
+        .step("step.failed", "app", &[("reason", text("policy-denied"))])
+        .run("run.failed", &[])
+        .0;
+    let report = Report::from_events(&events);
+    assert_eq!(report.steps[0].policy, "passed");
+    assert_eq!(report.steps[0].policy_warnings, 2);
+    assert_eq!(report.steps[1].policy, "denied");
+    let markdown = render(&report, Format::Markdown);
+    assert!(
+        markdown.contains("- **ResourceSet base** the policy warned: 2 rules"),
+        "{markdown}"
+    );
+    assert!(
+        markdown.contains(
+            "- **ResourceSet app** failed: the run&#39;s policy does not allow the change, or \
+             could not be asked (1 rule denied; \\`meridian plan\\` shows which)"
+        ),
+        "{markdown}"
+    );
+    let junit = render(&report, Format::Junit);
+    assert!(junit.contains("<failure type=\"policy-denied\""), "{junit}");
+    let json = render(&report, Format::Json);
+    assert!(json.contains("\"policy\": \"denied\""), "{json}");
+    assert!(json.contains("\"policyDenials\": 1"), "{json}");
+}

@@ -102,6 +102,9 @@ fn json(report: &Report) -> String {
                 ("waitingFor", text(&step.waiting_for)),
                 ("drift", text(&step.drift)),
                 ("rollback", text(&step.rollback)),
+                ("policy", text(&step.policy)),
+                ("policyDenials", Value::Uint(step.policy_denials)),
+                ("policyWarnings", Value::Uint(step.policy_warnings)),
                 (
                     "resources",
                     Value::List(
@@ -192,6 +195,11 @@ pub fn escape(text: &str) -> String {
 /// Why a step that did not simply succeed ended as it did, in a sentence.
 fn why(step: &Step) -> String {
     match step.status {
+        StepState::Failed if step.policy == "denied" && step.policy_denials > 0 => format!(
+            "failed: {} ({} denied; `meridian plan` shows which)",
+            explain(&step.reason),
+            rules(step.policy_denials)
+        ),
         StepState::Failed => format!("failed: {}", explain(&step.reason)),
         StepState::Skipped => format!("skipped: {}", explain(&step.reason)),
         StepState::NotRun => format!("not run: the earlier step {} failed", step.waiting_on),
@@ -206,9 +214,16 @@ fn why(step: &Step) -> String {
             ("unknown", _) => format!("drift unknown: {}", explain(&step.reason)),
             (_, "failed") => format!("could not be put back: {}", explain(&step.reason)),
             (_, "unavailable") => format!("nothing to put back: {}", explain(&step.reason)),
+            _ if step.policy_warnings > 0 => {
+                format!("the policy warned: {}", rules(step.policy_warnings))
+            }
             _ => String::new(),
         },
     }
+}
+
+fn rules(n: u64) -> String {
+    format!("{n} rule{}", if n == 1 { "" } else { "s" })
 }
 
 fn seconds(ms: Option<u64>) -> String {

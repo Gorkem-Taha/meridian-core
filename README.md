@@ -78,7 +78,8 @@ Every run can also leave a report and tell other systems what it did: `--report 
 (or `json`, `markdown`, `html`) writes one when the run ends, `meridian report` writes one for
 any recorded run, and `--sink NAME` sends the run's events to a program that forwards them, as
 they happen. A report names steps, resources and outputs, and never holds a value. See
-[reports and sinks](docs/reference/reporting.md).
+[reports and sinks](docs/reference/reporting.md). To keep every project's runs in one place, the
+optional [`meridian-report-server`](docs/reference/report-server.md) receives them through a sink.
 
 A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
 `targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever

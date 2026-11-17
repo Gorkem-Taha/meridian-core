@@ -1,15 +1,16 @@
 # Reports and sinks
 
 What a run tells people and other systems, and how to get it where you need
-it. This page covers what works today. What is planned, a report server and
-an OpenTelemetry sink among it, is in [the reporting plan](../plans/reporting.md).
+it. This page covers what works today. What is planned, an OpenTelemetry
+sink among it, is in [the reporting plan](../plans/reporting.md). The
+optional server that collects runs has [its own page](report-server.md).
 
 **Supported:** a live stream of events; report files in JSON, JUnit XML,
 Markdown and HTML, written by the run or afterwards; sinks that are sent the
-events as they happen.
-**Not supported yet:** SARIF; sinks configured in a document (they are named
+events as they happen; a [report server](report-server.md) fed by a sink.
+**Not supported yet:** SARIF (a policy result is reported as counts); sinks configured in a document (they are named
 on the command line); `notification.*` events; a built-in HTTP client, so the
-webhook sink shipped as an example needs `curl`.
+webhook and server sinks shipped as examples need `curl`.
 
 ## How it fits together
 
@@ -38,6 +39,7 @@ flowchart LR
 | numbers for a script | `--report json=meridian.json` |
 | a report of a run that already happened | [`meridian report`](#meridian-report) |
 | runs in a chat channel, a pager, a dashboard | a [sink](#sinks) |
+| every run of every project in one place | the [report server](report-server.md) |
 
 ### No value is ever in a report
 
@@ -126,7 +128,7 @@ with its target as the class: `meridian.ansible`, `ResourceSet web`.
 | The step | Is reported as |
 |---|---|
 | succeeded, or was put back | a passed test case |
-| failed | `<failure type="REASON">`, the reason being the fixed word |
+| failed | `<failure type="REASON">`, the reason being the fixed word, such as `tool-failed` or `policy-denied` |
 | drifted, in a `drift` run | `<failure type="drift">` |
 | could not be put back | `<failure type="rollback-failed">` |
 | skipped, deferred, or not run because an earlier step failed | `<skipped>` |
@@ -160,6 +162,7 @@ meaning.
 | `steps[]` | `name`, `kind`, `target`, `endpoint`, `status`, `reason`, `artifact`, `started`, `finished`, `durationMs`, `waitingOn`, `waitingFor`, `drift`, `rollback`, `resources[]`, `outputs[]` |
 | `steps[].status` | `running`, `succeeded`, `failed`, `skipped`, `deferred`, `not-run`, `rolled-back` |
 | `steps[].drift` | `none`, `detected`, `unknown`; empty when the run was not a drift check |
+| `steps[].policy`, `policyDenials`, `policyWarnings` | `passed` or `denied`, empty when no [policy](policy.md) was asked, and how many rules denied and warned. Counts only: a rule's message is not in an event |
 | `steps[].rollback` | `succeeded`, `failed`, `unavailable`; empty when the step was not put back |
 | `steps[].resources[]` | `id`, `action`, and `phase`: `planned` or `changed` |
 | `steps[].outputs[]` | `name` and `sensitive`. Never a value |
@@ -208,12 +211,13 @@ meridian apply site.yaml --sink command \
 
 ### Sinks shipped as examples
 
-[`examples/sinks`](../../examples/sinks) holds two, both short shell
+[`examples/sinks`](../../examples/sinks) holds three, all short shell
 scripts meant to be read and copied.
 
 | Sink | Settings | Does |
 |---|---|---|
 | `file` | `path` | appends every event to a file |
+| `server` | `url`, `project`, `token` | sends each event to a [Meridian report server](report-server.md) |
 | `webhook` | `url`; optional `secret`, `timeout` | posts each event as JSON with `curl`. With a `secret`, each request carries `X-Meridian-Signature: sha256=<HMAC-SHA256 of the body, in hex>` |
 
 ### A sink never holds a run up

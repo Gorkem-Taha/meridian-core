@@ -2,8 +2,8 @@
 
 Status: design note. The owner chose on 2026-11-17 to stream locally, export
 through sinks, **and** build a Meridian report server
-([decision](#6-decisions)). Part 1 is built in the pull request that adds
-this note; [delivery](#7-delivery) says what follows.
+([decision](#6-decisions)). Parts 1 and 2 are built in the pull request that
+adds this note; [delivery](#7-delivery) says what follows.
 
 A run already says everything it does as events
 ([run safety, section 2](run-safety.md#2-events-and-the-run-record);
@@ -78,11 +78,12 @@ A failure is reported as its fixed reason word and that word's meaning. What
 the tool printed stays on the terminal of the run, because a tool can quote a
 value.
 
-SARIF is the right format for policy findings, which point at a place in a
-document. It is added with the policy checks of the
-[run safety plan](run-safety.md#8-policy-checks-before-apply), when
-`policy.*` events exist to fold; there is nothing true to put in one before
-that.
+A [policy](run-safety.md#8-policy-checks-before-apply) result is folded in
+as what the events carry: passed or denied, and how many rules denied and
+warned. SARIF, the right format for findings that point at a rule and a
+place in a document, is not written yet, because a `policy.*` event holds
+counts and neither a rule nor a place. It needs those two names added to the
+event, which is the run-safety work's to decide.
 
 ## 4. Sinks
 
@@ -121,20 +122,20 @@ sequenceDiagram
     participant R as meridian-report-server
     participant P as a person, or a dashboard
     M->>S: events, one per line, as they happen
-    S->>R: POST /v1/runs/{id}/events (batched, signed)
-    R->>R: append to runs/{id}/events.jsonl
-    P->>R: GET /runs, /runs/{id}
+    S->>R: POST /v1/projects/{project}/runs/{id}/events, with the write token
+    R->>R: append to projects/{project}/runs/{id}/events.jsonl
+    P->>R: GET /projects/{project}, /projects/{project}/runs/{id}
     R-->>P: the same HTML, JSON and JUnit, folded from the stored events
-    P->>R: GET /v1/runs/{id}/events?follow
-    R-->>P: the stream, live
+    Note over P,R: a run in progress: the page reloads itself
 ```
 
-| Choice | Proposed |
+| Choice | Built |
 |---|---|
 | What it stores | events, in the run record's own layout, so `meridian report --from` and the server agree and a directory of records can be served as it is |
-| What it shows | the list of runs, a run's report (the HTML of part 1), a live view, and every report format over HTTP |
+| What it shows | projects, a project's runs, a run's report (the HTML of part 1, reloading itself while the run is going), and every report format over HTTP |
 | How runs reach it | the `server` sink. Meridian itself gains no server dependency and no new failure mode |
-| Who may write | a token per project, sent by the sink; the body is signed |
+| Who may write | the holder of one write token, sent by the sink as a bearer token. A read token is optional. TLS is left to what already terminates it for you |
+| What it trusts | nothing it is sent: every line must be an event of the run named, and what is stored is the event written out again |
 | What it is not | not a scheduler, not a place to start runs from, and not a store of state or secrets |
 
 ## 6. Decisions
@@ -146,8 +147,10 @@ sequenceDiagram
 | P3 | Sink contract | one program per run, events on standard input | one program per event, which cannot batch or keep a connection |
 | P4 | A failed sink | a warning, unless `required` | always fatal |
 | P5 | Failure detail | the fixed reason word; the tool's text stays on the terminal | the tool's text, masked |
+| P6 | The server's storage | event files in the run record's layout, folded on request | a database, which would be a second thing to keep in step |
+| P7 | The server's access control | one write token, an optional read token, TLS at a proxy | users and roles in the server |
 
-P2 to P5 are recommendations the owner has not been asked to confirm one by
+P2 to P7 are recommendations the owner has not been asked to confirm one by
 one.
 
 ## 7. Delivery
@@ -155,9 +158,10 @@ one.
 | Part | Holds | State |
 |---|---|---|
 | 1 | crate `meridian-report`; `--report`, `meridian report`; sinks with the built-in `command` sink and two reference sinks (`file`, `webhook` over `curl`); docs | this pull request |
-| 2 | the report server and its `server` sink | next |
+| 2 | crate `meridian-report-server` and its `server` sink; [guide](../reference/report-server.md) | this pull request |
 | 3 | an OpenTelemetry sink (a trace per run, a span per step), and a built-in webhook that needs no `curl` | after 2 |
-| 4 | SARIF, with the policy checks | when `policy.*` events exist |
+| 4 | SARIF | when a `policy.*` event names the rule and the place |
+| 5 | for the server, if wanted: a token per project, live push in place of page reloads, an index so a list does not fold every run | on request |
 
 `notification.sent` and `notification.failed` events are not emitted by part
 1: a sink's result is known only after the run's last event, so it is

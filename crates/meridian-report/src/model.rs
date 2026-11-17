@@ -114,6 +114,12 @@ pub struct Step {
     /// How putting the step back went: `succeeded`, `failed` or
     /// `unavailable`; empty when it was not rolled back.
     pub rollback: String,
+    /// What the run's policy said of the step: `passed` or `denied`; empty
+    /// when no policy was asked. With it, how many rules denied and how
+    /// many warned. Counts only: a rule's message is not in an event.
+    pub policy: String,
+    pub policy_denials: u64,
+    pub policy_warnings: u64,
     pub resources: Vec<Resource>,
     pub outputs: Vec<StepOutput>,
 }
@@ -187,6 +193,14 @@ fn text(event: &Event, key: &str) -> String {
     match event.detail.get(key) {
         Some(Value::String(s)) => s.clone(),
         _ => String::new(),
+    }
+}
+
+fn count(event: &Event, key: &str) -> u64 {
+    match event.detail.get(key) {
+        Some(Value::Uint(n)) => *n,
+        Some(Value::Int(n)) => u64::try_from(*n).unwrap_or(0),
+        _ => 0,
     }
 }
 
@@ -309,6 +323,16 @@ impl Report {
                 step.drift = "unknown".to_owned();
                 step.reason = text(event, "reason");
             }
+            event::POLICY_PASSED | event::POLICY_DENIED => {
+                step.policy = if kind == event::POLICY_PASSED {
+                    "passed"
+                } else {
+                    "denied"
+                }
+                .to_owned();
+                step.policy_denials = count(event, "denials");
+                step.policy_warnings = count(event, "warnings");
+            }
             event::ROLLBACK_STARTED => {
                 if step.started.is_empty() {
                     step.started = event.time.clone();
@@ -373,6 +397,7 @@ pub fn explain(reason: &str) -> &str {
         "not-supported" => "the target cannot do what was asked of it",
         "plugin-failed" => "the plugin failed: its process died, or a call to it did",
         "tool-failed" => "the tool reported a failure",
+        "policy-denied" => "the run's policy does not allow the change, or could not be asked",
         "state-failed" => "the step's working directory could not be prepared",
         "already-applied" => "already applied from the same compiled content",
         "earlier-step-failed" => "an earlier step failed",

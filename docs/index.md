@@ -53,6 +53,7 @@ byte. The reasons, the layout and the order of work are in
 | [Policy checks](reference/policy.md) | asking a policy before a change is made: the options, the input a policy sees, Rego with Open Policy Agent, and how to write an engine |
 | [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |
 | [Reports and sinks](reference/reporting.md) | report files in JSON, JUnit, Markdown and HTML, sending a run's events elsewhere as they happen, and how to write a sink |
+| [The report server](reference/report-server.md) | an optional server that collects the runs of every project and shows them; running it, securing it, its HTTP interface |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |

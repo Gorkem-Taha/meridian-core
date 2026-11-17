@@ -8,6 +8,7 @@ in and runs any program you name. Any other is a program named
 | File | What it is |
 |---|---|
 | [`meridian-notify-file`](meridian-notify-file) | appends every event to a file. It is the reference implementation, and the one the tests prove the contract against |
+| [`meridian-notify-server`](meridian-notify-server) | sends every event to a [Meridian report server](../../docs/reference/report-server.md) with `curl` |
 | [`meridian-notify-webhook`](meridian-notify-webhook) | posts every event to an HTTP endpoint with `curl`, signed with a shared secret when one is set |
 
 ```
