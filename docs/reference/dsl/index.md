@@ -47,7 +47,7 @@ flowchart TD
 | [`notifies`](notifies.md) | reactions: native, synthetic, refused; the actions each target takes |
 | [Conditions](conditions.md) | `runtimeWhen` and `when` |
 | [References](references.md) | `${...}`: syntax, how each target rewrites it, what can be read where |
-| [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs` and `targetHost`: the one tie between documents |
+| [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs`, `targetHost` and `imports`: the ties between documents |
 | The four flavour pages above | how all of it is written for each segment |
 
 ## Contents
@@ -64,6 +64,7 @@ flowchart TD
 - [`when` and `runtimeWhen`](#when-and-runtimewhen)
 - [References](#references)
 - [`outputs`](#outputs)
+- [`imports`](#imports)
 - [Workflows: several documents](#workflows-several-documents)
 - [Which check happens when](#which-check-happens-when)
 
@@ -211,6 +212,7 @@ every `-l` given. Rules:
 |---|---|---|
 | `target` | yes | the name of the plugin that compiles and runs the document, such as `terraform`. `meridian plugins` lists what is installed |
 | `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
+| `imports` | no | a list of [imports](#imports): values handed to this document from others |
 | `resources` | yes | a list of at least one [resource](#resources) |
 | `outputs` | no | a list of [outputs](#outputs) |
 
@@ -223,6 +225,7 @@ every `-l` given. Rules:
 | `target` | yes | the plugin, such as `ansible` |
 | `targetVersion` | no | text: the version of the tool to compile for. See [`targetVersion`](#targetversion) |
 | `targetHost` | yes, to compile | the machine. See [`targetHost`](#targethost) |
+| `imports` | no | a list of [imports](#imports): values handed to this document from others |
 | `resources` | yes | a list of at least one [resource](#resources) |
 
 `outputs` is not a field of a ResourceSet.
@@ -583,12 +586,59 @@ shown, kept in the state directory, and handed to the stage that asked for it. A
 value the tool marks as sensitive is shown as `(sensitive)`. On an apply, an
 output the tool has no value for is an error, not an empty value.
 
-Today an output can be consumed in one place: as the `targetHost` of a
-ResourceSet. A second Infrastructure document cannot read it yet.
+An output can be consumed in two places: as the `targetHost` of a
+ResourceSet, and as an [import](#imports) of any document.
 
 Configuration management documents are ResourceSets, which have no `outputs`
 field, so those targets produce none. The
 [capability matrix](../capability-matrix.md) has the column for every target.
+
+## `imports`
+
+In either kind of document: `spec.imports`, values the document is handed from
+other documents of the workflow.
+
+```yaml
+imports:
+  - name: user_data          # the tool's variable of this name
+    from: artifact           # a file another document compiles to
+    ref: bootstrap
+    file: user-data
+    sensitive: true
+  - name: vpc_id
+    from: output             # a value another document's apply produced
+    ref: network
+    output: vpc_id
+```
+
+| Field | Required | Value |
+|---|---|---|
+| `name` | yes | the name the value arrives under: a letter or underscore, then letters, digits and underscores. Unique among the document's imports |
+| `from` | yes | `artifact`, a file another document compiles to, or `output`, a value an Infrastructure document's apply produced |
+| `ref` | yes | the `metadata.name` of the other document, given to the same command |
+| `file` | with `artifact` | the path of a file that document compiles to, as `meridian compile` lists it |
+| `output` | with `output` | the `name` of an output that document declares |
+| `sensitive` | no | `true` masks the value wherever Meridian prints. An output its tool marks sensitive stays sensitive without it |
+
+An import reaches the document's **tool**, as the tool's own variable or
+parameter of that name. It is never spliced into the document's text, so the
+document declares the variable and reads it the way its tool does:
+
+```yaml
+resources:
+  - id: user_data
+    type: variable
+    params: {type: string, sensitive: true}
+  - id: web
+    type: aws_instance
+    params:
+      user_data: ${user_data}
+```
+
+A document that imports runs after every document it imports from. Only a
+target that takes inputs can import; the
+[capability matrix](../capability-matrix.md) has the column. In depth, with
+diagrams and every rule: [outputs and hand-offs](outputs-and-hand-offs.md#imports).
 
 ## Workflows: several documents
 
@@ -601,9 +651,16 @@ meridian apply machine.yaml web.yaml
 
 - Every Infrastructure document runs before any ResourceSet, whatever order the
   files are given in. Within a kind, documents run in the order given.
+- A document runs after every document it needs: the one its `targetHost` comes
+  from, and every one it [imports](#imports) from. That is the only thing that
+  moves a document from the order above, and it can put a ResourceSet before an
+  Infrastructure document.
+- Documents that wait on each other cannot be ordered, and are refused by
+  `validate`.
 - Two documents of the same kind cannot share a name. An Infrastructure document
   and a ResourceSet can.
-- A ResourceSet waiting for an output is deferred until that output exists.
+- A document waiting for an output, as its host or as an import, is deferred
+  until that output exists.
 - When a stage fails, the stages after it do not run. Nothing is rolled back.
 
 Every step from file to running tool is in
@@ -624,6 +681,10 @@ and [`examples/workflow/`](../../../examples/workflow) holds its files.
 | A notify's `on` is `changed`; an `ifMissing` is `error` or `skip` | yes | yes |
 | A `when` is written in the condition language | yes | yes |
 | `targetHost` is complete, and names a real document and output | yes | yes |
+| Every import is complete, has a usable and unique name, and names a real document and output | yes | yes |
+| No documents wait on each other, through `targetHost` and `imports` | yes | yes |
+| The target takes imports, when the document has any | no | yes |
+| The file an import names is one the other document compiles to | no | `plan`, `apply` |
 | A plugin for `target` is installed | no | yes |
 | A ResourceSet has a `targetHost` | no | yes |
 | The document's kind is one the target's segment takes | no | yes |

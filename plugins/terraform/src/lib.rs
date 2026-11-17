@@ -60,6 +60,9 @@ pub(crate) enum Kind {
     Backend,
     Data,
     Module,
+    /// An input variable, which is how a value from another document
+    /// arrives.
+    Variable,
     Managed,
 }
 
@@ -86,6 +89,7 @@ impl Block {
             Kind::Managed => Some(format!("{}.{}", self.r#type, self.name)),
             Kind::Data => Some(format!("data.{}.{}", self.r#type, self.name)),
             Kind::Module => Some(format!("module.{}", self.name)),
+            Kind::Variable => Some(format!("var.{}", self.name)),
             Kind::Provider | Kind::Backend => None,
         }
     }
@@ -141,6 +145,7 @@ impl Emitter for Terraform {
             "data.<type>",
             "module",
             "provider",
+            "variable",
         ]
         .map(str::to_owned)
         .to_vec()

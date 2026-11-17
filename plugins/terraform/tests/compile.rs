@@ -108,7 +108,7 @@ fn a_type_that_is_not_terraforms_is_refused() {
     assert_eq!(
         err.msg,
         "\"package\" is not a Terraform resource type. Use a provider's own type, such as \
-         aws_instance, or one of: provider, backend, module, data.<type>"
+         aws_instance, or one of: provider, backend, module, variable, data.<type>"
     );
 }
 
@@ -194,4 +194,40 @@ fn nothing_can_depend_on_a_provider() {
         "  resources:\n    - id: aws\n      type: provider\n      params: {region: us-east-1}\n    - id: vm\n      type: aws_instance\n      params: {ami: ami-1}\n      dependsOn:\n        - resource: aws\n",
     );
     assert_eq!(err.rule, "unsupported-dependency");
+}
+
+#[test]
+fn a_variable_is_declared_and_read_as_var() {
+    let text = config(
+        "  resources:\n    - id: user_data\n      type: variable\n      params:\n        type: string\n        sensitive: true\n    - id: sizes\n      type: variable\n      params:\n        type: map(string)\n        default: {web: t3.micro}\n    - id: web\n      type: aws_instance\n      params:\n        ami: ami-1\n        instance_type: ${sizes.web}\n        user_data: ${user_data}\n  outputs:\n    - name: size\n      value: ${sizes.web}\n",
+    );
+    assert!(
+        text.contains("\"variable\": {\n    \"sizes\": {\n      \"default\": {\n        \"web\": \"t3.micro\"\n      },\n      \"type\": \"map(string)\"\n    },\n    \"user_data\": {\n      \"sensitive\": true,\n      \"type\": \"string\"\n    }\n  }"),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"user_data\": \"${var.user_data}\""),
+        "{text}"
+    );
+    assert!(
+        text.contains("\"instance_type\": \"${var.sizes.web}\""),
+        "{text}"
+    );
+    assert!(text.contains("\"value\": \"${var.sizes.web}\""), "{text}");
+    // A variable is known before anything is created, so it orders nothing.
+    assert!(!text.contains("depends_on"), "{text}");
+}
+
+#[test]
+fn nothing_can_depend_on_a_variable() {
+    let err = refusal(
+        "  resources:\n    - id: region\n      type: variable\n      params: {type: string}\n    - id: vm\n      type: aws_instance\n      params: {ami: ami-1}\n      dependsOn:\n        - resource: region\n",
+    );
+    assert_eq!(err.rule, "unsupported-dependency");
+    assert_eq!(
+        err.msg,
+        "\"region\" is a variable, which has its value before Terraform creates anything; \
+         nothing can depend on it or be ordered by it. Refer to it as ${region} where its value \
+         is wanted"
+    );
 }

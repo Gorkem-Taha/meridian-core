@@ -77,7 +77,10 @@ applies nothing ([policy checks](docs/reference/policy.md)). The record can be k
 A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
 `targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever
 that output turns out to be; until that infrastructure has been applied it is reported as
-deferred. Values a tool marks sensitive are masked wherever Meridian prints.
+deferred. A document can also be handed a value from any other document with `spec.imports`:
+a file it compiles to, such as cloud-init user-data for the machine Terraform creates, or an
+output. It reaches the tool as the tool's own variable, and the documents run in the order
+that needs. Values a tool marks sensitive are masked wherever Meridian prints.
 
 ## Layout
 

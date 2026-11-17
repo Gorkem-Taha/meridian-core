@@ -222,8 +222,10 @@ A `variable` is an input. Its params are OpenTofu's: `type`, `default`, `descrip
 ```
 
 A variable gets its value from `TF_VAR_<id>` in the environment `meridian` runs in, the
-same way it would with `tofu` itself. Values the orchestrator hands a stage from earlier
-stages arrive the same way, under the name the document gave them. A string is passed as
+same way it would with `tofu` itself. A value the document
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) from another document of the
+workflow arrives the same way, under the import's name, so the import and the variable
+share a name. A string is passed as
 it is; a number, a boolean, a list or a map is passed as JSON, which OpenTofu parses for a
 variable of that type.
 

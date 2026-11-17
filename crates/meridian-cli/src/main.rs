@@ -416,6 +416,9 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
         if info.operations.outputs {
             can.push("outputs");
         }
+        if info.accepts_inputs {
+            can.push("imports");
+        }
         println!("{name}");
         println!("  category:  {}", info.category);
         println!("  can:       {}", can.join(", "));

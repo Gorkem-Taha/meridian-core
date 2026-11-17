@@ -301,6 +301,17 @@ pub trait Runner: Send + Sync {
     /// Which of the methods below this plugin offers.
     fn operations(&self) -> Operations;
 
+    /// Whether this plugin hands [`RunContext::inputs`] to its tool, as the
+    /// tool's own variables or parameters.
+    ///
+    /// A document that declares `spec.imports` is refused for a target that
+    /// does not, because its values would otherwise be dropped without a
+    /// word. The default is false: say true only when every input reaches
+    /// the tool.
+    fn accepts_inputs(&self) -> bool {
+        false
+    }
+
     /// Previews what `apply` would change. It must change nothing.
     fn plan(
         &self,

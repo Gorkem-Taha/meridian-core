@@ -29,6 +29,43 @@ arguments, exactly as the provider documents them.
 | `module` | a `module` block |
 | `provider` | a `provider` block; `source` and `version` go to `required_providers` |
 | `backend` | the `backend` block, whose type is the resource's id |
+| `variable` | a `variable` block named by the resource's id. Its params are Terraform's: `type`, `default`, `description`, `sensitive`, `nullable`, `validation` |
+
+### Variables, and values from other documents
+
+A `variable` is an input. Another resource reads it by its id, `${user_data}`,
+which is written as `${var.user_data}`. A variable has its value before
+Terraform creates anything, so nothing can `dependsOn` one.
+
+```yaml
+spec:
+  target: terraform
+  imports:
+    - name: user_data
+      from: artifact
+      ref: bootstrap
+      file: user-data
+      sensitive: true
+  resources:
+    - id: user_data
+      type: variable
+      params: {type: string, sensitive: true}
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        user_data: ${user_data}
+```
+
+A variable gets its value from `TF_VAR_<id>` in the environment `meridian` runs
+in, as it would with `terraform` itself. A value the document
+[imports](../reference/dsl/outputs-and-hand-offs.md#imports) from another
+document arrives the same way, under the import's name, so the import and the
+variable share a name. A string is passed as it is; a number, a boolean, a list
+or a map is passed as JSON. The value is never written into `main.tf.json`.
+[`examples/workflow/bootstrap-then-machine.yaml`](../../examples/workflow/bootstrap-then-machine.yaml)
+creates a machine with the user-data a cloud-init document compiles to.
 
 ## References
 
@@ -99,8 +136,9 @@ instance, for example:
 | Apply | the same plan, then `terraform apply meridian.tfplan`, then `terraform output -json` |
 | `MERIDIAN_TERRAFORM` | the program to run, when it is not `terraform` on `PATH`; set it to `tofu` for OpenTofu |
 
-What is applied is exactly the plan that was shown. Values handed over from
-earlier stages reach the configuration as `TF_VAR_<name>` input variables.
+What is applied is exactly the plan that was shown. Values the document
+[imports](#variables-and-values-from-other-documents) reach the configuration
+as `TF_VAR_<name>` input variables.
 Terraform's state stays where the configuration's `backend` puts it; with no
 backend it is a local file in the document's directory under the state
 directory, so keep that directory.

@@ -28,6 +28,9 @@ compiled, with the reason. Each target's own page says how it does what it can.
   applies a resource.
 - **plan** asks the tool what an apply would change, without changing it.
 - **outputs** are values a later stage of a workflow can read.
+- **imports** says the target hands its tool the values a document's
+  `spec.imports` brings from other documents, as the tool's own variables or
+  parameters.
 
 ";
 
@@ -47,7 +50,7 @@ fn row(emitter: &dyn Emitter, runner: &dyn Runner) -> String {
         .map(|t| format!("`{}`", t.replace('<', "‹").replace('>', "›")))
         .collect();
     format!(
-        "| [{name}](../targets/{name}.md) | {category} | {types} | {notifies} | {runtime} | {plan} | {apply} | {outputs} |\n",
+        "| [{name}](../targets/{name}.md) | {category} | {types} | {notifies} | {runtime} | {plan} | {apply} | {outputs} | {imports} |\n",
         name = emitter.name(),
         category = emitter.category(),
         types = types.join(", "),
@@ -55,6 +58,7 @@ fn row(emitter: &dyn Emitter, runner: &dyn Runner) -> String {
         plan = yes(operations.plan),
         apply = yes(operations.apply),
         outputs = yes(operations.outputs),
+        imports = yes(runner.accepts_inputs()),
     )
 }
 
@@ -135,7 +139,7 @@ fn matrix() -> String {
     ];
     rows.sort();
     format!(
-        "{INTRODUCTION}| Target | Category | Resource types | notifies | runtimeWhen | plan | apply | outputs |\n|---|---|---|---|---|---|---|---|\n{}",
+        "{INTRODUCTION}| Target | Category | Resource types | notifies | runtimeWhen | plan | apply | outputs | imports |\n|---|---|---|---|---|---|---|---|---|\n{}",
         rows.concat()
     )
 }

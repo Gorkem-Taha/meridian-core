@@ -551,6 +551,7 @@ pub fn run_selected(
         warnings: Vec::new(),
         touched: Vec::new(),
         checked: BTreeMap::new(),
+        artifacts: BTreeMap::new(),
         preflight: false,
     };
     let mut failed: Option<StageId> = None;
@@ -1090,6 +1091,28 @@ impl Stage<'_> {
             Stage::ResourceSet(d) => &d.metadata.labels,
         }
     }
+
+    fn imports(&self) -> &[meridian_ir::Import] {
+        match self {
+            Stage::Infrastructure(d) => &d.spec.imports,
+            Stage::ResourceSet(d) => &d.spec.imports,
+        }
+    }
+
+    /// Whether this stage is `document`.
+    fn is(&self, document: &Document) -> bool {
+        match (self, document) {
+            (Stage::Infrastructure(a), Document::Infrastructure(b)) => {
+                a.metadata.name == b.metadata.name
+            }
+            (Stage::ResourceSet(a), Document::ResourceSet(b)) => a.metadata.name == b.metadata.name,
+            _ => false,
+        }
+    }
+
+    fn document<'b>(&self, bundle: &'b Bundle) -> Option<&'b Document> {
+        bundle.documents.iter().find(|document| self.is(document))
+    }
 }
 
 /// How many documents of `bundle` a selector picks. A run that picks none
@@ -1171,7 +1194,34 @@ fn stages<'a>(bundle: &'a Bundle, selector: &Selector) -> Vec<Stage<'a>> {
         .filter(selected)
         .filter_map(Document::as_resource_set)
         .map(Stage::ResourceSet);
-    infrastructure.chain(resource_sets).collect()
+    let written: Vec<Stage<'a>> = infrastructure.chain(resource_sets).collect();
+    by_need(bundle, written)
+}
+
+/// Orders stages so that each comes after every stage it needs: the one its
+/// host comes from, and every one it imports from.
+///
+/// The order given is kept wherever need allows, so a workflow with no
+/// imports runs exactly as it was written. A stage that needs a document the
+/// run does not include waits on nothing: what it needs is read from what
+/// that document's last apply left behind. A cycle cannot be ordered and is
+/// refused when the bundle is validated; should one arrive here anyway, its
+/// stages are kept in the order given.
+fn by_need<'a>(bundle: &'a Bundle, mut waiting: Vec<Stage<'a>>) -> Vec<Stage<'a>> {
+    let mut ordered: Vec<Stage<'a>> = Vec::with_capacity(waiting.len());
+    while !waiting.is_empty() {
+        let ready = waiting.iter().position(|stage| {
+            let Some(document) = stage.document(bundle) else {
+                return true;
+            };
+            !bundle
+                .needs(document)
+                .iter()
+                .any(|need| waiting.iter().any(|other| other.is(need)))
+        });
+        ordered.push(waiting.remove(ready.unwrap_or(0)));
+    }
+    ordered
 }
 
 struct Run<'a> {
@@ -1197,9 +1247,38 @@ struct Run<'a> {
     /// What the policy said about each stage the preflight asked about, and
     /// the artifact it was asked about.
     checked: BTreeMap<StageId, (String, Decisions)>,
+    /// What each document compiled to in this run, for the stages that
+    /// import a file from it.
+    artifacts: BTreeMap<StageId, Artifact>,
     /// Whether this is an apply's first pass, which asks the policy about
     /// every stage it can and applies nothing.
     preflight: bool,
+}
+
+/// A stage, compiled.
+struct Compiled {
+    /// The tree the target was handed.
+    graph: meridian_sdk::ResourceGraph,
+    emitted: meridian_sdk::Emitted,
+    /// The machine the stage configures; empty when there is none.
+    host: String,
+    /// The values the stage's tool is handed.
+    inputs: Data,
+}
+
+/// Why a stage did not compile, or cannot yet.
+enum Stop {
+    Failed {
+        /// One of the `REASON_` constants.
+        reason: &'static str,
+        why: String,
+        /// The stage's host, when it was worked out before the failure.
+        host: String,
+    },
+    Deferred {
+        waiting_on: StageId,
+        output: String,
+    },
 }
 
 /// Why a stage stopped before reaching the tool.
@@ -1229,105 +1308,46 @@ impl Run<'_> {
             report
         };
 
-        let Some(target) = self.registry.target(stage.target()) else {
-            let known = self.registry.names().join(", ");
-            let known = if known.is_empty() {
-                "no plugins are loaded".to_owned()
-            } else {
-                format!("loaded targets: {known}")
-            };
-            return fail(
-                report,
-                REASON_NO_PLUGIN,
-                format!("no plugin provides target {:?} ({known})", stage.target()),
-            );
+        let Compiled {
+            graph,
+            emitted,
+            host,
+            mut inputs,
+        } = match self.compile(stage) {
+            Ok(compiled) => compiled,
+            Err(Stop::Failed { reason, why, host }) => {
+                report.host = host;
+                return fail(report, reason, why);
+            }
+            Err(Stop::Deferred { waiting_on, output }) => {
+                report.outcome = Outcome::Deferred { waiting_on, output };
+                return report;
+            }
         };
-
+        let registry = self.registry;
+        let target = registry
+            .target(stage.target())
+            .expect("the stage was compiled by its target");
         let info = target.info();
-        if let Err(why) = kind_fits(id.kind, info.category) {
-            return fail(report, REASON_COMPILE_REFUSED, why);
-        }
-        let asked = stage.target_version();
-        if !asked.is_empty() {
-            if info.target_versions.is_empty() {
-                return fail(
-                    report,
-                    REASON_COMPILE_REFUSED,
-                    format!(
-                        "the document asks for targetVersion {asked:?}, but target {:?} does \
-                         not say which versions of its tool it compiles for, so the request \
-                         cannot be honoured; remove targetVersion",
-                        stage.target()
-                    ),
-                );
-            }
-            if !version_fits(asked, &info.target_versions) {
-                return fail(
-                    report,
-                    REASON_COMPILE_REFUSED,
-                    format!(
-                        "the document asks for targetVersion {asked:?}, and target {:?} \
-                         compiles for: {}",
-                        stage.target(),
-                        info.target_versions.join(", ")
-                    ),
-                );
-            }
-        }
-
-        // Decide every `when`, so the tree holds only what will be applied.
-        let pruned = |resources: &[meridian_ir::Resource]| {
-            meridian_ir::prune(resources, &self.options.data).map_err(|e| e.to_string())
-        };
-
-        // Resolve what the stage needs from earlier ones, then build its tree.
-        let (graph, inputs) = match stage {
-            Stage::Infrastructure(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, REASON_COMPILE_REFUSED, why),
-                };
-                match ResourceGraph::build_infrastructure(&doc) {
-                    Ok(graph) => (graph, Data::new()),
-                    Err(e) => return fail(report, REASON_COMPILE_REFUSED, e.to_string()),
-                }
-            }
-            Stage::ResourceSet(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, REASON_COMPILE_REFUSED, why),
-                };
-                let doc = &doc;
-                let (host, inputs) = match self.host_of(doc) {
-                    Ok(found) => found,
-                    Err(Halt::Failed(why)) => return fail(report, REASON_COMPILE_REFUSED, why),
-                    Err(Halt::Deferred { waiting_on, output }) => {
-                        report.outcome = Outcome::Deferred { waiting_on, output };
-                        return report;
-                    }
-                };
-                report.host = host.clone();
-                match ResourceGraph::build(doc, &host) {
-                    Ok(graph) => (graph, inputs),
-                    Err(e) => return fail(report, REASON_COMPILE_REFUSED, e.to_string()),
-                }
-            }
-        };
-
-        let graph = to_sdk(&graph);
-        let emitted = match target.emit(&graph, &self.options.data) {
-            Ok(emitted) => emitted,
-            Err(EmitError::Refused(e)) => {
-                return fail(report, REASON_COMPILE_REFUSED, e.to_string())
-            }
-            Err(EmitError::Plugin(e)) => return fail(report, REASON_PLUGIN_FAILED, e.to_string()),
-        };
+        report.host = host;
         report.warnings = emitted.warnings;
+        self.artifacts.insert(id.clone(), emitted.artifact.clone());
         report.artifact = Some(emitted.artifact.clone());
         if self.mode == Mode::Compile {
             return report;
+        }
+
+        // What the stage is handed from other documents. Compiling needs
+        // none of it: the values reach the tool, not the artifact.
+        if let Some(document) = stage.document(self.bundle) {
+            match self.imports_of(document) {
+                Ok(imports) => inputs.extend(imports),
+                Err(Stop::Failed { reason, why, .. }) => return fail(report, reason, why),
+                Err(Stop::Deferred { waiting_on, output }) => {
+                    report.outcome = Outcome::Deferred { waiting_on, output };
+                    return report;
+                }
+            }
         }
 
         let operations = target.info().operations;
@@ -1476,7 +1496,16 @@ impl Run<'_> {
                 });
                 let outcome = target.apply(&context, &emitted.artifact, &mut log);
                 match outcome {
-                    Ok(applied) => {
+                    Ok(mut applied) => {
+                        // A tool that hands a sensitive value straight back
+                        // as an output has not made it any less sensitive.
+                        for output in &mut applied.outputs {
+                            if let Value::String(text) = &output.value {
+                                if self.secrets.iter().any(|secret| secret == text) {
+                                    output.sensitive = true;
+                                }
+                            }
+                        }
                         self.record(&id, stage.target(), &hash, true);
                         self.snapshot(&id, &emitted.artifact, &report.previous_good);
                         self.learn(&id, &applied.outputs);
@@ -1497,6 +1526,243 @@ impl Run<'_> {
             Mode::Compile | Mode::Rollback => {}
         }
         report
+    }
+
+    /// Compiles a stage: settles what is the core's to settle, works out
+    /// the host, builds the tree and hands it to the target. No tool is
+    /// asked to change anything.
+    fn compile(&mut self, stage: Stage<'_>) -> Result<Compiled, Stop> {
+        let id = stage.id();
+        let refuse = |reason: &'static str, why: String| Stop::Failed {
+            reason,
+            why,
+            host: String::new(),
+        };
+        let registry = self.registry;
+        let options = self.options;
+        let Some(target) = registry.target(stage.target()) else {
+            let known = registry.names().join(", ");
+            let known = if known.is_empty() {
+                "no plugins are loaded".to_owned()
+            } else {
+                format!("loaded targets: {known}")
+            };
+            return Err(refuse(
+                REASON_NO_PLUGIN,
+                format!("no plugin provides target {:?} ({known})", stage.target()),
+            ));
+        };
+
+        let info = target.info();
+        if let Err(why) = kind_fits(id.kind, info.category) {
+            return Err(refuse(REASON_COMPILE_REFUSED, why));
+        }
+        let asked = stage.target_version();
+        if !asked.is_empty() {
+            if info.target_versions.is_empty() {
+                return Err(refuse(
+                    REASON_COMPILE_REFUSED,
+                    format!(
+                        "the document asks for targetVersion {asked:?}, but target {:?} does \
+                         not say which versions of its tool it compiles for, so the request \
+                         cannot be honoured; remove targetVersion",
+                        stage.target()
+                    ),
+                ));
+            }
+            if !version_fits(asked, &info.target_versions) {
+                return Err(refuse(
+                    REASON_COMPILE_REFUSED,
+                    format!(
+                        "the document asks for targetVersion {asked:?}, and target {:?} \
+                         compiles for: {}",
+                        stage.target(),
+                        info.target_versions.join(", ")
+                    ),
+                ));
+            }
+        }
+        if let Some(import) = stage.imports().first() {
+            if !info.accepts_inputs {
+                // Dropping the value without a word would compile into
+                // something that means less than the document says.
+                return Err(refuse(
+                    REASON_COMPILE_REFUSED,
+                    format!(
+                        "the document imports {:?}, and target {:?} has no way to hand a value \
+                         from another document to its tool; remove spec.imports, or use a \
+                         target that takes inputs",
+                        import.name,
+                        stage.target()
+                    ),
+                ));
+            }
+        }
+
+        // Decide every `when`, so the tree holds only what will be applied.
+        let pruned = |resources: &[meridian_ir::Resource]| {
+            meridian_ir::prune(resources, &options.data).map_err(|e| e.to_string())
+        };
+
+        // Resolve what the stage needs from earlier ones, then build its tree.
+        let (graph, host, inputs) = match stage {
+            Stage::Infrastructure(doc) => {
+                let mut doc = doc.clone();
+                doc.spec.resources = match pruned(&doc.spec.resources) {
+                    Ok(resources) => resources,
+                    Err(why) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
+                };
+                match ResourceGraph::build_infrastructure(&doc) {
+                    Ok(graph) => (graph, String::new(), Data::new()),
+                    Err(e) => return Err(refuse(REASON_COMPILE_REFUSED, e.to_string())),
+                }
+            }
+            Stage::ResourceSet(doc) => {
+                let mut doc = doc.clone();
+                doc.spec.resources = match pruned(&doc.spec.resources) {
+                    Ok(resources) => resources,
+                    Err(why) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
+                };
+                let (host, inputs) = match self.host_of(&doc) {
+                    Ok(found) => found,
+                    Err(Halt::Failed(why)) => return Err(refuse(REASON_COMPILE_REFUSED, why)),
+                    Err(Halt::Deferred { waiting_on, output }) => {
+                        return Err(Stop::Deferred { waiting_on, output })
+                    }
+                };
+                match ResourceGraph::build(&doc, &host) {
+                    Ok(graph) => (graph, host, inputs),
+                    Err(e) => {
+                        return Err(Stop::Failed {
+                            reason: REASON_COMPILE_REFUSED,
+                            why: e.to_string(),
+                            host,
+                        })
+                    }
+                }
+            }
+        };
+
+        let graph = to_sdk(&graph);
+        let failed =
+            |reason: &'static str, why: String, host: String| Stop::Failed { reason, why, host };
+        match target.emit(&graph, &options.data) {
+            Ok(emitted) => Ok(Compiled {
+                graph,
+                emitted,
+                host,
+                inputs,
+            }),
+            Err(EmitError::Refused(e)) => Err(failed(REASON_COMPILE_REFUSED, e.to_string(), host)),
+            Err(EmitError::Plugin(e)) => Err(failed(REASON_PLUGIN_FAILED, e.to_string(), host)),
+        }
+    }
+
+    /// What a document compiles to: what this run already compiled it to,
+    /// or, for a document the run does not include, a compile made now.
+    fn artifact_of(&mut self, source: &Document) -> Result<Artifact, Stop> {
+        let stage = match source {
+            Document::Infrastructure(doc) => Stage::Infrastructure(doc),
+            Document::ResourceSet(doc) => Stage::ResourceSet(doc),
+        };
+        let id = stage.id();
+        if let Some(artifact) = self.artifacts.get(&id) {
+            return Ok(artifact.clone());
+        }
+        let compiled = self.compile(stage)?;
+        self.artifacts.insert(id, compiled.emitted.artifact.clone());
+        Ok(compiled.emitted.artifact)
+    }
+
+    /// The values a document's `spec.imports` hand it, by the names they
+    /// arrive under.
+    ///
+    /// A file another document compiles to is known as soon as that document
+    /// compiles. An output is known once its document has been applied, in
+    /// this run or before; until then the stage waits, as a ResourceSet
+    /// waits on a host.
+    fn imports_of(&mut self, document: &Document) -> Result<Data, Stop> {
+        let bundle = self.bundle;
+        let refuse = |why: String| Stop::Failed {
+            reason: REASON_COMPILE_REFUSED,
+            why,
+            host: String::new(),
+        };
+        let mut values = Data::new();
+        for import in document.imports() {
+            let Some(source) = bundle.import_source(import) else {
+                return Err(refuse(format!(
+                    "import {:?} names the document {:?}, which is not loaded",
+                    import.name, import.r#ref
+                )));
+            };
+            let mut sensitive = import.sensitive;
+            let value = if import.from == meridian_ir::IMPORT_FROM_ARTIFACT {
+                let artifact = match self.artifact_of(source) {
+                    Ok(artifact) => artifact,
+                    Err(Stop::Failed { why, .. }) => {
+                        return Err(refuse(format!(
+                            "import {:?} is a file {} {:?} compiles to, and that document did \
+                             not compile: {why}",
+                            import.name,
+                            source.kind(),
+                            source.name()
+                        )))
+                    }
+                    Err(deferred) => return Err(deferred),
+                };
+                let Some(content) = artifact.files.get(&import.file) else {
+                    let have: Vec<&str> = artifact.files.keys().map(String::as_str).collect();
+                    return Err(refuse(format!(
+                        "import {:?} is the file {:?} of {} {:?}, which compiles to no file of \
+                         that name (it compiles to: {})",
+                        import.name,
+                        import.file,
+                        source.kind(),
+                        source.name(),
+                        have.join(", ")
+                    )));
+                };
+                Value::from(content.as_str())
+            } else {
+                let from = StageId {
+                    kind: StageKind::Infrastructure,
+                    name: import.r#ref.clone(),
+                };
+                if !self.outputs.contains_key(&from.name) {
+                    self.read_outputs(&from);
+                }
+                let Some(outputs) = self.outputs.get(&from.name) else {
+                    return Err(Stop::Deferred {
+                        waiting_on: from,
+                        output: import.output.clone(),
+                    });
+                };
+                let Some(output) = outputs.iter().find(|o| o.name == import.output) else {
+                    let have: Vec<&str> = outputs.iter().map(|o| o.name.as_str()).collect();
+                    return Err(refuse(format!(
+                        "{from} did not produce the output {:?} that import {:?} needs (it \
+                         produced: {})",
+                        import.output,
+                        import.name,
+                        if have.is_empty() {
+                            "nothing".to_owned()
+                        } else {
+                            have.join(", ")
+                        }
+                    )));
+                };
+                sensitive |= output.sensitive;
+                output.value.clone()
+            };
+            if sensitive {
+                if let Value::String(text) = &value {
+                    self.keep_secret(text);
+                }
+            }
+            values.insert(import.name.clone(), value);
+        }
+        Ok(values)
     }
 
     /// Asks the run's policy about a stage that has compiled.
@@ -1622,14 +1888,32 @@ impl Run<'_> {
         }
     }
 
+    /// Remembers a sensitive value, so that it is masked wherever it is
+    /// shown. A tool as often prints a value the way JSON writes it, with
+    /// its line breaks and quotes escaped, so that form is masked too.
+    fn keep_secret(&mut self, text: &str) {
+        // Too short to search for without mangling unrelated text.
+        if text.len() < 4 {
+            return;
+        }
+        let quoted = Value::from(text).canonical();
+        let escaped = quoted
+            .strip_prefix('"')
+            .and_then(|rest| rest.strip_suffix('"'))
+            .unwrap_or(text);
+        for form in [text, escaped] {
+            if !self.secrets.iter().any(|known| known == form) {
+                self.secrets.push(form.to_owned());
+            }
+        }
+    }
+
     fn learn(&mut self, id: &StageId, outputs: &[Output]) {
         for output in outputs.iter().filter(|o| o.sensitive) {
             // Only strings are masked: a sensitive number or flag is too
             // short to search for without mangling unrelated text.
             if let Value::String(s) = &output.value {
-                if s.len() >= 4 && !self.secrets.contains(s) {
-                    self.secrets.push(s.clone());
-                }
+                self.keep_secret(s);
             }
         }
         if id.kind == StageKind::Infrastructure {

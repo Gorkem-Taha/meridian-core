@@ -376,6 +376,16 @@ spec:
 - **Refusal.** A target declares whether it accepts imports. A document that
   declares imports for one that does not is refused when it is compiled.
 
+As built: the declaration is `Runner::accepts_inputs`, carried in the plugin's
+description as a new field, so the protocol version did not change and an
+older plugin reports that it takes none. Terraform, OpenTofu, Packer, Pulumi
+and ARM say yes. The Terraform target gained the `variable` resource type,
+without which a Terraform document had nowhere to receive a value. For
+`from: artifact`, `ref` may name a document of either kind, and a name shared
+by an Infrastructure document and a ResourceSet is refused as ambiguous. A
+document the run leaves out is compiled for the file it is imported for, and
+nothing of it is applied.
+
 This is deliberately the declared, tool-variable half of the problem. Reading
 `${{ outputs.<document>.<name> }}` inside any value is the language
 expansion's phases 2 and 4. It will resolve through this same mechanism and

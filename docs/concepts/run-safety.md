@@ -351,10 +351,33 @@ merge. The [policy reference](../reference/policy.md) has the input field by
 field, the Rego conventions, and how to write an engine for another policy
 language.
 
+## Values between stages
+
+A stage often needs something another stage has: the machine needs the
+user-data a bootstrap document compiles to, an application needs the network
+another document created. A document asks for it with
+[`spec.imports`](../reference/dsl/outputs-and-hand-offs.md#imports), and three
+things follow that bear on running safely:
+
+- **The order is worked out, not written.** A document runs after every
+  document it needs. Documents that wait on each other are refused by
+  `validate`, before anything runs.
+- **A value that does not exist yet defers the stage.** A plan made before the
+  network exists reports the application as deferred. It is never planned
+  against a guess.
+- **The value goes to the tool and nowhere else.** It is handed to the tool as
+  the tool's own variable, is not written into the compiled files, and is not
+  recorded. Marked `sensitive`, it is masked wherever Meridian prints.
+
+A rollback puts a stage back with the imports it would be given now, and a
+stage whose imports can no longer be worked out is reported as unavailable,
+not guessed at.
+
 ## What this does not do yet
 
-A value still flows only from an Infrastructure document to the ResourceSet
-that names it as its host. Handing a value to any stage, such as cloud-init
-user-data to the document that creates the machine, is designed in
-[the run safety plan](../plans/run-safety.md#9-imports-handing-a-value-to-any-stage)
-and arrives in the pull request that follows this one.
+- A backend has met only the directory backend shipped in `examples/backends`,
+  not a cloud object store.
+- Only targets whose tool has variables can import: `terraform`, `opentofu`,
+  `packer`, `pulumi` and `arm`. Reading another document's output inside any
+  value, for any target, is part of the
+  [language expansion](../plans/language-expansion.md).

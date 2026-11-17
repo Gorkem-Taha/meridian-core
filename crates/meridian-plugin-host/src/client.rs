@@ -158,6 +158,7 @@ impl Client {
             category: wire::category_from_wire(reply.category),
             target_versions: reply.target_versions,
             operations: wire::operations_from_wire(reply.operations),
+            accepts_inputs: reply.accepts_inputs,
             path: path.to_owned(),
         };
         Ok(Client {

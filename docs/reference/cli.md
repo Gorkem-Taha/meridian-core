@@ -16,7 +16,8 @@ meridian plugins
 
 The files given to one command are one workflow. A file may hold several
 documents separated by `---`. Infrastructure documents run before ResourceSets
-([why](../concepts/two-stage-architecture.md)).
+([why](../concepts/two-stage-architecture.md)), and a document runs after every
+document it [imports](dsl/outputs-and-hand-offs.md#imports) from.
 
 ## Commands
 
@@ -210,14 +211,17 @@ types it takes, the versions of its tool it compiles for (when it declares any),
 and where its binary is.
 
 ```
-dsc
-  category:  configuration-management
-  can:       compile, plan, apply
-  resources: <Module>/<Resource>, runner
-  versions:  2, 3
+terraform
+  category:  infrastructure-as-code
+  can:       compile, plan, apply, outputs, imports
+  resources: <provider>_<type>, backend, data.<type>, module, provider, variable
   sdk:       0.1.0 (protocol 2)
-  binary:    /usr/local/bin/meridian-target-dsc
+  binary:    /usr/local/bin/meridian-target-terraform
 ```
+
+`imports` in the `can` line says the plugin hands its tool the values a
+document's [`spec.imports`](dsl/outputs-and-hand-offs.md#imports) brings from
+other documents.
 
 The category decides which kind of document the plugin is handed, and the
 versions decide which `targetVersion` a document may ask it for.

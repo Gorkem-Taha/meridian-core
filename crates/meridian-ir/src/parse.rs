@@ -328,11 +328,12 @@ impl Decoder<'_> {
                 let f = self.fields(
                     top.get("spec"),
                     "spec",
-                    &["target", "targetVersion", "resources", "outputs"],
+                    &["target", "targetVersion", "imports", "resources", "outputs"],
                 );
                 let spec = InfrastructureSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
+                    imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                     outputs: self.outputs(f.get("outputs"), &pos),
                 };
@@ -347,12 +348,19 @@ impl Decoder<'_> {
                 let f = self.fields(
                     top.get("spec"),
                     "spec",
-                    &["target", "targetVersion", "targetHost", "resources"],
+                    &[
+                        "target",
+                        "targetVersion",
+                        "targetHost",
+                        "imports",
+                        "resources",
+                    ],
                 );
                 let spec = ResourceSetSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
                     target_host: self.target_host(f.get("targetHost"), &pos),
+                    imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                 };
                 Document::ResourceSet(ResourceSet {
@@ -527,6 +535,49 @@ impl Decoder<'_> {
             });
         }
         out
+    }
+
+    fn imports(&mut self, node: Option<&Node>, doc_pos: &Position) -> Vec<Import> {
+        let mut out = Vec::new();
+        for (i, item) in self.list(node, "spec.imports").iter().enumerate() {
+            let path = format!("spec.imports[{i}]");
+            let f = self.fields(
+                Some(item),
+                &path,
+                &["name", "from", "ref", "file", "output", "sensitive"],
+            );
+            out.push(Import {
+                name: self.string(f.get("name"), &join(&path, "name")),
+                from: self.string(f.get("from"), &join(&path, "from")),
+                r#ref: self.string(f.get("ref"), &join(&path, "ref")),
+                file: self.string(f.get("file"), &join(&path, "file")),
+                output: self.string(f.get("output"), &join(&path, "output")),
+                sensitive: self.boolean(f.get("sensitive"), &join(&path, "sensitive")),
+                pos: self.at_or(item, doc_pos),
+            });
+        }
+        out
+    }
+
+    /// A true or false; absent or null is false.
+    fn boolean(&mut self, node: Option<&Node>, path: &str) -> bool {
+        let Some(node) = node.filter(|n| !n.is_null()) else {
+            return false;
+        };
+        match &node.kind {
+            NodeKind::Scalar {
+                resolved: Scalar::Bool(value),
+                ..
+            } => *value,
+            _ => {
+                self.error(
+                    node,
+                    path,
+                    format!("expected true or false, found {}", node.describe()),
+                );
+                false
+            }
+        }
     }
 
     fn target_host(&mut self, node: Option<&Node>, doc_pos: &Position) -> Option<TargetHost> {

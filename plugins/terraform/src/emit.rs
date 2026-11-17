@@ -46,6 +46,7 @@ pub(crate) fn serialise(config: &Config) -> BTreeMap<String, String> {
             Kind::Managed => nest(&mut resources, &block.r#type, &block.name, body),
             Kind::Data => nest(&mut data, &block.r#type, &block.name, body),
             Kind::Module => nest(&mut root, "module", &block.name, body),
+            Kind::Variable => nest(&mut root, "variable", &block.name, body),
             Kind::Provider => providers
                 .entry(block.r#type.clone())
                 .or_default()

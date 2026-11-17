@@ -292,6 +292,21 @@ them, so each one is a promise:
 and you implement up to three operations. Declare only the ones you implement
 in `operations()`; the host never calls the others.
 
+`inputs` holds what the document's
+[`spec.imports`](../reference/dsl/outputs-and-hand-offs.md#imports) brought
+from other documents, by name. If your tool has variables or parameters, pass
+every input to it as one and say so:
+
+```rust
+fn accepts_inputs(&self) -> bool {
+    true
+}
+```
+
+The default is `false`, and the host then refuses a document that imports,
+instead of dropping its values without a word. Never write an input into a
+file or a log: it may be a secret another tool produced.
+
 | Operation | Contract |
 |---|---|
 | `plan` | report what an apply would change, and change nothing. If the tool cannot preview, set `Plan::unknown` so an empty list is never read as "in sync" |

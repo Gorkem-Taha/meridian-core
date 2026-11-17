@@ -18,8 +18,9 @@ pub use error::{Error, ErrorList, Position};
 pub use meridian_value::{canonical_map, Value};
 pub use parse::{parse, parse_file, parse_value};
 pub use types::{
-    Dependency, Document, IfMissing, Infrastructure, InfrastructureSpec, Kind, Metadata,
+    Dependency, Document, IfMissing, Import, Infrastructure, InfrastructureSpec, Kind, Metadata,
     Notification, Output, Resource, ResourceSet, ResourceSetSpec, TargetHost, API_VERSION_V1,
-    NOTIFY_ON_CHANGED, TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
+    IMPORT_FROM_ARTIFACT, IMPORT_FROM_OUTPUT, NOTIFY_ON_CHANGED, TARGET_HOST_FROM_INFRASTRUCTURE,
+    TARGET_HOST_FROM_INLINE,
 };
 pub use validate::{load, validate, Bundle};
