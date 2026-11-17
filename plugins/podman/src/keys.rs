@@ -293,6 +293,33 @@ mod tests {
         assert_eq!(lookup(Kind::Volume, "PublishPort"), Lookup::Unknown);
     }
 
+    /// The user guide lists every key, so it cannot fall behind this table.
+    #[test]
+    fn the_guide_lists_exactly_these_keys() {
+        let guide = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/targets/podman.md"
+        ))
+        .expect("the guide exists");
+        let section = guide
+            .split("### Known keys")
+            .nth(1)
+            .expect("the guide has a Known keys section");
+        for kind in Kind::ALL {
+            let prefix = format!("| `{}` | ", kind.as_str());
+            let row = section
+                .lines()
+                .find(|line| line.starts_with(&prefix))
+                .unwrap_or_else(|| panic!("no row for {}", kind.as_str()));
+            let listed: Vec<&str> = row[prefix.len()..]
+                .trim_end_matches(" |")
+                .split(", ")
+                .map(|key| key.trim_matches('`'))
+                .collect();
+            assert_eq!(listed, known(kind), "{}", kind.as_str());
+        }
+    }
+
     #[test]
     fn every_table_is_sorted_and_free_of_duplicates() {
         for kind in Kind::ALL {
