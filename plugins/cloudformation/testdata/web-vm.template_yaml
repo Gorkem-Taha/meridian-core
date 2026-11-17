@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Compiled by Meridian from the document web-vm. Do not edit.
+Resources:
+  WebRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+        Version: "2012-10-17"
+      RoleName: web-vm
+  WebSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription:
+        Fn::Sub: Web traffic for ${AWS::StackName}
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 80
+          IpProtocol: tcp
+          ToPort: 80
+  WebVm:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - WebRole
+    DeletionPolicy: Retain
+    Properties:
+      ImageId: ami-0c7217cdde317cfec
+      InstanceType: t3.small
+      SecurityGroupIds:
+        - Fn::GetAtt:
+            - WebSg
+            - GroupId
+  WebIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId:
+        Ref: WebVm
+Outputs:
+  WebVmIp:
+    Value:
+      Fn::GetAtt:
+        - WebIp
+        - PublicIp
+  WebUrl:
+    Value:
+      Fn::Sub: http://${WebVm.PublicDnsName}/
