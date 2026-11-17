@@ -2,8 +2,6 @@
 //! `bolt`, so it runs on a machine with neither installed. `real.rs` does the
 //! same against the real tool.
 
-#![cfg(unix)]
-
 use std::ffi::OsStr;
 use std::fs;
 use std::path::Path;

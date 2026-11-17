@@ -61,6 +61,10 @@ enum Command {
     },
 }
 
+/// What separates the directories in `MERIDIAN_PLUGIN_DIR`: the system's own
+/// separator for a list of paths, since a Windows path holds a colon.
+const PATH_LIST_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+
 #[derive(Args)]
 struct PluginDirs {
     /// A directory to look for plugins in; may be given more than once.
@@ -69,7 +73,7 @@ struct PluginDirs {
         long = "plugin-dir",
         value_name = "DIR",
         env = "MERIDIAN_PLUGIN_DIR",
-        value_delimiter = ':'
+        value_delimiter = PATH_LIST_SEPARATOR
     )]
     dirs: Vec<PathBuf>,
 }
@@ -175,11 +179,7 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
 
 fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = if plugins.dirs.is_empty() {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(Path::to_path_buf))
-            .into_iter()
-            .collect()
+        own_directory().into_iter().collect()
     } else {
         plugins.dirs.clone()
     };
@@ -190,6 +190,17 @@ fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
             .map_err(|e| Failure::Message(e.to_string()))?;
     }
     Ok(registry)
+}
+
+/// The directory the `meridian` binary really is in.
+///
+/// A package manager often puts a link to the binary on the `PATH` and keeps
+/// the binary itself, with its plugins beside it, somewhere else. The link is
+/// followed, so the plugins are found wherever the command was started from.
+fn own_directory() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    exe.parent().map(Path::to_path_buf)
 }
 
 fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {

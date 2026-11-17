@@ -1,7 +1,5 @@
 //! The `meridian` command, run as a process against a real plugin.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};

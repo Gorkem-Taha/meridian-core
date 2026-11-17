@@ -5,8 +5,6 @@
 //! directory, which makes plan and apply real: a plan is a comparison with
 //! what the last apply left behind.
 
-#![cfg(unix)]
-
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;

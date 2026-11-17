@@ -12,6 +12,13 @@ meridian-sdk = { path = "../meridian-sdk" }
 tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 tonic = "0.14"
 
+# A plugin listens on a named pipe on Windows, which the transport cannot dial
+# by itself.
+[target.'cfg(windows)'.dependencies]
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio = { version = "1", features = ["net"] }
+tower = { version = "0.5", features = ["util"] }
+
 [dev-dependencies]
 meridian-ir = { path = "../meridian-ir" }
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }

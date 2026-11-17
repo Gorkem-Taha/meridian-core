@@ -1,8 +1,6 @@
 //! Every document under `examples/` compiles through the real command and
 //! the real plugins, so an example the documentation shows cannot rot.
 
-#![cfg(unix)]
-
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};

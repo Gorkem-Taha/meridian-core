@@ -1,8 +1,6 @@
 //! The running half, against stand-ins for `podman`, `systemctl`, Quadlet's
 //! generator and `ssh`. The scripts themselves run under the real `sh`.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

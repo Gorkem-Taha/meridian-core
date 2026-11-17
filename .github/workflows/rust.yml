@@ -27,3 +27,27 @@ jobs:
 
       - name: Test
         run: cargo test --workspace --locked
+
+  # The same suite on the other systems Meridian is released for. Formatting
+  # is checked once, above; clippy runs again here because code behind
+  # `cfg(windows)` is only ever compiled on Windows.
+  platforms:
+    name: clippy and test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy --no-self-update && rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace --locked

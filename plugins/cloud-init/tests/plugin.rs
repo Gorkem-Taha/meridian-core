@@ -2,7 +2,6 @@
 //! the plugin protocol, and run through the orchestrator as a stage of a
 //! workflow.
 
-#![cfg(unix)]
 #![allow(clippy::result_large_err)]
 
 use std::fs;

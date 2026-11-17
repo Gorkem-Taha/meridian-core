@@ -2,8 +2,6 @@
 //! records how it was called and prints what the real tool would. The suite
 //! therefore needs nothing installed but Rust.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::Path;
 

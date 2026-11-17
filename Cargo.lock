@@ -659,6 +659,7 @@ dependencies = [
 name = "meridian-plugin-host"
 version = "0.1.0"
 dependencies = [
+ "hyper-util",
  "meridian-ast",
  "meridian-ir",
  "meridian-plugin-testkit",
@@ -666,6 +667,7 @@ dependencies = [
  "meridian-target-fake",
  "tokio",
  "tonic",
+ "tower",
 ]
 
 [[package]]

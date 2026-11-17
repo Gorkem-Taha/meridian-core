@@ -2,8 +2,6 @@
 //! is tested on a machine with no Salt installed. The canned results are the
 //! JSON a real Salt 3008 printed for the same states.
 
-#![cfg(unix)]
-
 use std::fs;
 use std::path::Path;
 
