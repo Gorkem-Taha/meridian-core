@@ -184,8 +184,8 @@ and the output in full.
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and the outputs of applied stages |
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
-| `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
-| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
+| `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions and [interpolations](dsl/interpolation.md) read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
+| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions and interpolations, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
 
 ### Running part of a workflow
 
@@ -206,6 +206,25 @@ meridian plan site.yaml --data common.yaml --data prod.yaml
 A resource with `when: "data.env != 'prod'"` is in the plan or not, depending on
 what the data files say `env` is. A condition that reads a key no file sets is
 an error; nothing is guessed.
+
+The same values are what an [interpolation](dsl/interpolation.md) reads:
+`${{ data.env }}` inside a value is replaced before the document is compiled.
+
+Every decision is printed under its stage, and a document its own `spec.when`
+leaves out is reported as skipped. Neither is a failure:
+
+```
+site (ResourceSet, target ansible on shop-dev.example.com)
+  when: 2 removed
+    resource "site_cert": cond.needs_tls is false
+    "site_conf" depends on "site_cert": cond.needs_tls is false
+  compiled 2 files into build/site
+monitoring (Infrastructure, target kubernetes)
+  skipped: its when (data.monitoring.enabled ?? false) is false
+```
+
+A label can be interpolated too, and `-l` matches the value it comes to, so
+the data is read before the selector is applied.
 
 ### A deprecated language version
 

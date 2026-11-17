@@ -20,6 +20,7 @@ order and nothing else. It does not carry data (that is a
 | Field | Required | Value |
 |---|---|---|
 | `resource` | yes | the `id` of another resource in the same document |
+| `when` | no | a [condition](conditions.md#where-a-when-can-be-written) on the entry itself. False, and the entry is dropped; both resources stay |
 | `ifMissing` | no | `error` (the default) or `skip`: what happens when a [`when`](conditions.md#when) removed the resource this entry names. See [`ifMissing`](conditions.md#ifmissing) |
 
 A resource may depend on any number of others, and any number may depend on it.
