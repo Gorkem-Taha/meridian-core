@@ -21,6 +21,7 @@ meridian-target-ansible
 meridian-target-cloud-init
 meridian-target-terraform
 meridian-target-opentofu
+meridian-target-helm
 ...
 ```
 
@@ -59,6 +60,7 @@ hand:
 | `docker` | `docker` with the Compose plugin |
 | `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |
+| `helm` | `helm`; `kustomize` when a document has an overlay; `kubectl` when an output reads from the cluster |
 
 Two targets can run `tofu`. Pick `opentofu` when OpenTofu is the tool you use: it writes
 `main.tofu.json`, which only OpenTofu reads, and it gives you OpenTofu's own features,

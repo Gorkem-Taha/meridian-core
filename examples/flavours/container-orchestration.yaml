@@ -1,0 +1,47 @@
+# The document shown in docs/reference/dsl/container-orchestration.md. Keep the two the same.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web
+spec:
+  target: kubernetes
+  resources:
+    - id: web_config
+      type: v1/ConfigMap
+      params:
+        data:
+          nginx.conf: "server { listen 80; }\n"
+      notifies:
+        - resource: web
+          action: restart
+
+    - id: web
+      type: apps/v1/Deployment
+      params:
+        spec:
+          replicas: 2
+          selector:
+            matchLabels: {app: web}
+          template:
+            metadata:
+              labels: {app: web}
+            spec:
+              containers:
+                - name: nginx
+                  image: nginx:1.27
+              volumes:
+                - name: config
+                  configMap:
+                    name: ${web_config}
+
+    - id: web_svc
+      type: v1/Service
+      params:
+        spec:
+          type: LoadBalancer
+          selector: {app: web}
+          ports: [{port: 80}]
+
+  outputs:
+    - name: web_url
+      value: http://${web_svc.status.loadBalancer.ingress[0].ip}
