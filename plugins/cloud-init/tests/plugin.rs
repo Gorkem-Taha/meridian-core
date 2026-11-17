@@ -231,7 +231,11 @@ fn a_workflow_plans_then_applies_through_the_real_plugin() {
     let seed_dir = outputs.iter().find(|o| o.name == "seed_dir").unwrap();
     assert_eq!(
         seed_dir.value,
-        Value::String(seed.canonicalize().unwrap().to_string_lossy().into_owned())
+        Value::String(
+            meridian_sdk::tool::absolute_path(&seed)
+                .to_string_lossy()
+                .into_owned()
+        )
     );
 
     // Applying the same document again has nothing to do.

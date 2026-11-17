@@ -50,20 +50,19 @@ fn runner(dir: &Path, body: &str) -> SaltRunner {
 }
 
 fn args(dir: &Path) -> String {
+    // Compared with forward slashes, so one expectation serves every system.
     fs::read_to_string(dir.join("args"))
         .unwrap()
         .trim()
-        .to_owned()
+        .replace('\\', "/")
 }
 
 /// The work directory as the runner hands it to the tool: absolute.
 fn work(dir: &Path) -> String {
-    dir.join("work")
-        .canonicalize()
-        .unwrap()
+    meridian_sdk::tool::absolute_path(&dir.join("work"))
         .to_str()
         .unwrap()
-        .to_owned()
+        .replace('\\', "/")
 }
 
 fn print(json: &str) -> String {
