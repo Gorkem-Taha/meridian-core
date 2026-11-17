@@ -169,5 +169,8 @@ signs any file, `verify_file` checks a file and its `.sig` against a list of
 require) to the result. `SecretKey::sign_bytes` and `verify_bytes` do the same
 for bytes that are not a file, which is how
 [modules are signed](modules.md#signatures): with the same keys, trusted
-through the same `--trusted-key`. The plugin host re-exports it as
+through the same `--trusted-key`. Such a signature starts with
+`meridian-statement-signature-v1`, and that name is part of what is signed, so
+a signature over a statement never passes as a plugin's and a plugin's never
+passes as a statement's. The plugin host re-exports it as
 `meridian_plugin_host::signature`.
