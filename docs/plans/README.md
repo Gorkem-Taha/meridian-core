@@ -16,6 +16,7 @@ issue — it is closed and is a historical record of how the plan was first stat
 | `observability.md` | #6 |
 | `release-and-versioning.md` | #7 |
 | `security.md` | #8 |
+| `modules-and-versioning.md` | none: written as a pull request. Proposed, not yet accepted |
 
 A plan that contradicts another plan is a bug in whichever one was written later. Raise
 it as an issue rather than resolving it silently in one file.

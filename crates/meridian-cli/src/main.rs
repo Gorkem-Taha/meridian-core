@@ -59,6 +59,22 @@ enum Command {
         #[command(flatten)]
         plugins: PluginDirs,
     },
+    /// Rewrite documents into a newer language version (apiVersion)
+    Migrate {
+        /// The files to rewrite, in place
+        #[arg(required = true)]
+        files: Vec<PathBuf>,
+        /// The language version to move to, such as meridian/v1. Defaults to
+        /// the newest this build supports
+        #[arg(long, value_name = "APIVERSION")]
+        to: Option<String>,
+        /// Change nothing; exit non-zero if any file would change
+        #[arg(long)]
+        check: bool,
+    },
+    /// Show every version this build carries: core, language, SDK and
+    /// plugin protocol
+    Version,
 }
 
 #[derive(Args)]
@@ -111,6 +127,11 @@ fn main() -> ExitCode {
         Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None),
         Command::Apply { workflow } => orchestrate(&workflow, Mode::Apply, None),
         Command::Plugins { plugins } => list_plugins(&plugins),
+        Command::Migrate { files, to, check } => migrate(&files, to.as_deref(), check),
+        Command::Version => {
+            print!("{}", versions());
+            Ok(())
+        }
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -146,7 +167,110 @@ fn load(files: &[PathBuf]) -> Result<Bundle, Failure> {
     };
     let bundle = meridian_ir::load(files).map_err(problems)?;
     bundle.validate().map_err(problems)?;
+    // Once per run, however many documents: see the versioning policy.
+    if let Some(warning) = bundle.deprecation_warning() {
+        eprintln!("warning: {warning}");
+    }
     Ok(bundle)
+}
+
+/// Every version stream of this build, one per line.
+fn versions() -> String {
+    use meridian_ir::Status;
+    use meridian_sdk::version::{describe_protocols, supported_protocols};
+    let mut out = format!("meridian {}\n", env!("CARGO_PKG_VERSION"));
+    for v in meridian_ir::VersionTable::builtin().versions() {
+        let status = match v.status {
+            Status::Supported => "supported".to_owned(),
+            Status::Deprecated { since } => format!("deprecated since meridian {since}"),
+            Status::Removed { in_release } => format!("removed in meridian {in_release}"),
+        };
+        out.push_str(&format!("  language         {}  {status}\n", v.name()));
+    }
+    out.push_str(&format!("  plugin sdk       {}\n", meridian_sdk::VERSION));
+    out.push_str(&format!(
+        "  plugin protocol  {}\n",
+        describe_protocols(&supported_protocols())
+    ));
+    out
+}
+
+/// Rewrites each file into the language version asked for. A file is either
+/// rewritten whole or left exactly as it was.
+fn migrate(files: &[PathBuf], to: Option<&str>, check: bool) -> Result<(), Failure> {
+    use meridian_ir::{MigrateError, Migrated, VersionTable};
+    let table = VersionTable::builtin();
+    let target = match to {
+        Some(text) => table
+            .check(text)
+            .map_err(|e| Failure::Message(format!("--to: {e}")))?,
+        None => table
+            .current()
+            .ok_or_else(|| Failure::Message("this build supports no language version".into()))?,
+    };
+    let mut failed = false;
+    let mut would_change = 0usize;
+    for file in files {
+        let name = file.display();
+        let text = match std::fs::read_to_string(file) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!("error: {name}: cannot read file: {e}");
+                failed = true;
+                continue;
+            }
+        };
+        match meridian_ir::migrate(&table, meridian_ir::STEPS, &text, target.number) {
+            Ok(Migrated::Unchanged) => println!("{name}: already at {}", target.name()),
+            Ok(Migrated::Rewritten(_)) if check => {
+                would_change += 1;
+                println!("{name}: would be migrated to {}", target.name());
+            }
+            Ok(Migrated::Rewritten(new)) => match replace_file(file, &new) {
+                Ok(()) => println!("{name}: migrated to {}", target.name()),
+                Err(e) => {
+                    eprintln!("error: {name}: cannot write file: {e}");
+                    failed = true;
+                }
+            },
+            Err(MigrateError::Refused(why)) => {
+                eprintln!("error: {name}: {why}");
+                failed = true;
+            }
+            Err(MigrateError::NeedsDecisions(decisions)) => {
+                eprintln!(
+                    "error: {name}: not migrated, because it needs {} only you can make:",
+                    count(decisions.len(), "decision")
+                );
+                for decision in decisions {
+                    eprintln!("  {decision}");
+                }
+                failed = true;
+            }
+        }
+    }
+    if failed {
+        return Err(Failure::Reported);
+    }
+    if would_change > 0 {
+        return Err(Failure::Message(format!(
+            "{} would change; run without --check to migrate",
+            count(would_change, "file")
+        )));
+    }
+    Ok(())
+}
+
+/// Replaces a file's content by writing beside it and renaming, so a crash
+/// leaves the old file or the new one and never half of either.
+fn replace_file(path: &Path, content: &str) -> std::io::Result<()> {
+    let mut staged = path.as_os_str().to_owned();
+    staged.push(".meridian-tmp");
+    let staged = PathBuf::from(staged);
+    std::fs::write(&staged, content)?;
+    std::fs::rename(&staged, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&staged);
+    })
 }
 
 /// Reads the `--data` files into one map. Each file is a mapping; a key in a
