@@ -603,8 +603,18 @@ dependencies = [
  "meridian-ir",
  "meridian-orchestrator",
  "meridian-plugin-host",
+ "meridian-plugin-testkit",
  "meridian-sdk",
+ "meridian-target-ansible",
+ "meridian-target-bicep",
+ "meridian-target-chef",
+ "meridian-target-cloudformation",
+ "meridian-target-docker",
+ "meridian-target-dsc",
  "meridian-target-fake",
+ "meridian-target-kubernetes",
+ "meridian-target-puppet",
+ "meridian-target-terraform",
 ]
 
 [[package]]
@@ -716,6 +726,15 @@ dependencies = [
 
 [[package]]
 name = "meridian-target-docker"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
+name = "meridian-target-dsc"
 version = "0.1.0"
 dependencies = [
  "meridian-plugin-testkit",
