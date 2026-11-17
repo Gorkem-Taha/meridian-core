@@ -115,6 +115,12 @@ struct Workflow {
     /// replace an earlier file's
     #[arg(long, value_name = "FILE")]
     data: Vec<PathBuf>,
+    /// One value for `when` conditions, as in `--set env=prod` or
+    /// `--set region.name=eu-west-1`; may be given more than once. It is
+    /// applied after every --data file, so it wins. The value is typed as
+    /// YAML would type it: true, 3 and null are not text, "3" is
+    #[arg(long, value_name = "KEY=VALUE")]
+    set: Vec<String>,
 }
 
 fn main() -> ExitCode {
@@ -297,6 +303,50 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
     Ok(data)
 }
 
+/// Applies the `--set key=value` options to the data, in the order given.
+/// A dotted key sets a value inside a mapping, creating the mappings on the
+/// way; the other keys of those mappings are kept.
+fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
+    use meridian_ir::Value;
+    for set in sets {
+        let refuse = |why: &str| Failure::Message(format!("--set {set}: {why}"));
+        let Some((key, raw)) = set.split_once('=') else {
+            return Err(refuse("expected KEY=VALUE, as in --set env=prod"));
+        };
+        let path: Vec<&str> = key.split('.').collect();
+        if path.iter().any(|part| part.trim().is_empty()) {
+            return Err(refuse(
+                "the key is empty, or has an empty part between dots",
+            ));
+        }
+        // The value is one YAML scalar, list or mapping. Text that YAML
+        // cannot read as a value is taken as the text it is.
+        let value = match meridian_ir::parse_value("--set", raw.as_bytes()) {
+            Ok(value) => value,
+            Err(_) => Value::String(raw.to_owned()),
+        };
+        let mut holder = &mut *data;
+        for (i, part) in path[..path.len() - 1].iter().enumerate() {
+            let entry = holder
+                .entry((*part).to_owned())
+                .or_insert_with(|| Value::Map(Data::new()));
+            holder = match entry {
+                Value::Map(inner) => inner,
+                other => {
+                    return Err(refuse(&format!(
+                        "{} is already set to {}, so it cannot hold the key {:?}",
+                        path[..=i].join("."),
+                        other.describe(),
+                        path[i + 1]
+                    )))
+                }
+            };
+        }
+        holder.insert(path[path.len() - 1].to_owned(), value);
+    }
+    Ok(())
+}
+
 fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = if plugins.dirs.is_empty() {
         std::env::current_exe()
@@ -368,7 +418,8 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
             "no document's labels match the selector {selector}"
         )));
     }
-    let data = read_data(&workflow.data)?;
+    let mut data = read_data(&workflow.data)?;
+    apply_sets(&mut data, &workflow.set)?;
     let registry = registry(&workflow.plugins)?;
     let options = Options {
         state_dir: workflow.state_dir.clone(),
