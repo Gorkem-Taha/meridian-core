@@ -262,6 +262,13 @@ fn blocks_for(r: &Resource) -> Result<Vec<Block>, CompileError> {
             }
             chef = "directory";
         }
+        // A document declares a group, not its whole membership. Without
+        // `append`, Chef takes the missing member list for an empty one and
+        // removes every member each time it converges, including the users
+        // this document puts in the group.
+        "group" if state == "present" => {
+            properties.insert("append".to_owned(), Value::Bool(true));
+        }
         _ => {}
     }
 

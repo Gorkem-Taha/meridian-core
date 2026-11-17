@@ -93,6 +93,7 @@ plugins.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | from a fresh clone to a merged pull request: set up, the checks, review, and the changes that need a second reviewer |
 | [Writing a plugin](contributing/writing-a-plugin.md) | add a tool to Meridian, step by step, starting from a template that already works |
 | [How Meridian is tested](contributing/testing.md) | unit tests and golden files, property tests, cross-target conformance, examples, coverage; and how to add to each |
+| [Real-tool tests](contributing/real-tool-tests.md) | what each target is tested against for real, what that proves and what it cannot, and the settings the Azure job needs |
 | [Code of Conduct](../CODE_OF_CONDUCT.md) | how we treat each other |
 
 Security reports go through [`SECURITY.md`](../SECURITY.md), not the issue tracker.

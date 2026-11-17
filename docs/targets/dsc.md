@@ -141,6 +141,10 @@ In `Test` mode the runner records both drift and a resource that could not be
 tested as a failure, so a plan lists either as a change, with the runner's
 message.
 
-The runner has been tested against a stand-in for PowerShell. It has not yet
-been run against a real DscPipelineRunner, which is the first thing to do with
-this plugin on a Windows machine.
+The runner is tested against a real PowerShell, the DscPipelineRunner module
+from the PowerShell Gallery and DSC v3 on Linux, on every pull request that
+touches it. On Windows the same compiled projects are run through both DSC v2
+(`PSDscResources`) and DSC v3 (`Microsoft.Windows/Registry`) and the machine's
+environment and registry are checked afterwards. The plugin's own Rust runner
+has not yet run on Windows, and reaching another machine over WinRM or SSH is
+not tested for real. See [Real-tool tests](../contributing/real-tool-tests.md#dsc).

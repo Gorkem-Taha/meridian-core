@@ -90,5 +90,8 @@ previewed.
 
 Credentials are the `aws` command's own.
 
-This plugin's runner has been tested against a stand-in for the `aws` command.
-It has not yet been run against a real AWS account.
+The runner is tested with the real `aws` command against
+[LocalStack](https://github.com/localstack/localstack), an emulator of AWS, on
+every pull request that touches it. It has not been run against a real AWS
+account. [Real-tool tests](../contributing/real-tool-tests.md#cloudformation) says what the emulator proves,
+what it cannot, and how to run the same tests against an account.
