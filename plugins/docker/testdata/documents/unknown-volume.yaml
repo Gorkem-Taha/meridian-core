@@ -1,0 +1,15 @@
+# The service mounts a volume the document never declares.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: shop
+spec:
+  target: docker
+  resources:
+    - id: db_data
+      type: volume
+    - id: db
+      type: service
+      params:
+        image: postgres:17
+        volumes: ["dbdata:/var/lib/postgresql/data"]
