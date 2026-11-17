@@ -132,6 +132,55 @@ jobs:
           dsc --version
           Get-DscResource -Module MeridianTestDsc | Format-Table Name, ModuleName, ImplementedAs
 
+      # Temporary: find out why Get-DscResource does not list the test resource here.
+      - name: Diagnose the resource lookup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          "PSModulePath: $env:PSModulePath"
+          $m = Get-Module -ListAvailable MeridianTestDsc
+          $m | Format-List Name, Version, Path, ModuleBase, RootModule, ModuleType, ExportedDscResources
+          Get-Module -ListAvailable PSDesiredStateConfiguration | Format-Table Name, Version, Path
+          Get-ExperimentalFeature | Format-Table Name, Enabled
+          '--- parse'
+          $tokens = $null; $errors = $null
+          $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $m.ModuleBase 'MeridianTestDsc.psm1'), [ref]$tokens, [ref]$errors)
+          "parse errors: $($errors.Count)"; $errors | Format-List *
+          '--- direct import'
+          try {
+            $errs = [System.Collections.ObjectModel.Collection[System.Exception]]::new()
+            $list = [System.Collections.Generic.List[string]]::new(); $list.Add('*')
+            [Microsoft.PowerShell.DesiredStateConfiguration.Internal.DscClassCache]::ImportClassResourcesFromModule($m, $list, $null, $errs)
+            "errors: $($errs.Count)"; $errs | ForEach-Object { $_.ToString() }
+          } catch { "direct import threw: $_"; $_.Exception.ToString() }
+          try {
+            [Microsoft.PowerShell.DesiredStateConfiguration.Internal.DscClassCache]::GetCachedKeywords() |
+              Where-Object ImplementingModule | Format-Table Keyword, ResourceName, ImplementingModule, ImplementingModuleVersion
+          } catch { "keywords threw: $_" }
+          '--- Get-DscResource -Verbose'
+          try { Get-DscResource -Module MeridianTestDsc -Verbose | Format-List Name, ModuleName, Version, ImplementedAs, Path } catch { "threw: $_" }
+          '--- Get-DscResource -Name -Module'
+          try { Get-DscResource -Name MarkerFile -Module MeridianTestDsc | Format-List Name, ModuleName, Version, ImplementedAs, Path } catch { "threw: $_" }
+          '--- Invoke-DscResource'
+          try {
+            Invoke-DscResource -Name MarkerFile -ModuleName MeridianTestDsc -Method Test -Property @{ Name = 'x'; Path = $env:RUNNER_TEMP } | Format-List *
+          } catch { "threw: $_" }
+          '--- a versioned copy on a module path of its own'
+          $copy = Join-Path $env:RUNNER_TEMP 'mods'
+          $null = New-Item -ItemType Directory -Force (Join-Path $copy 'MeridianTestDsc/1.0.0')
+          Copy-Item (Join-Path $m.ModuleBase '*') (Join-Path $copy 'MeridianTestDsc/1.0.0')
+          $rest = ($env:PSModulePath -split [IO.Path]::PathSeparator | Where-Object { $_ -notlike '*tests*modules*' }) -join [IO.Path]::PathSeparator
+          $env:PSModulePath = "$copy$([IO.Path]::PathSeparator)$rest"
+          pwsh -NoProfile -Command "Get-DscResource -Module MeridianTestDsc | Format-List Name, ModuleName, Version, ImplementedAs, Path; Invoke-DscResource -Name MarkerFile -ModuleName MeridianTestDsc -Method Test -Property @{ Name = 'x'; Path = `$env:RUNNER_TEMP } | Format-List *"
+          '--- the same copy under the user module path'
+          $user = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'PowerShell/Modules/MeridianTestDsc'
+          $null = New-Item -ItemType Directory -Force $user
+          Copy-Item (Join-Path $m.ModuleBase '*') $user
+          $env:PSModulePath = $rest
+          pwsh -NoProfile -Command "Get-DscResource -Module MeridianTestDsc | Format-List Name, ModuleName, Version, ImplementedAs, Path; Invoke-DscResource -Name MarkerFile -ModuleName MeridianTestDsc -Method Test -Property @{ Name = 'x'; Path = `$env:RUNNER_TEMP } | Format-List *"
+          Remove-Item -Recurse -Force $user
+          exit 0
+
       # Both engines are asked for, so either one missing fails the tests.
       - name: Test against DscPipelineRunner
         shell: pwsh
