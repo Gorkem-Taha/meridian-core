@@ -5,6 +5,8 @@
 //! own output and errors, and the exit status says whether everything asked
 //! for was done.
 
+mod tools;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -75,10 +77,18 @@ enum Command {
     /// Show every version this build carries: core, language, SDK and
     /// plugin protocol
     Version,
+    /// Rewrite documents in the one standard layout, changing no value
+    Fmt(tools::FmtArgs),
+    /// Report errors, and things that compile but are probably mistakes
+    Lint(tools::LintArgs),
+    /// Print a JSON Schema of the document language, for YAML editors
+    Schema(tools::SchemaArgs),
+    /// Run the language server, for editors, on standard input and output
+    Lsp(tools::LspArgs),
 }
 
 #[derive(Args)]
-struct PluginDirs {
+pub(crate) struct PluginDirs {
     /// A directory to look for plugins in; may be given more than once.
     /// Defaults to the directory the meridian binary is in
     #[arg(
@@ -87,7 +97,7 @@ struct PluginDirs {
         env = "MERIDIAN_PLUGIN_DIR",
         value_delimiter = ':'
     )]
-    dirs: Vec<PathBuf>,
+    pub(crate) dirs: Vec<PathBuf>,
 }
 
 #[derive(Args)]
@@ -138,6 +148,10 @@ fn main() -> ExitCode {
             print!("{}", versions());
             Ok(())
         }
+        Command::Fmt(args) => tools::format(&args),
+        Command::Lint(args) => tools::lint(&args),
+        Command::Schema(args) => tools::schema(&args),
+        Command::Lsp(args) => tools::lsp(&args),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -149,14 +163,14 @@ fn main() -> ExitCode {
     }
 }
 
-enum Failure {
+pub(crate) enum Failure {
     /// Something to print.
     Message(String),
     /// Already printed, stage by stage.
     Reported,
 }
 
-fn count(n: usize, noun: &str) -> String {
+pub(crate) fn count(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("1 {noun}")
     } else {
@@ -281,7 +295,7 @@ fn replace_file(path: &Path, content: &str) -> std::io::Result<()> {
 
 /// Reads the `--data` files into one map. Each file is a mapping; a key in a
 /// later file replaces the same key from an earlier one, whole.
-fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
+pub(crate) fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
     let mut data = Data::new();
     for file in files {
         let name = file.to_string_lossy();
@@ -306,7 +320,7 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
 /// Applies the `--set key=value` options to the data, in the order given.
 /// A dotted key sets a value inside a mapping, creating the mappings on the
 /// way; the other keys of those mappings are kept.
-fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
+pub(crate) fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
     use meridian_ir::Value;
     for set in sets {
         let refuse = |why: &str| Failure::Message(format!("--set {set}: {why}"));
@@ -347,7 +361,7 @@ fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
     Ok(())
 }
 
-fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
+pub(crate) fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = if plugins.dirs.is_empty() {
         std::env::current_exe()
             .ok()
