@@ -1,0 +1,16 @@
+[package]
+name = "meridian-target-bicep"
+description = "The Meridian plugin for Azure Bicep: compiles an infrastructure document to a Bicep file and deploys it with the az CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true
