@@ -47,7 +47,8 @@ mod pattern;
 
 use std::fmt;
 
-use meridian_resolve::{Hierarchy, LoadError, Loader, Resolved, Scope};
+use meridian_ir::Value;
+use meridian_resolve::{Data, Hierarchy, LoadError, Loader, Resolved, Scope};
 
 pub use eval::{
     evaluate, Layer, MergeKind, MergePlan, Origin, Stack, Violation, CAPABILITY_RULE,
@@ -127,9 +128,10 @@ pub struct Loaded {
     pub resolved: Resolved,
 }
 
-/// Loads and merges a hierarchy, then the `command_line` layers over it (a
-/// key in one replaces the same key beneath it, whole), without checking any
-/// rule.
+/// Loads and merges a hierarchy, then the `command_line` layers over it in
+/// the order given, without checking any rule. A `--data` layer's key
+/// replaces the same key beneath it, whole; a `--set` layer's values are
+/// merged in key by key.
 pub fn load(
     hierarchy: &Hierarchy,
     scope: &Scope,
@@ -153,13 +155,32 @@ pub fn load(
         layers.push(Layer::new(layer.path.clone(), data));
     }
     for layer in command_line {
-        resolved.data.extend(layer.data.clone());
+        match layer.origin {
+            Origin::Set => deep_merge(&mut resolved.data, &layer.data),
+            _ => resolved.data.extend(layer.data.clone()),
+        }
         layers.push(Layer {
-            origin: Origin::CommandLine,
+            origin: match layer.origin {
+                Origin::Set => Origin::Set,
+                _ => Origin::CommandLine,
+            },
             ..layer.clone()
         });
     }
     Ok(Loaded { layers, resolved })
+}
+
+/// Merges `over` into `base` the way `--set` does: a mapping is merged key by
+/// key at every depth, and anything else replaces what was there.
+fn deep_merge(base: &mut Data, over: &Data) {
+    for (key, value) in over {
+        match (base.get_mut(key), value) {
+            (Some(Value::Map(mine)), Value::Map(theirs)) => deep_merge(mine, theirs),
+            _ => {
+                base.insert(key.clone(), value.clone());
+            }
+        }
+    }
 }
 
 /// The one call a compiler makes: load and merge the hierarchy and the

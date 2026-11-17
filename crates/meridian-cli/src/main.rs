@@ -97,10 +97,11 @@ enum RulesCommand {
         /// switch the rules off unnoticed
         #[arg(long)]
         require_rules: bool,
-        /// A variable the hierarchy's layer paths read as %{NAME}; may be
-        /// given more than once
-        #[arg(long = "set", value_name = "NAME=VALUE", value_parser = name_value)]
-        set: Vec<(String, String)>,
+        /// One value, as on compile: merged over the hierarchy last and
+        /// checked as its most specific layer. The hierarchy's layer paths
+        /// also read it as %{KEY}; may be given more than once
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
         /// A YAML or JSON file of values merged over the hierarchy, checked
         /// as its most specific layer; may be given more than once
         #[arg(long, value_name = "FILE")]
@@ -352,23 +353,14 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
     Ok(data)
 }
 
-/// Splits a `--set` argument at its first `=`.
-fn name_value(text: &str) -> Result<(String, String), String> {
-    match text.split_once('=') {
-        Some((name, value)) if !name.is_empty() => Ok((name.to_owned(), value.to_owned())),
-        _ => Err("expected NAME=VALUE".to_owned()),
-    }
-}
-
 /// `meridian rules check`: loads the layers, checks every rule, and says
 /// which layer belongs to whom. Every violation is printed, not only the
 /// first, and none of them shows a value.
 fn check_rules(
     files: meridian_rules::Files,
-    set: &[(String, String)],
+    set: &[String],
     data_files: &[PathBuf],
 ) -> Result<(), Failure> {
-    let scope: meridian_resolve::Scope = set.iter().cloned().collect();
     // Each --data file is a layer of its own, so a refusal can say which.
     let mut command_line = Vec::new();
     for file in data_files {
@@ -377,6 +369,18 @@ fn check_rules(
             format!("--data {}", file.display()),
             data,
         ));
+    }
+    // The --set values are what they are on compile: data, merged last. They
+    // are also what a layer path's %{KEY} reads.
+    let mut values = Data::new();
+    apply_sets(&mut values, set)?;
+    let scope: meridian_resolve::Scope = set
+        .iter()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+    if !values.is_empty() {
+        command_line.push(meridian_rules::Layer::set("--set", values));
     }
     let checked = meridian_rules::check_files(&files, &scope, &command_line)
         .map_err(|refusal| Failure::Message(refusal.to_string()))?;

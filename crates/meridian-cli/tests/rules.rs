@@ -78,7 +78,8 @@ fn the_example_passes_for_a_node_that_keeps_the_rules() {
          common.yaml            organization\n  \
          environment/prod.yaml  environment\n  \
          role/web.yaml          team\n  \
-         node/web01.yaml        team\n\
+         node/web01.yaml        team\n  \
+         --set                  (command line)\n\
          no violations\n"
     );
 }
@@ -185,6 +186,23 @@ fn adversarial_the_rules_file_cannot_be_made_a_layer() {
 }
 
 #[test]
+fn adversarial_a_set_value_on_the_command_line_is_held_to_the_rules() {
+    let dir = scratch("set");
+    let out = meridian(&dir, &web01_with(&["--set", "variables.Region=us"]));
+    assert_eq!(out.status.code(), Some(1));
+    // --set names one key and keeps its siblings, so only the change is
+    // reported; nothing is dropped.
+    assert_eq!(
+        stderr(&out),
+        "error: compile rules: 2 violations; nothing was compiled\n  \
+         - [meridian/protect-variables] layer \"--set\" ((command line)) changes \"variables.Region\", which \
+         layer \"common.yaml\" (organization) set\n  \
+         - [region-is-final] layer \"--set\" ((command line)) sets \"variables.Region\", which is final once \
+         set, and layer \"common.yaml\" (organization) set it\n"
+    );
+}
+
+#[test]
 fn adversarial_a_data_file_on_the_command_line_is_held_to_the_rules() {
     let dir = scratch("data");
     fs::write(
@@ -251,9 +269,9 @@ fn adversarial_a_layer_outside_every_group_is_refused() {
 fn mistakes_in_the_command_and_the_files_are_plain_errors() {
     let dir = scratch("mistakes");
     let out = meridian(&dir, &web01_with(&["--set", "novalue"]));
-    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(out.status.code(), Some(1));
     assert!(
-        stderr(&out).contains("expected NAME=VALUE"),
+        stderr(&out).contains("--set novalue: expected KEY=VALUE"),
         "{}",
         stderr(&out)
     );

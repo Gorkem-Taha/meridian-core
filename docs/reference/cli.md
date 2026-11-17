@@ -8,7 +8,7 @@ meridian apply    <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
 meridian plugins
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
-meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--set NAME=VALUE] [--data FILE]
+meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--data FILE] [--set KEY=VALUE]
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -171,9 +171,9 @@ The rules file is `rules.yaml` beside the hierarchy file, or the file given
 with `--rules`. Every violation is listed, each naming the rule, the layer,
 its group and the key, and never a value. With no rules file nothing is
 checked, unless `--require-rules` is given, which makes that an error.
-`--set NAME=VALUE` gives a variable the hierarchy's layer paths read as
-`%{NAME}`, and `--data FILE` adds a file that is checked as the most specific
-layer. [The reference](compile-rules.md#running-the-check) has the options
+`--data FILE` and `--set KEY=VALUE` mean what they mean on `compile`: values
+merged over the hierarchy, `--set` last. Each is checked as a layer of the
+group `(command line)`, and a layer path's `%{KEY}` reads the `--set` value. [The reference](compile-rules.md#running-the-check) has the options
 and the output in full.
 
 ## Options

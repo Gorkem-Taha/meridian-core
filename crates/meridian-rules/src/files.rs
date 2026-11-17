@@ -96,7 +96,7 @@ pub fn check_files(
         .iter()
         .map(|layer| {
             let group = match layer.origin {
-                crate::Origin::CommandLine => crate::COMMAND_LINE,
+                crate::Origin::CommandLine | crate::Origin::Set => crate::COMMAND_LINE,
                 crate::Origin::Hierarchy => rules.group_of(&layer.path),
             };
             (layer.path.clone(), group.to_owned())

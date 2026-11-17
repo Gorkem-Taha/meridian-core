@@ -81,9 +81,14 @@ fn strategy_of(h: &meridian_resolve::Hierarchy, key: &str) -> meridian_resolve::
 pub enum Origin {
     /// A layer of the hierarchy. Its group is decided by its path.
     Hierarchy,
-    /// A value given on the command line and merged over the hierarchy. It
-    /// belongs to the group [`COMMAND_LINE`], whatever its path.
+    /// A file of values given on the command line (`--data`) and merged
+    /// over the hierarchy: a key in it replaces the same key beneath it,
+    /// whole. It belongs to the group [`COMMAND_LINE`], whatever its path.
     CommandLine,
+    /// Single values given on the command line (`--set`), merged last. Each
+    /// one sets its own key inside the mappings above it and keeps their
+    /// other keys. Also in the group [`COMMAND_LINE`].
+    Set,
 }
 
 /// One layer as the rules see it.
@@ -109,6 +114,15 @@ impl Layer {
             path: path.into(),
             data,
             origin: Origin::CommandLine,
+        }
+    }
+
+    /// The `--set` values, already assembled into one mapping.
+    pub fn set(path: impl Into<String>, data: Data) -> Self {
+        Layer {
+            path: path.into(),
+            data,
+            origin: Origin::Set,
         }
     }
 }
@@ -164,7 +178,7 @@ pub fn evaluate(rules: &Rules, stack: &Stack<'_>) -> Result<Vec<Violation>, Erro
             .layers
             .iter()
             .map(|layer| match layer.origin {
-                Origin::CommandLine => COMMAND_LINE,
+                Origin::CommandLine | Origin::Set => COMMAND_LINE,
                 Origin::Hierarchy => rules.group_of(&layer.path),
             })
             .collect(),
@@ -286,7 +300,7 @@ impl Evaluation<'_> {
         for (i, layer) in self.stack.layers.iter().enumerate() {
             // The command line is the operator's, not a layer of the
             // hierarchy; an unclaimed layer has been refused already.
-            if layer.origin == Origin::CommandLine {
+            if layer.origin != Origin::Hierarchy {
                 continue;
             }
             let Some(group) = self.rules.group(&layer.path) else {
@@ -355,6 +369,7 @@ impl Evaluation<'_> {
                         // whatever strategy the hierarchy gives that key.
                         let kind = match layers[later].origin {
                             Origin::CommandLine => MergeKind::Replace,
+                            Origin::Set => MergeKind::Deep,
                             Origin::Hierarchy => self.stack.plan.kind(&path),
                         };
                         diff(self.stack.plan, &path, theirs, ours, kind, &mut losses);
@@ -376,7 +391,7 @@ impl Evaluation<'_> {
                                 Origin::CommandLine => {
                                     "which a command-line value replaces whole".to_owned()
                                 }
-                                Origin::Hierarchy => format!(
+                                Origin::Set | Origin::Hierarchy => format!(
                                     "which is merged by replacing it whole ({})",
                                     self.stack.plan.strategy(&loss.at[0])
                                 ),

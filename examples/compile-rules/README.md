@@ -27,8 +27,12 @@ layers, least specific first:
   environment/prod.yaml  environment
   role/web.yaml          team
   node/web01.yaml        team
+  --set                  (command line)
 no violations
 ```
+
+The last row is the `--set` values themselves: they pick the layer files and
+are also data, merged last and held to the same rules.
 
 A node that does not. It changes an organization variable, redirects an
 organization secret, wipes the organization's credentials, repeats a final

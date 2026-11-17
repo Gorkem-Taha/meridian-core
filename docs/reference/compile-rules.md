@@ -84,7 +84,7 @@ strictness: lenient
 
 | Field | Value |
 |---|---|
-| `hierarchy` | the layer files, **least specific first**, relative to the hierarchy file. A later layer is more specific and wins a merge. `%{name}` is replaced by the variable `name`, given with `--set name=value` |
+| `hierarchy` | the layer files, **least specific first**, relative to the hierarchy file. A later layer is more specific and wins a merge. `%{name}` is replaced by the variable `name`, given with `--set name=value` on `meridian rules check` |
 | `default.strategy` | how a top-level key merges when `keys` does not say: `first-found` (the default), `deep-merge` or `unique-array-merge` |
 | `keys.<key>.strategy` | the strategy for one top-level key |
 | `keys.<key>.dedupKey` | for `unique-array-merge`: the field that identifies an item that is a mapping |
@@ -563,7 +563,7 @@ To let the command line set a restricted key, name the group:
 
 ```
 meridian rules check --hierarchy FILE [--rules FILE] [--require-rules]
-                     [--set NAME=VALUE]... [--data FILE]...
+                     [--data FILE]... [--set KEY=VALUE]...
 ```
 
 | Option | Meaning |
@@ -571,8 +571,8 @@ meridian rules check --hierarchy FILE [--rules FILE] [--require-rules]
 | `--hierarchy FILE` | the hierarchy file. Layers are found relative to it |
 | `--rules FILE` | the rules file. Default: `rules.yaml` beside the hierarchy file, when there is one |
 | `--require-rules` | fail when there is no rules file |
-| `--set NAME=VALUE` | a variable the layer paths read as `%{NAME}`; may be repeated |
-| `--data FILE` | a file of values merged over the hierarchy and checked as its most specific layer; may be repeated |
+| `--data FILE` | a YAML or JSON file of values, as on `compile`: merged over the hierarchy, each key it names replacing that key whole, and checked as a layer named `--data FILE` in the group `(command line)`; may be repeated |
+| `--set KEY=VALUE` | one value, as on `compile`: applied after every `--data` file, `KEY` may be dotted to set one key inside a mapping and keep the keys beside it, and the value is typed as YAML types it. All of them are checked together as one last layer named `--set`, in the group `(command line)`. A layer path's `%{KEY}` reads the same value; may be repeated |
 
 It loads the layers one node would get, checks every rule, and compiles
 nothing. Run it once for each node, or each combination of variables, that
@@ -586,17 +586,34 @@ layers, least specific first:
   environment/prod.yaml  environment
   role/web.yaml          team
   node/web01.yaml        team
+  --set                  (command line)
 no violations
 ```
 
 The list shows which group owns each layer, which is the first thing to look
-at when a rule does not apply where you expected.
+at when a rule does not apply where you expected. The `--set` row is there
+because `--set` means here what it means on `compile`: `env`, `role` and
+`node` pick the layer files and are also values in the merged data, set last.
+A rule holds them like any other layer, so a `--set` that changes a protected
+value is refused:
+
+```
+$ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=web01 --set variables.Region=us
+error: compile rules: 2 violations; nothing was compiled
+  - [meridian/protect-variables] layer "--set" ((command line)) changes "variables.Region", which layer "common.yaml" (organization) set
+  - [region-is-final] layer "--set" ((command line)) sets "variables.Region", which is final once set, and layer "common.yaml" (organization) set it
+```
+
+`--set` names one key and keeps the keys beside it, so it drops nothing; a
+`--data` file replaces each key it names whole, so one that sets `variables`
+also drops every variable it leaves out.
+[`capabilities`](#capabilities) do not apply to either.
 
 | Exit status | Meaning |
 |---|---|
 | `0` | every rule holds, or there is no rules file and none was required |
 | `1` | a rule is broken, or the hierarchy, a layer or the rules file is wrong |
-| `2` | a mistake in the command line |
+| `2` | a mistake in the command line (a `--set` without `=` is reported with status `1`, as on `compile`) |
 
 `compile`, `plan` and `apply` do not read a hierarchy yet, so they do not run
 the rules by themselves; run `rules check` before them in a pipeline. See

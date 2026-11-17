@@ -651,6 +651,39 @@ fn adversarial_the_command_line_is_the_most_specific_layer() {
 }
 
 #[test]
+fn adversarial_a_set_value_is_merged_key_by_key_and_held_to_the_rules() {
+    let r = grouped("use: [protect-variables]\n");
+    let layers = [("common.yaml", "variables: {Region: eu, Tier: gold}")];
+    // `--set` keeps the keys beside the one it names, whatever strategy the
+    // hierarchy gives the top-level key, so nothing is dropped here.
+    for strategy in [Strategy::DeepMerge, Strategy::FirstFound] {
+        let h = hierarchy(&layers, strategy, &[]);
+        let added = [Layer::set("--set", data("variables: {Owner: ops}"))];
+        assert_eq!(check_with(&r, &h, &layers, &added), [] as [&str; 0]);
+        let merged = enforce(&r, &h, &Scope::new(), &loader(&layers), &added).unwrap();
+        assert_eq!(
+            merged.resolved.data,
+            data("variables: {Region: eu, Tier: gold, Owner: ops}")
+        );
+        // Changing a protected value is refused all the same, and only that.
+        let changed = [Layer::set("--set", data("variables: {Region: us}"))];
+        assert_eq!(
+            check_with(&r, &h, &layers, &changed),
+            ["[meridian/protect-variables] layer \"--set\" ((command line)) changes \"variables.Region\", \
+              which layer \"common.yaml\" (organization) set"]
+        );
+    }
+    // It comes after a --data file, so it is checked against that too.
+    let h = hierarchy(&layers, Strategy::DeepMerge, &[]);
+    let both = [
+        Layer::command_line("--data d.yaml", data("extra: {a: 1}")),
+        Layer::set("--set", data("extra: {b: 2}")),
+    ];
+    let merged = enforce(&r, &h, &Scope::new(), &loader(&layers), &both).unwrap();
+    assert_eq!(merged.resolved.data["extra"], data("x: {a: 1, b: 2}")["x"]);
+}
+
+#[test]
 fn adversarial_keys_that_look_like_paths_are_not_paths() {
     // A key with a dot in it is one key. It is not `variables` -> `Region`,
     // nothing reads it as that, and the refusal quotes it so nobody is misled.
