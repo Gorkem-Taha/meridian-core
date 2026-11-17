@@ -45,6 +45,7 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+| [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
 
 | Reference | |
 |---|---|
@@ -55,6 +56,7 @@ byte. The reasons, the layout and the order of work are in
 | The language by segment | how `type`, `state`, `params`, references and notifies are written for [configuration management](reference/dsl/configuration-management.md), [infrastructure as code](reference/dsl/infrastructure-as-code.md), [containerization](reference/dsl/containerization.md) and [container orchestration](reference/dsl/container-orchestration.md) |
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
+| [Compile rules](reference/compile-rules.md) | the rules file, every rule and every refusal, and `meridian rules check` |
 
 | Targets | |
 |---|---|

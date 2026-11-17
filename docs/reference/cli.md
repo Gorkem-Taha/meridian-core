@@ -6,6 +6,7 @@ meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
 meridian plan     <files>... [-l SELECTOR] [--data FILE]
 meridian apply    <files>... [-l SELECTOR] [--data FILE]
 meridian plugins
+meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--set NAME=VALUE] [--data FILE]
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -91,6 +92,28 @@ dsc
 
 The category decides which kind of document the plugin is handed, and the
 versions decide which `targetVersion` a document may ask it for.
+
+### `rules check`
+
+Loads the layers of a hierarchy and checks them against its
+[compile rules](compile-rules.md): policies such as "a more specific layer may
+not change a variable or a secret a less specific layer set". It compiles
+nothing and loads no plugin.
+
+```
+$ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set node=web01
+error: compile rules: 1 violation; nothing was compiled
+  - [meridian/protect-variables] layer "node/web01.yaml" (team) changes "variables.Region", which layer "common.yaml" (organization) set
+```
+
+The rules file is `rules.yaml` beside the hierarchy file, or the file given
+with `--rules`. Every violation is listed, each naming the rule, the layer,
+its group and the key, and never a value. With no rules file nothing is
+checked, unless `--require-rules` is given, which makes that an error.
+`--set NAME=VALUE` gives a variable the hierarchy's layer paths read as
+`%{NAME}`, and `--data FILE` adds a file that is checked as the most specific
+layer. [The reference](compile-rules.md#running-the-check) has the options
+and the output in full.
 
 ## Options
 

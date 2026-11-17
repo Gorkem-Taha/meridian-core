@@ -127,10 +127,12 @@ fn rule(value: &Value, at: &str, groups: &BTreeSet<String>) -> Result<Rule, Stri
         "required" => &["appliesTo"],
         "forbidden-value" => &["appliesTo", "values", "matches", "ignoreCase"],
         "merge-strategy" => &["allow"],
-        other => return Err(format!(
+        other => {
+            return Err(format!(
             "{at}.rule: unknown rule {other:?} (expected no-override, final, restrict, required, \
                  forbidden-value or merge-strategy)"
-        )),
+        ))
+        }
     };
     if let Some(stray) = any
         .keys()

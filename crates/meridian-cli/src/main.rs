@@ -83,8 +83,8 @@ enum RulesCommand {
         require_rules: bool,
         /// A variable the hierarchy's layer paths read as %{NAME}; may be
         /// given more than once
-        #[arg(long = "set", value_name = "NAME=VALUE")]
-        set: Vec<String>,
+        #[arg(long = "set", value_name = "NAME=VALUE", value_parser = name_value)]
+        set: Vec<(String, String)>,
         /// A YAML or JSON file of values merged over the hierarchy, checked
         /// as its most specific layer; may be given more than once
         #[arg(long, value_name = "FILE")]
@@ -222,22 +222,23 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
     Ok(data)
 }
 
+/// Splits a `--set` argument at its first `=`.
+fn name_value(text: &str) -> Result<(String, String), String> {
+    match text.split_once('=') {
+        Some((name, value)) if !name.is_empty() => Ok((name.to_owned(), value.to_owned())),
+        _ => Err("expected NAME=VALUE".to_owned()),
+    }
+}
+
 /// `meridian rules check`: loads the layers, checks every rule, and says
 /// which layer belongs to whom. Every violation is printed, not only the
 /// first, and none of them shows a value.
 fn check_rules(
     files: meridian_rules::Files,
-    set: &[String],
+    set: &[(String, String)],
     data_files: &[PathBuf],
 ) -> Result<(), Failure> {
-    let mut scope = meridian_resolve::Scope::new();
-    for pair in set {
-        let (name, value) = pair
-            .split_once('=')
-            .filter(|(name, _)| !name.is_empty())
-            .ok_or_else(|| Failure::Message(format!("--set takes NAME=VALUE, and got {pair:?}")))?;
-        scope.insert(name.to_owned(), value.to_owned());
-    }
+    let scope: meridian_resolve::Scope = set.iter().cloned().collect();
     // Each --data file is a layer of its own, so a refusal can say which.
     let mut command_line = Vec::new();
     for file in data_files {

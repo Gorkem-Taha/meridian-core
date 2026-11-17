@@ -601,6 +601,74 @@ rules:
 }
 
 // ---------------------------------------------------------------------------
+// The DscPipelineRunner configuration from the reference
+// ---------------------------------------------------------------------------
+
+/// The hierarchy and rules `docs/reference/compile-rules.md` gives for a
+/// DscPipelineRunner configuration, over that repository's own example
+/// layers.
+#[test]
+fn the_dscpipelinerunner_shape_from_the_reference() {
+    let h = Hierarchy::parse(
+        "hierarchy.yaml",
+        b"hierarchy:\n  - OrganizationPolicies/Organization.yaml\n  - ProjectPolicies/Project.yaml\n  - Projects/%{Project}.yaml\nkeys:\n  variables: {strategy: deep-merge}\n",
+    )
+    .unwrap();
+    let r = rules(
+        r#"rulesVersion: 1
+layers:
+  - name: platform
+    paths: ["OrganizationPolicies/**", "ProjectPolicies/**"]
+  - name: teams
+    paths: ["Projects/**"]
+rules:
+  - id: platform-variables-hold
+    rule: no-override
+    keys: [variables]
+    setBy: [platform]
+    appliesTo: [teams]
+  - id: secrets-are-the-platform-s
+    rule: restrict
+    keys: [secrets]
+    allow: [platform]
+  - id: variables-merge-deep
+    rule: merge-strategy
+    keys: [variables]
+    allow: [deep-merge]
+"#,
+    );
+    let scope: Scope = [("Project".to_owned(), "Magenta".to_owned())].into();
+    let organization = "parameters: {}\nvariables: {OrganizationName: Contoso, Project_Service_GitRepositories: enabled}\nresources: []";
+    let project = "variables: {ProjectName: Magenta}\nresources: [{name: Project, type: AzureDevOpsDscNative/AzDoProject}]";
+    let run = |node: &str| {
+        let layers = [
+            ("OrganizationPolicies/Organization.yaml", organization),
+            ("ProjectPolicies/Project.yaml", project),
+            ("Projects/Magenta.yaml", node),
+        ];
+        match enforce(&r, &h, &scope, &loader(&layers), &[]) {
+            Ok(_) => Vec::new(),
+            Err(Refusal::Violations(v)) => v.iter().map(ToString::to_string).collect(),
+            Err(Refusal::Error(e)) => panic!("{e}"),
+        }
+    };
+    // The node file from DscPipelineRunner's own example: a variable of its own.
+    assert_eq!(
+        run("variables: {ProjectDescription: The Magenta project.}"),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        run("variables: {OrganizationName: Fabrikam}\nsecrets: {pat: {from: env}}"),
+        [
+            "[platform-variables-hold] layer \"Projects/Magenta.yaml\" (teams) changes \"variables.OrganizationName\", \
+             which layer \"OrganizationPolicies/Organization.yaml\" (platform) set",
+            "[secrets-are-the-platform-s] layer \"Projects/Magenta.yaml\" (teams) sets \"secrets.pat.from\", \
+             which only platform may set",
+        ]
+    );
+}
+
+// ---------------------------------------------------------------------------
 // final
 // ---------------------------------------------------------------------------
 

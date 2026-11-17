@@ -251,9 +251,11 @@ fn adversarial_a_layer_outside_every_group_is_refused() {
 fn mistakes_in_the_command_and_the_files_are_plain_errors() {
     let dir = scratch("mistakes");
     let out = meridian(&dir, &web01_with(&["--set", "novalue"]));
-    assert_eq!(
-        stderr(&out),
-        "error: --set takes NAME=VALUE, and got \"novalue\"\n"
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        stderr(&out).contains("expected NAME=VALUE"),
+        "{}",
+        stderr(&out)
     );
 
     let out = meridian(
