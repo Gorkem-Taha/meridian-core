@@ -1064,3 +1064,25 @@ fn user_data_too_large_for_the_smallest_cloud_is_a_warning() {
     );
     assert!(warning.contains("Amazon EC2 accepts 16384"), "{warning}");
 }
+
+#[test]
+fn a_reference_is_settled_from_the_document_or_refused() {
+    let text = user_data(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        content: \"export APP_HOME=$${HOME}/app\"\n",
+    );
+    assert!(text.contains("/srv/app/index.html"), "{text}");
+    assert!(text.contains("export APP_HOME=${HOME}/app"), "{text}");
+    assert!(!text.contains("${root"), "{text}");
+    assert!(!text.contains("$${"), "{text}");
+
+    let err = refusal(
+        "    - id: page\n      type: file\n      params:\n        path: /etc/profile.d/app.sh\n        content: \"export APP_HOME=${HOME}/app\"\n",
+    );
+    assert_eq!(err.rule, "invalid-reference");
+    assert_eq!(err.resource, "page");
+    assert!(
+        err.msg.contains("for a literal ${ write $${"),
+        "{}",
+        err.msg
+    );
+}

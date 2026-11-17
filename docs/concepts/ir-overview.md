@@ -93,9 +93,11 @@ reference into the tool's own form: a Terraform address, a CloudFormation `Ref`,
 the name of a Kubernetes object, a `{{ .Values }}` expression in a Helm chart. What a path can read depends on the tool, and
 the target's page says. Write `$${` for a literal `${`.
 
-The configuration management targets that share the six abstract types do not
-resolve references. In a ResourceSet for `ansible`, `puppet`, `chef` or
-`cloud-init`, a `${...}` in a param is text and is written out as it stands.
+The configuration management targets that share the six abstract types have
+nothing to read at apply time. In a ResourceSet for `ansible`, `puppet`, `chef`
+or `cloud-init`, `${id.param}` becomes the value the document gives that param,
+when the document is compiled, and anything else in `${...}` is refused
+([the rules](../reference/resource-types.md#references)).
 
 ## What is not here yet
 
