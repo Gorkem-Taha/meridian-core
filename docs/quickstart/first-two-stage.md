@@ -111,6 +111,6 @@ configuration management targets configure a machine and report nothing.
 More on why the two kinds are kept apart:
 [the two-stage architecture](../concepts/two-stage-architecture.md).
 
-Where next: [worked workflows](workflows.md) has six larger workflows, with
+Where next: [worked workflows](workflows.md) has seven larger workflows, with
 several machines, several tools per machine, labels, and conditions decided
 from data.

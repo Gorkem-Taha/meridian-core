@@ -1,0 +1,240 @@
+# One workflow for every customer, shaped by the plan they bought.
+#
+# Four documents and four tools. Nothing in them names a customer: the
+# tenant, the plan and the add-ons come from data, and Meridian works every
+# name, size and condition out before any tool is handed anything.
+#
+#   network     Terraform   always
+#   app         Salt        always, on the machine Terraform made
+#   dashboards  Kubernetes  only with the monitoring add-on   (spec.when)
+#   backup      Chef        only on the enterprise plan       (spec.when)
+#
+#   meridian compile tenants.yaml --data tenants.data.yaml
+#   meridian compile tenants.yaml --data tenants.data.yaml \
+#                                 --data tenants.enterprise.data.yaml
+#
+# tenants.data.yaml is a customer on the starter plan. The second file is
+# what changes when they move to enterprise. Or change one thing by hand:
+#
+#   meridian compile tenants.yaml --data tenants.data.yaml --set tenant=globex
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+  labels:
+    # -l plan=enterprise selects this document only for enterprise tenants.
+    plan: ${{ data.plan }}
+    stage: provision
+spec:
+  target: terraform
+
+  # Worked out once for this document and read as var.<name>.
+  variables:
+    name: ${{ data.tenant }}-${{ data.plan }}
+    # The second /24 of the tenant's range.
+    app_cidr: ${{ cidrSubnet(data.cidr, 8, 1) }}
+    tags:
+      Tenant: ${{ data.tenant }}
+      Plan: ${{ title(data.plan) }}
+      Owner: ${{ upper(data.team) }}
+
+  # Decided once and read as cond.<name>. One may read another.
+  conditions:
+    enterprise: data.plan == 'enterprise'
+    own_database: cond.enterprise || (data.addons.database ?? false)
+
+  resources:
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: ${{ data.region }}
+
+    - id: main
+      type: aws_vpc
+      params:
+        cidr_block: ${{ data.cidr }}
+        # A whole mapping, placed with its shape.
+        tags: ${{ var.tags }}
+
+    - id: app_net
+      type: aws_subnet
+      params:
+        # A reference, resolved by Terraform, beside an interpolation,
+        # decided by Meridian.
+        vpc_id: ${main.id}
+        cidr_block: ${{ var.app_cidr }}
+
+    - id: app_vm
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        # Quoted because the expression holds ": ".
+        instance_type: "${{ cond.enterprise ? 'm6i.large' : 't3.small' }}"
+        subnet_id: ${app_net.id}
+        tags: "${{ merge(var.tags, {Name: var.name}) }}"
+
+    # A database of their own for enterprise tenants, and for anyone who
+    # bought it as an add-on.
+    - id: db
+      type: aws_db_instance
+      when: cond.own_database
+      params:
+        identifier: ${{ var.name }}
+        engine: postgres
+        instance_class: "${{ cond.enterprise ? 'db.m6i.large' : 'db.t3.micro' }}"
+        allocated_storage: "${{ cond.enterprise ? 200 : 20 }}"
+        multi_az: ${{ cond.enterprise }}
+
+  outputs:
+    - name: address
+      value: ${app_vm.private_ip}
+    # Declared only where there is a database to point at.
+    - name: database
+      when: cond.own_database
+      value: ${db.address}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: app
+  labels:
+    plan: ${{ data.plan }}
+    stage: configure
+spec:
+  target: salt
+  # The machine is the one Terraform made: its address is not known until
+  # the first document has been applied.
+  targetHost:
+    from: infrastructure
+    ref: network
+    output: address
+
+  variables:
+    name: ${{ data.tenant }}-${{ data.plan }}
+    root: /srv/${{ data.tenant }}
+    ports: "${{ data.plan == 'enterprise' ? [80, 443] : [8080] }}"
+
+  conditions:
+    tls: data.plan == 'enterprise'
+
+  resources:
+    - id: web_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: ${{ var.root }}
+        mode: "0755"
+
+    - id: site_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/${{ data.tenant }}.conf
+        mode: "0644"
+        content: |
+          # ${{ var.name }}, looked after by ${{ upper(data.team) }}
+          root ${{ var.root }};
+          listen ${{ join(var.ports, ' ') }};
+      dependsOn:
+        - resource: web_pkg
+        - resource: site_root
+        # The order only matters where there is a certificate to wait for.
+        - resource: site_cert
+          when: cond.tls
+      notifies:
+        - resource: web_svc
+          action: reload
+
+    - id: site_cert
+      type: file
+      when: cond.tls
+      params:
+        path: /etc/ssl/${{ data.tenant }}.pem
+        mode: "0600"
+        content: ""
+
+    # The message comes from data, and the data holds something that looks
+    # like a reference: ${EDITOR}. Text from data is never read as one. It
+    # is written to the file exactly as the customer typed it.
+    - id: motd
+      type: file
+      params:
+        path: /etc/motd
+        mode: "0644"
+        content: "${{ data.motd }}\n"
+
+    - id: web_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: web_pkg
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: dashboards
+  labels:
+    stage: observe
+spec:
+  target: kubernetes
+  # A condition on the whole document. Without the add-on this document is
+  # not part of the run, and the command says so.
+  when: data.addons.monitoring ?? false
+
+  variables:
+    namespace: tenant-${{ data.tenant }}
+
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: monitoring
+        namespace: ${{ var.namespace }}
+
+    - id: scrape
+      type: v1/ConfigMap
+      params:
+        data:
+          TENANT: ${{ data.tenant }}
+          PLAN: ${{ data.plan }}
+          # Kubernetes wants text here, so the number is turned into text.
+          RETENTION_DAYS: "${{ toString(data.plan == 'enterprise' ? 90 : 14) }}"
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: backup
+  labels:
+    stage: protect
+spec:
+  target: chef
+  when: data.plan == 'enterprise'
+  targetHost:
+    from: inline
+    host: backup.${{ data.tenant }}.example.com
+
+  resources:
+    - id: restic_pkg
+      type: package
+      params:
+        name: restic
+
+    - id: restic_env
+      type: file
+      params:
+        path: /etc/restic/${{ data.tenant }}.env
+        mode: "0600"
+        content: |
+          RESTIC_REPOSITORY=s3:s3.${{ data.region }}.amazonaws.com/backups-${{ data.tenant }}
+          RETAIN_DAYS=${{ data.backup.retain_days ?? 30 }}
+      dependsOn:
+        - resource: restic_pkg
