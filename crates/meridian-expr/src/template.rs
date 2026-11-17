@@ -196,9 +196,29 @@ impl Template {
         // brace (or the other way round), would join into a reference that
         // neither side wrote, so the join is made literal as well.
         let mut last_placed = false;
-        let mut add = |out: &mut String, text: &str, is_placed: bool| {
+        let mut add = |out: &mut String, text: &str, is_placed: bool| -> Result<(), String> {
             if text.is_empty() {
-                return;
+                return Ok(());
+            }
+            // The other way round there is nothing to add that would help: a
+            // placed value that ends in a dollar, directly before a
+            // reference the author wrote, is read by every plugin as the
+            // escape for a literal, and the reference would be handed over
+            // as text. No spelling keeps both the dollar and the reference,
+            // so it is refused, and the author is told how to keep them
+            // apart.
+            if literal
+                && last_placed
+                && !is_placed
+                && out.ends_with('$')
+                && text.starts_with(REFERENCE)
+            {
+                let reference = text.split_inclusive('}').next().unwrap_or(text);
+                return Err(format!(
+                    "the value placed before {reference} ends in \"$\", and a \"$\" directly \
+                     before a reference makes it literal text, so the reference would be \
+                     lost; put a space or other text between the two"
+                ));
             }
             if literal && (is_placed || last_placed) && out.ends_with('$') && text.starts_with('{')
             {
@@ -206,23 +226,24 @@ impl Template {
             }
             out.push_str(text);
             last_placed = is_placed;
+            Ok(())
         };
         let mut pieces: Vec<(String, SecretRef)> = Vec::new();
         for part in &self.parts {
             match part {
-                Part::Text(text) => add(&mut out, text, false),
+                Part::Text(text) => add(&mut out, text, false)?,
                 Part::Expr { source, expr } => {
                     let fail = |why: String| format!("in {OPEN} {source} {CLOSE}: {why}");
                     match expr.eval(scope).map_err(fail)? {
                         value @ Value::String(_) => {
                             if let Value::String(s) = placed(value) {
-                                add(&mut out, &s, true);
+                                add(&mut out, &s, true)?;
                             }
                         }
                         value @ (Value::Bool(_)
                         | Value::Int(_)
                         | Value::Uint(_)
-                        | Value::Float(_)) => add(&mut out, &value.canonical(), true),
+                        | Value::Float(_)) => add(&mut out, &value.canonical(), true)?,
                         Value::Secret(secret) => pieces.push((std::mem::take(&mut out), secret)),
                         Value::Null => {
                             return Err(fail(
