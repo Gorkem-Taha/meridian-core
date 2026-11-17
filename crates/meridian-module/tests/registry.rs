@@ -660,14 +660,14 @@ fn a_pushed_module_installs_and_a_version_is_published_once() {
 
 /// A file only its owner can read, holding the password the private
 /// registry's login is made of.
-fn password_file(root: &Path) -> PathBuf {
+fn login_file(root: &Path) -> PathBuf {
     let login = String::from_utf8(
         base64::engine::general_purpose::STANDARD
             .decode(LOGIN)
             .unwrap(),
     )
     .unwrap();
-    let path = root.join("registry-password");
+    let path = root.join("registry-login");
     fs::write(&path, format!("{}\n", login.split_once(':').unwrap().1)).unwrap();
     #[cfg(unix)]
     {
@@ -678,11 +678,11 @@ fn password_file(root: &Path) -> PathBuf {
 }
 
 /// A `spec.credentials` list with one credential, named `registry`.
-fn declared(kind: &str, fields: &str, password: &Path) -> String {
+fn declared(kind: &str, fields: &str, held_in: &Path) -> String {
     format!(
         "  credentials:\n    - name: registry\n      type: {kind}\n{fields}      password:\n        \
          from: file\n        path: {}\n",
-        password.display()
+        held_in.display()
     )
 }
 
@@ -703,14 +703,14 @@ fn a_registry_is_read_with_a_credential_the_project_declares() {
     let dir = module(&root, "acme/private", "1.0.0", "behind a declared login");
     locked.publish("acme/private", "1.0.0", &dir);
     locked.tags("acme/private", &["1.0.0"]);
-    let password = password_file(&root);
+    let kept = login_file(&root);
     let wanted = entry_with_login("acme/private", &locked, "acme/private", "1");
 
     // The server the credential is for is the registry: it is sent.
     let server = format!("      server: {}\n      user: reader\n", locked.host);
     let project = site(
         &root,
-        &format!("{wanted}{}", declared("registry", &server, &password)),
+        &format!("{wanted}{}", declared("registry", &server, &kept)),
     );
     let report = run(&project, Mode::Install).unwrap();
     assert_eq!(report.lock.modules[0].version, "1.0.0");
@@ -719,7 +719,7 @@ fn a_registry_is_read_with_a_credential_the_project_declares() {
         .is_file());
     // Nothing of the login is written down.
     let lock = fs::read_to_string(project.join(LOCK_FILE)).unwrap();
-    let held = fs::read_to_string(&password).unwrap();
+    let held = fs::read_to_string(&kept).unwrap();
     assert!(!lock.contains(held.trim()) && !lock.contains("reader"));
 
     // A usernamePassword credential names no server, and logs in too.
@@ -729,7 +729,7 @@ fn a_registry_is_read_with_a_credential_the_project_declares() {
         &root,
         &format!(
             "{wanted}{}",
-            declared("usernamePassword", "      user: reader\n", &password)
+            declared("usernamePassword", "      user: reader\n", &kept)
         ),
     );
     assert_eq!(
@@ -746,7 +746,7 @@ fn a_declared_credential_goes_only_where_it_was_declared_for() {
     let dir = module(&root, "acme/private", "1.0.0", "behind a declared login");
     locked.publish("acme/private", "1.0.0", &dir);
     locked.tags("acme/private", &["1.0.0"]);
-    let password = password_file(&root);
+    let kept = login_file(&root);
     let wanted = entry_with_login("acme/private", &locked, "acme/private", "1");
     let host = &locked.host;
     let install = |credentials: String| {
@@ -761,7 +761,7 @@ fn a_declared_credential_goes_only_where_it_was_declared_for() {
         install(declared(
             "registry",
             "      server: registry.example.com\n      user: reader\n",
-            &password
+            &kept
         )),
         format!(
             "the credential registry is for the registry registry.example.com, and \
@@ -774,7 +774,7 @@ fn a_declared_credential_goes_only_where_it_was_declared_for() {
     let refused = install(declared(
         "registry",
         &format!("      server: {host}\n      user: someone-else\n"),
-        &password,
+        &kept,
     ));
     assert_eq!(
         refused,
@@ -786,7 +786,7 @@ fn a_declared_credential_goes_only_where_it_was_declared_for() {
 
     // A token is not a registry login.
     let token = root.join("token");
-    fs::copy(&password, &token).unwrap();
+    fs::copy(&kept, &token).unwrap();
     assert_eq!(
         install(format!(
             "  credentials:\n    - name: registry\n      type: token\n      token:\n        \
@@ -817,7 +817,7 @@ fn a_fetched_module_cannot_have_a_credential_sent() {
     let inner = module(&root, "acme/private", "1.0.0", "behind a declared login");
     locked.publish("acme/private", "1.0.0", &inner);
     locked.tags("acme/private", &["1.0.0"]);
-    let password = password_file(&root);
+    let kept = login_file(&root);
 
     // A published module that declares a credential and names it for one of
     // its own requirements. Only the project's manifest is acted on.
@@ -829,7 +829,7 @@ fn a_fetched_module_cannot_have_a_credential_sent() {
         declared(
             "registry",
             &format!("      server: {}\n      user: reader\n", locked.host),
-            &password
+            &kept
         )
     ));
     fs::write(outer.join("meridian.yaml"), manifest).unwrap();
@@ -857,7 +857,7 @@ fn a_fetched_module_cannot_have_a_credential_sent() {
             declared(
                 "registry",
                 &format!("      server: {}\n      user: reader\n", locked.host),
-                &password
+                &kept
             )
         ),
     );
@@ -870,7 +870,7 @@ fn a_module_is_pushed_with_a_declared_credential() {
     let root = scratch("declared-push");
     let _ = registries();
     let locked = Registry::start(true);
-    let password = password_file(&root);
+    let kept = login_file(&root);
     let dir = module(
         &root,
         "acme/private",
@@ -883,7 +883,7 @@ fn a_module_is_pushed_with_a_declared_credential() {
         declared(
             "registry",
             &format!("      server: {}\n      user: reader\n", locked.host),
-            &password
+            &kept
         )
     ));
     fs::write(dir.join("meridian.yaml"), text).unwrap();
