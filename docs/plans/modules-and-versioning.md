@@ -211,9 +211,10 @@ where the content came from (a commit or a manifest digest) and is what is asked
 re-fetch, so a moved tag cannot substitute different content silently: it fails the
 integrity check instead.
 
-Signing is not built yet. Modules will be signed and verified with the same
-cosign/sigstore mechanism the release work adds for plugins, so there is one trust model
-and one set of trusted identities for both. Verification starts as optional: off until a
+Signing is not built yet. Modules will be signed and verified with the same mechanism
+the release work adds for plugins (the `meridian-signing` crate: a signature over a
+file's SHA-256, checked against the keys a project trusts), so there is one trust model
+and one set of trusted keys for both. Verification starts as optional: off until a
 project names whom it trusts. It waits for plugin signing to land, and is tracked in
 [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
 
@@ -357,8 +358,9 @@ code and checked by a test, so it cannot drift:
 
 - **A public index.** Deliberately absent. If one is ever wanted, it is a hosted service
   and a decision for the owner.
-- **Signing.** Decided: reuse the cosign/sigstore signing and verification that the
-  release work adds for plugins, optional at first. Waits for that to land;
+- **Signing.** Decided: reuse the signing and verification that the release work adds
+  for plugins, optional at first. Whether registry artifacts are also verified with
+  cosign/Sigstore is open: it would be new work with a new dependency. Waits for that to land;
   [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
 - **Credentials for registries.** Only `auths` entries of the Docker configuration are read
   at first. Decided: a module source will also be able to name a credential declared in
