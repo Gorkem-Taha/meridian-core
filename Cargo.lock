@@ -613,6 +613,7 @@ dependencies = [
  "meridian-target-docker",
  "meridian-target-dsc",
  "meridian-target-fake",
+ "meridian-target-helm",
  "meridian-target-kubernetes",
  "meridian-target-packer",
  "meridian-target-podman",
@@ -763,6 +764,15 @@ name = "meridian-target-fake"
 version = "0.1.0"
 dependencies = [
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-helm"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]

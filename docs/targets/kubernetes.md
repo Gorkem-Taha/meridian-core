@@ -1,5 +1,7 @@
 # Target: `kubernetes`
 
+<img src="../branding/logos/meridian-kubernetes.svg" width="72" alt="Meridian Kubernetes plugin logo">
+
 Compiles an Infrastructure document into Kubernetes manifests and applies them
 with `kubectl`.
 

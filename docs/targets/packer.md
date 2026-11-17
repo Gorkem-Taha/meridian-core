@@ -1,6 +1,6 @@
 # Target: `packer`
 
-<img src="../branding/logos/meridian-packer.svg" width="96" alt="Meridian Packer plugin logo">
+<img src="../branding/logos/meridian-packer.svg" width="72" alt="Meridian Packer plugin logo">
 
 Compiles an Infrastructure document into a [Packer](https://developer.hashicorp.com/packer)
 build template and runs it with `packer`. Use it to build machine images and container

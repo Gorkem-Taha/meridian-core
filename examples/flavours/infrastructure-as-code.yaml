@@ -1,0 +1,28 @@
+# The document shown in docs/reference/dsl/infrastructure-as-code.md. Keep the two the same.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: machine
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        region: eu-west-1
+
+    - id: web_sg
+      type: aws_security_group
+      params:
+        name: web
+
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        vpc_security_group_ids: ["${web_sg.id}"]
+
+  outputs:
+    - name: address
+      value: ${web.public_ip}
