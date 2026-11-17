@@ -81,6 +81,7 @@ plugins.
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
 | [Run safety](plans/run-safety.md) | State and locking, resume, rollback, drift, policy checks, values handed between stages |
+| [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing
 
