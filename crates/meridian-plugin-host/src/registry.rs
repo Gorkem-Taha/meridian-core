@@ -239,9 +239,13 @@ impl Registry {
 
 /// Applies the naming convention, so discovery never executes a binary just to
 /// find out what it is.
+///
+/// A target name holds no dot, so the files a build leaves beside a binary
+/// (`meridian-target-ansible.d`, `.pdb`) are not taken for plugins.
 fn is_plugin_name(name: &str) -> bool {
     let name = name.strip_suffix(".exe").unwrap_or(name);
-    name.len() > BINARY_PREFIX.len() && name.starts_with(BINARY_PREFIX)
+    name.strip_prefix(BINARY_PREFIX)
+        .is_some_and(|target| !target.is_empty() && !target.contains('.'))
 }
 
 /// The file name a plugin for the given target must have.
@@ -258,6 +262,9 @@ mod tests {
         for (name, want) in [
             ("meridian-target-ansible", true),
             ("meridian-target-ansible.exe", true),
+            ("meridian-target-dsc-v3", true),
+            ("meridian-target-ansible.d", false),
+            ("meridian-target-ansible.pdb", false),
             ("meridian-target-", false),
             ("meridian-target-.exe", false),
             ("meridian", false),
