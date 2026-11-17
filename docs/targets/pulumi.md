@@ -1,4 +1,4 @@
-# The Pulumi target
+# Target: `pulumi`
 
 <img src="../branding/logos/meridian-pulumi.svg" width="72" alt="Meridian Pulumi plugin logo">
 

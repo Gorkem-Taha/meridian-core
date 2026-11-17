@@ -26,6 +26,7 @@ meridian-target-cloudformation = { path = "../../plugins/cloudformation" }
 meridian-target-docker = { path = "../../plugins/docker" }
 meridian-target-dsc = { path = "../../plugins/dsc" }
 meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
+meridian-target-pulumi = { path = "../../plugins/pulumi" }
 meridian-target-puppet = { path = "../../plugins/puppet" }
 meridian-target-terraform = { path = "../../plugins/terraform" }
 meridian-target-fake = { path = "../meridian-target-fake" }

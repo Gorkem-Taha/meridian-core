@@ -23,7 +23,7 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
+| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `pulumi` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 

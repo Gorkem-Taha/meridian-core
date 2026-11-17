@@ -52,6 +52,7 @@ hand:
 | `terraform` | `terraform` (or `tofu`) |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
+| `pulumi` | `pulumi` |
 | `docker` | `docker` with the Compose plugin |
 | `kubernetes` | `kubectl` |
 
