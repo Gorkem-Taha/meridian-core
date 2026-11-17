@@ -848,10 +848,12 @@ fn check_secrets(files: &[PathBuf], state_dir: &Path) -> Result<(), Failure> {
             .map(|s| s.name.len())
             .max()
             .unwrap_or(0);
-        for secret in doc.secrets() {
+        // What is printed is each declaration: its name and provider, and
+        // what a probe found. A probe reads no value.
+        for declaration in doc.secrets() {
             declared += 1;
-            let probe = secret.source().probe();
-            let state = match (&probe, secret.optional) {
+            let probe = declaration.source().probe();
+            let state = match (&probe, declaration.optional) {
                 (Probe::Present(_), _) => "ok",
                 (Probe::Unknown(_), _) => "not checked",
                 (Probe::Absent(_), true) => "absent, optional",
@@ -863,8 +865,8 @@ fn check_secrets(files: &[PathBuf], state_dir: &Path) -> Result<(), Failure> {
             }
             println!(
                 "  {:width$}  {:5}  {state}: {}",
-                secret.name,
-                secret.from,
+                declaration.name,
+                declaration.from,
                 probe.words()
             );
         }
