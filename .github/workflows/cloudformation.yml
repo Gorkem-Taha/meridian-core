@@ -48,7 +48,7 @@ jobs:
         run: |
           docker run --detach --name localstack --publish 4566:4566 \
             --env SERVICES=cloudformation,sqs,sns,ssm,sts \
-            localstack/localstack:4.4.0
+            localstack/localstack:4.14.0
           for attempt in $(seq 1 60); do
             if curl --silent --fail http://localhost:4566/_localstack/health > /dev/null; then
               break

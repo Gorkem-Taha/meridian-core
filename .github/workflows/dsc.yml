@@ -3,9 +3,9 @@ name: dsc
 # The DSC plugin against a real PowerShell, the real DscPipelineRunner from
 # the PowerShell Gallery, and both DSC engines.
 #
-# linux    the plugin's own runner (plugins/dsc/tests/real.rs) drives DSC v2
-#          (Invoke-DscResource) and DSC v3 (the dsc command) for real, with a
-#          resource that ships with the tests.
+# linux    the plugin's own runner (plugins/dsc/tests/real.rs) drives DSC v3
+#          (the dsc command) for real, with a resource that ships with the
+#          tests. DSC v2 (Invoke-DscResource) does not work on Linux.
 # windows  real Windows resources, a machine environment variable and
 #          registry values, through both engines. Meridian does not build on
 #          Windows yet, so the documents are compiled on Linux and the
@@ -35,7 +35,7 @@ env:
 
 jobs:
   linux:
-    name: real DscPipelineRunner, DSC v2 and v3 on Linux
+    name: real DscPipelineRunner and DSC v3 on Linux
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -70,7 +70,7 @@ jobs:
         run: |
           $PSVersionTable.PSVersion.ToString()
           dsc --version
-          Get-DscResource -Module MeridianTestDsc | Format-Table Name, ModuleName, Version
+          dsc resource list --adapter Microsoft.DSC/PowerShell 'MeridianTestDsc/*'
 
       # With the variables set, a PowerShell that cannot load the module, or
       # a dsc that does not run, fails the tests, so this job cannot pass by
@@ -78,6 +78,8 @@ jobs:
       - name: Test against DscPipelineRunner
         env:
           MERIDIAN_TEST_REAL_DSC: '1'
+          # Invoke-DscResource (DSC v2) does not work on Linux, so only DSC v3
+          # is asked for here. The windows job covers DSC v2.
           MERIDIAN_TEST_REAL_DSC_V3: '1'
         run: cargo test -p meridian-target-dsc --locked --test real -- --nocapture --test-threads=1
 

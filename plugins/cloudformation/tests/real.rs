@@ -7,7 +7,7 @@
 //! command at it:
 //!
 //! ```sh
-//! docker run -d -p 4566:4566 localstack/localstack:4.4.0
+//! docker run -d -p 4566:4566 localstack/localstack:4.14.0
 //! AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 \
 //! MERIDIAN_AWS_ARGS='--endpoint-url http://localhost:4566' \
 //! MERIDIAN_TEST_REAL_CLOUDFORMATION=1 \

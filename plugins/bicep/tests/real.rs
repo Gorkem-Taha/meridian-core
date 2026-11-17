@@ -154,9 +154,10 @@ fn every_kind_of_value_the_plugin_writes_is_valid_bicep() {
         return;
     }
     let dir = scratch(TMP, "real-build-values");
-    // Strings that need escaping, numbers, booleans, nulls, nested lists and
-    // maps, keys that are not identifiers, interpolation, Bicep's own
-    // functions and operators, and a reference used as a whole value.
+    // Strings that need escaping, numbers, booleans, nested lists and maps,
+    // keys that are not identifiers, interpolation, Bicep's own functions,
+    // and a reference used as a whole value. A tag may only read what is
+    // known when the deployment starts, which a resource's name is.
     let text = r#"apiVersion: meridian/v1
 kind: Infrastructure
 metadata:
@@ -202,10 +203,10 @@ spec:
       type: Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31
       params:
         name: values-identity
-        location: ${store.location}
+        location: ${resourceGroup().location}
         tags:
           store: ${store.name}
-          kind: ${toLower(store.kind)}
+          upper: ${toUpper(store.name)}
       dependsOn:
         - resource: blobs
   outputs:

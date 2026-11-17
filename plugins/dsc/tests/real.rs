@@ -11,16 +11,20 @@
 //! ```pwsh
 //! Install-Module Dsc.PipelineRunner, Datum.InvokeCommand
 //! $env:PSModulePath = "$PWD/plugins/dsc/tests/modules" + [IO.Path]::PathSeparator + $env:PSModulePath
-//! $env:MERIDIAN_TEST_REAL_DSC = '1'      # DSC v2
-//! $env:MERIDIAN_TEST_REAL_DSC_V3 = '1'   # DSC v3 as well; needs dsc on PATH
+//! $env:MERIDIAN_TEST_REAL_DSC = '1'
+//! $env:MERIDIAN_TEST_REAL_DSC_V2 = '1'   # DSC v2; needs Windows
+//! $env:MERIDIAN_TEST_REAL_DSC_V3 = '1'   # DSC v3; needs dsc on PATH
 //! cargo test -p meridian-target-dsc --test real
 //! ```
 //!
 //! Without `MERIDIAN_TEST_REAL_DSC=1` the tests pass without doing anything.
 //! With it, a PowerShell that cannot import the module is a failure.
 //!
-//! Nothing here is specific to one operating system: the `dsc` workflow runs
-//! it on Linux, and it is written to run on Windows as it stands.
+//! `Invoke-DscResource` only works on Windows: on Linux, PowerShell's DSC
+//! module needs a management library (`libmi`) that PowerShell does not ship.
+//! So the `dsc` workflow, which runs these tests on Linux, asks for DSC v3
+//! only. Nothing in this file is specific to one operating system, and it is
+//! written to run on Windows, with both engines, as it stands.
 
 #![allow(clippy::result_large_err)]
 
@@ -67,6 +71,11 @@ fn engine(version: &str) -> bool {
         eprintln!("skipped: set MERIDIAN_TEST_REAL_DSC=1 to run against a real DscPipelineRunner");
         return false;
     }
+    let variable = format!("MERIDIAN_TEST_REAL_DSC_V{version}");
+    if !is_set(&variable) {
+        eprintln!("skipped: set {variable}=1 to run against DSC v{version}");
+        return false;
+    }
     let module = DscRunner::from_env().module;
     let import = format!(
         "$ErrorActionPreference = 'Stop'; Import-Module '{module}'; \
@@ -75,16 +84,20 @@ fn engine(version: &str) -> bool {
     if let Err(why) = pwsh(&import) {
         panic!("MERIDIAN_TEST_REAL_DSC=1, and PowerShell cannot load what the tests need: {why}");
     }
-    if version == "3" {
-        if !is_set("MERIDIAN_TEST_REAL_DSC_V3") {
-            eprintln!("skipped: set MERIDIAN_TEST_REAL_DSC_V3=1 to run against the dsc command");
-            return false;
-        }
-        if let Err(why) = pwsh("dsc --version; if ($LASTEXITCODE -ne 0) { exit 1 }") {
-            panic!("MERIDIAN_TEST_REAL_DSC_V3=1, and dsc does not run: {why}");
-        }
+    let installed = match version {
+        "2" => "$ErrorActionPreference = 'Stop'; Import-Module PSDesiredStateConfiguration; $null = Get-Command Invoke-DscResource",
+        _ => "dsc --version; if ($LASTEXITCODE -ne 0) { exit 1 }",
+    };
+    if let Err(why) = pwsh(installed) {
+        panic!("{variable}=1, and that engine is not usable here: {why}");
     }
     true
+}
+
+/// The first engine these tests were asked to use, for a test that needs
+/// one and does not care which.
+fn any_engine() -> Option<&'static str> {
+    ["3", "2"].into_iter().find(|version| engine(version))
 }
 
 fn context(dir: &Path) -> RunContext {
@@ -257,9 +270,7 @@ fn a_document_converges_through_dsc_v3() {
 
 #[test]
 fn a_runtime_condition_is_evaluated_by_the_runner() {
-    if !engine("2") {
-        return;
-    }
+    let Some(version) = any_engine() else { return };
     let dir = scratch(TMP, "real-condition");
     let state = dir.join("state");
     fs::create_dir_all(&state).unwrap();
@@ -267,7 +278,7 @@ fn a_runtime_condition_is_evaluated_by_the_runner() {
     // The document's name is the node's name, so one condition holds and
     // the other does not.
     let artifact = compile(
-        "2",
+        version,
         &format!(
             "    - id: wanted\n      type: MeridianTestDsc/MarkerFile\n      params:\n        Name: wanted\n        Path: {shown_state}\n      runtimeWhen: \"equals (nodeName) 'site'\"\n    - id: unwanted\n      type: MeridianTestDsc/MarkerFile\n      params:\n        Name: unwanted\n        Path: {shown_state}\n      runtimeWhen: \"equals (nodeName) 'elsewhere'\"\n"
         ),
@@ -287,13 +298,11 @@ fn a_runtime_condition_is_evaluated_by_the_runner() {
 
 #[test]
 fn a_resource_dsc_does_not_have_fails_with_the_runners_reason() {
-    if !engine("2") {
-        return;
-    }
+    let Some(version) = any_engine() else { return };
     let dir = scratch(TMP, "real-missing");
     // Whether a module and a resource exist is only known to the engine.
     let artifact = compile(
-        "2",
+        version,
         "    - id: ghost\n      type: MeridianNoSuchModule/NoSuchResource\n      params:\n        Name: ghost\n",
     );
     let log = KeptLog::default();
