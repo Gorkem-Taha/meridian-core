@@ -12,7 +12,7 @@ use std::process::ExitCode;
 use clap::{Args, Parser, Subcommand};
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
-    run, selected, Mode, Observer, Options, Outcome, Selector, StageId, StageReport, MASK,
+    run_selected, selected, Mode, Observer, Options, Outcome, Selector, StageId, StageReport, MASK,
 };
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
@@ -249,10 +249,9 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
     let options = Options {
         state_dir: workflow.state_dir.clone(),
         data,
-        selector,
     };
     let mut printer = Printer { mode, out };
-    let report = run(&bundle, &registry, mode, &options, &mut printer);
+    let report = run_selected(&bundle, &registry, mode, &options, &selector, &mut printer);
     // A plugin that will not exit is worth a warning, not a failed run.
     if let Err(e) = registry.close() {
         eprintln!("warning: {e}");

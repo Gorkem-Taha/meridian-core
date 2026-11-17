@@ -156,10 +156,6 @@ pub struct Options {
     /// The data `when` conditions are decided against, also handed to every
     /// target when it compiles.
     pub data: Data,
-    /// Which documents run. A document the selector leaves out is not a
-    /// stage, but it stays loaded: a selected ResourceSet can still name it
-    /// as the source of its target host.
-    pub selector: Selector,
 }
 
 /// The text shown in place of a sensitive value.
@@ -177,6 +173,22 @@ pub fn run(
     options: &Options,
     observer: &mut dyn Observer,
 ) -> RunReport {
+    run_selected(bundle, registry, mode, options, &Selector::all(), observer)
+}
+
+/// [`run`], for only the documents whose labels `selector` matches.
+///
+/// A document the selector leaves out is not a stage, but it stays loaded: a
+/// selected ResourceSet can still name it as the source of its target host,
+/// and finds that host from what the document's last apply left behind.
+pub fn run_selected(
+    bundle: &Bundle,
+    registry: &Registry,
+    mode: Mode,
+    options: &Options,
+    selector: &Selector,
+    observer: &mut dyn Observer,
+) -> RunReport {
     let mut run = Run {
         bundle,
         registry,
@@ -189,7 +201,7 @@ pub fn run(
     let mut report = RunReport::default();
     let mut failed: Option<StageId> = None;
 
-    for stage in stages(bundle, &options.selector) {
+    for stage in stages(bundle, selector) {
         let id = stage.id();
         let target = stage.target().to_owned();
         if let Some(because_of) = &failed {

@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
-    artifact_hash, kind_fits, run, selected, version_fits, work_dir, Mode, Observer, Options,
-    Outcome, Quiet, RunState, Selector, StageId, StageKind, StageReport, MASK,
+    artifact_hash, kind_fits, run, run_selected, selected, version_fits, work_dir, Mode, Observer,
+    Options, Outcome, Quiet, RunState, Selector, StageId, StageKind, StageReport, MASK,
 };
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_sdk::{
@@ -95,7 +95,6 @@ fn options(test: &str) -> Options {
     Options {
         state_dir,
         data: Data::new(),
-        selector: Selector::all(),
     }
 }
 
@@ -829,11 +828,8 @@ fn a_selector_chooses_which_documents_run() {
     let registry = registry();
     let bundle = bundle(LABELLED);
     let run_with = |selector: &str, mode: Mode, state: &Options| {
-        let options = Options {
-            selector: Selector::parse(selector).unwrap(),
-            ..state.clone()
-        };
-        run(&bundle, &registry, mode, &options, &mut Quiet)
+        let selector = Selector::parse(selector).unwrap();
+        run_selected(&bundle, &registry, mode, state, &selector, &mut Quiet)
     };
     let state = options("selector");
 
