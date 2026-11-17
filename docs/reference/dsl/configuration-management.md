@@ -91,8 +91,11 @@ Anything outside the six types and their params is refused when the document is
 compiled: an unknown type, a param the type does not have, a state the tool
 cannot express. Nothing is dropped.
 
-In this dialect `${...}` is not a reference. It is ordinary text, written to the
-tool's file as it stands.
+In this dialect a reference is settled when the document is compiled, because
+there is nothing to read from a package or a file at apply time: `${id.param}`
+is the value the document gives that param on that resource. Write `$${` for a
+literal `${`, as in a shell script held in a file's `content`. See
+[references](references.md#configuration-management-the-shared-types).
 
 ## The native dialect: DSC
 

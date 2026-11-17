@@ -45,6 +45,8 @@ byte. The reasons, the layout and the order of work are in
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
+| [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
+| The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
 | The language by segment | how `type`, `state`, `params`, references and notifies are written for [configuration management](reference/dsl/configuration-management.md), [infrastructure as code](reference/dsl/infrastructure-as-code.md), [containerization](reference/dsl/containerization.md) and [container orchestration](reference/dsl/container-orchestration.md) |
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec` |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
