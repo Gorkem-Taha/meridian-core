@@ -128,7 +128,11 @@ fn the_host_learns_what_the_plugin_is_from_the_plugin() {
             runtime_condition: false,
         }
     );
-    assert!(info.path.ends_with(PACKAGE), "{}", info.path);
+    assert!(
+        info.path.trim_end_matches(".exe").ends_with(PACKAGE),
+        "{}",
+        info.path
+    );
     registry.close().unwrap();
 }
 

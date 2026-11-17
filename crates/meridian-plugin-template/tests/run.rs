@@ -95,7 +95,10 @@ fn a_failing_tool_is_an_error_that_says_what_was_run() {
     assert_eq!(err.msg, "filesync apply failed");
     assert_eq!(err.exit_code, Some(3));
     assert!(
-        err.command.ends_with("filesync apply manifest.tsv"),
+        // On Windows the stand-in is filesync.exe.
+        err.command
+            .replace(".exe", "")
+            .ends_with("filesync apply manifest.tsv"),
         "{}",
         err.command
     );
