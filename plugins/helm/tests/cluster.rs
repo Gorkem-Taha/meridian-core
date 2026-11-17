@@ -224,7 +224,9 @@ fn a_release_is_planned_installed_read_and_upgraded() {
     assert_eq!(
         shown(&planned.changes),
         [
-            "delete svc: Service svc",
+            // The document no longer has a resource for it, so it goes by
+            // the tool's own name.
+            "delete Service/svc: Service svc",
             "update settings: ConfigMap settings",
             "update web: Deployment meridian-helm-test-web",
         ]
