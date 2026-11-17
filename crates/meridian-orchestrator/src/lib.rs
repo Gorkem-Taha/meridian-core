@@ -38,6 +38,7 @@ use meridian_sdk::{
 };
 use meridian_secret::Masker;
 
+pub use secrets::{check_declared, Declared};
 pub use select::Selector;
 pub use state::{artifact_hash, RunState, StageRecord};
 

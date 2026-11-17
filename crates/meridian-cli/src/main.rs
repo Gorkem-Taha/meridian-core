@@ -834,40 +834,36 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
 /// answer. Nothing is fetched: a file is looked at and not read, a command is
 /// found and not run. Fails when a secret that is not optional has no answer.
 fn check_secrets(files: &[PathBuf], state_dir: &Path) -> Result<(), Failure> {
+    use meridian_orchestrator::check_declared;
     use meridian_secret::Probe;
     let bundle = load(files, state_dir)?;
     let (mut declared, mut unanswered) = (0, 0);
     for doc in &bundle.documents {
-        if doc.secrets().is_empty() {
+        let rows = check_declared(doc);
+        if rows.is_empty() {
             continue;
         }
         println!("{} ({})", doc.name(), doc.position().file);
-        let width = doc
-            .secrets()
-            .iter()
-            .map(|s| s.name.len())
-            .max()
-            .unwrap_or(0);
-        // What is printed is each declaration: its name and provider, and
-        // what a probe found. A probe reads no value.
-        for declaration in doc.secrets() {
+        let width = rows.iter().map(|row| row.name.len()).max().unwrap_or(0);
+        // Each row is a declaration and what a probe found. No value is
+        // read by this command.
+        for row in &rows {
             declared += 1;
-            let probe = declaration.source().probe();
-            let state = match (&probe, declaration.optional) {
+            let state = match (&row.probe, row.optional) {
                 (Probe::Present(_), _) => "ok",
                 (Probe::Unknown(_), _) => "not checked",
                 (Probe::Absent(_), true) => "absent, optional",
                 (Probe::Absent(_), false) => "MISSING",
                 (Probe::Refused(_), _) => "REFUSED",
             };
-            if matches!(state, "MISSING" | "REFUSED") {
+            if row.unanswered() {
                 unanswered += 1;
             }
             println!(
                 "  {:width$}  {:5}  {state}: {}",
-                declaration.name,
-                declaration.from,
-                probe.words()
+                row.name,
+                row.from,
+                row.probe.words()
             );
         }
     }

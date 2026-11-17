@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use meridian_ir::{Document, Secrets};
 use meridian_sdk::Value;
-use meridian_secret::{FetchError, SecretTable};
+use meridian_secret::{FetchError, Probe, SecretTable};
 
 /// Fetches every secret the document declares into `secrets`.
 ///
@@ -94,4 +94,44 @@ pub(crate) fn named(names: &[String]) -> String {
         [one] => format!("the secret {one}"),
         many => format!("the secrets {}", many.join(", ")),
     }
+}
+
+/// One declaration of `spec.secrets`, and whether the place it names would
+/// answer. It holds what the document wrote and what a probe found: a probe
+/// reads no value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Declared {
+    /// The name the document reads it by.
+    pub name: String,
+    /// Its provider.
+    pub from: String,
+    /// Whether nothing being there is allowed.
+    pub optional: bool,
+    /// What looking at the place found.
+    pub probe: Probe,
+}
+
+impl Declared {
+    /// Whether `plan` or `apply` would stop at this declaration.
+    pub fn unanswered(&self) -> bool {
+        match self.probe {
+            Probe::Present(_) | Probe::Unknown(_) => false,
+            Probe::Absent(_) => !self.optional,
+            Probe::Refused(_) => true,
+        }
+    }
+}
+
+/// Looks at where each declaration of the document says its value comes
+/// from, without fetching: a file is not opened and a command is not run.
+pub fn check_declared(doc: &Document) -> Vec<Declared> {
+    doc.secrets()
+        .iter()
+        .map(|entry| Declared {
+            name: entry.name.clone(),
+            from: entry.from.clone(),
+            optional: entry.optional,
+            probe: entry.source().probe(),
+        })
+        .collect()
 }
