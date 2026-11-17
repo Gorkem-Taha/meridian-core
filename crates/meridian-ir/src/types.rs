@@ -185,6 +185,31 @@ pub struct TargetHost {
     pub pos: Position,
 }
 
+/// `spec.imports[].from`: a file another document compiles to.
+pub const IMPORT_FROM_ARTIFACT: &str = "artifact";
+/// `spec.imports[].from`: a value another document's apply produced.
+pub const IMPORT_FROM_OUTPUT: &str = "output";
+
+/// A value a document is handed from another document of the workflow. It
+/// reaches the document's tool as the tool's own variable or parameter of
+/// this name; the core never splices it into the document's text.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Import {
+    /// The name the value arrives under.
+    pub name: String,
+    /// [`IMPORT_FROM_ARTIFACT`] or [`IMPORT_FROM_OUTPUT`].
+    pub from: String,
+    /// The `metadata.name` of the document the value comes from.
+    pub r#ref: String,
+    /// For `from: artifact`, the compiled file whose text is the value.
+    pub file: String,
+    /// For `from: output`, the output whose value it is.
+    pub output: String,
+    /// Whether the value is masked wherever Meridian prints.
+    pub sensitive: bool,
+    pub pos: Position,
+}
+
 /// The body of a `kind: Infrastructure` document.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct InfrastructureSpec {
@@ -198,6 +223,7 @@ pub struct InfrastructureSpec {
     pub conditions: BTreeMap<String, String>,
     /// `spec.secrets`: the secrets the document reads, as `secret.<name>`.
     pub secrets: Vec<Secret>,
+    pub imports: Vec<Import>,
     pub resources: Vec<Resource>,
     pub outputs: Vec<Output>,
 }
@@ -233,6 +259,7 @@ pub struct ResourceSetSpec {
     /// `spec.secrets`: the secrets the document reads, as `secret.<name>`.
     pub secrets: Vec<Secret>,
     pub target_host: Option<TargetHost>,
+    pub imports: Vec<Import>,
     pub resources: Vec<Resource>,
 }
 
@@ -296,6 +323,14 @@ impl Document {
         match self {
             Document::Infrastructure(d) => &d.spec.target,
             Document::ResourceSet(d) => &d.spec.target,
+        }
+    }
+
+    /// `spec.imports`: the values the document is handed from others.
+    pub fn imports(&self) -> &[Import] {
+        match self {
+            Document::Infrastructure(d) => &d.spec.imports,
+            Document::ResourceSet(d) => &d.spec.imports,
         }
     }
 

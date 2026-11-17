@@ -9,6 +9,12 @@
 //! A few magic words in a file's content make it misbehave on purpose:
 //! `FAIL` makes the tool fail at that file, `PANIC` panics the runner, and
 //! `EXIT` kills the whole plugin process mid-run.
+//!
+//! It imports as well. Its tool's "existing configuration" is a `*.fake`
+//! file of `name = content` lines, each of which becomes a `file` resource.
+//! A line that starts with `?` is something the importer does not
+//! understand, which it reports instead of dropping, and a line that is only
+//! `BROKEN` is a syntax error.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,8 +24,10 @@ use std::sync::OnceLock;
 
 use meridian_sdk::{
     canonical_map, decode_map, serve, Applied, Artifact, Capabilities, Category, Change,
-    ChangeAction, CompileError, Data, Emitted, Emitter, Log, Operations, Output, Plan, Plugin,
-    ResourceGraph, RunContext, RunError, Runner, ServeError, Value, Warning,
+    ChangeAction, CompileError, Data, DocumentKind, Emitted, Emitter, ImportError, ImportFormat,
+    ImportNote, ImportSource, Imported, ImportedDocument, ImportedResource, Importer, Log,
+    NoteLevel, Operations, Output, Plan, Plugin, ResourceGraph, RunContext, RunError, Runner,
+    ServeError, Value, Warning,
 };
 
 /// The compiling half: each `file` resource becomes one artifact file.
@@ -106,6 +114,8 @@ impl Emitter for Fake {
 /// The running half. Its state is `state.json` in the work directory.
 pub struct FakeRunner {
     pub operations: Operations,
+    /// Whether the tool takes inputs, which it then echoes when it applies.
+    pub accepts_inputs: bool,
 }
 
 /// What the last apply wrote, by artifact path.
@@ -191,6 +201,10 @@ fn outputs_of(state: &BTreeMap<String, Value>, context: &RunContext) -> Vec<Outp
 impl Runner for FakeRunner {
     fn operations(&self) -> Operations {
         self.operations
+    }
+
+    fn accepts_inputs(&self) -> bool {
+        self.accepts_inputs
     }
 
     fn plan(
@@ -292,9 +306,79 @@ impl Runner for FakeRunner {
     }
 }
 
-/// Serves the plugin, offering the operations `FAKE_OPERATIONS` names
+/// The importing half: each `name = content` line of a `*.fake` file becomes
+/// a `file` resource.
+pub struct FakeImporter;
+
+impl Importer for FakeImporter {
+    fn formats(&self) -> Vec<ImportFormat> {
+        vec![ImportFormat::new("fake", "Fake files", &["*.fake"])]
+    }
+
+    fn import(&self, source: &ImportSource) -> Result<Imported, ImportError> {
+        let name = if source.name.is_empty() {
+            "imported".to_owned()
+        } else {
+            source.name.clone()
+        };
+        let mut resources = Vec::new();
+        let mut notes = Vec::new();
+        for (file, text) in &source.files {
+            for (index, line) in text.lines().enumerate() {
+                let origin = format!("{file}:{}", index + 1);
+                let line = line.trim();
+                if line.is_empty() || line.starts_with('#') {
+                    continue;
+                }
+                if line == "BROKEN" {
+                    return Err(ImportError::at(file, index + 1, "this line is broken"));
+                }
+                if let Some(what) = line.strip_prefix('?') {
+                    notes.push(ImportNote {
+                        level: NoteLevel::Untranslated,
+                        origin,
+                        subject: what.trim().to_owned(),
+                        msg: "the fake tool has nothing like this, so it was left out".to_owned(),
+                        document: name.clone(),
+                        resource: String::new(),
+                    });
+                    continue;
+                }
+                let Some((id, content)) = line.split_once('=') else {
+                    return Err(ImportError::at(
+                        file,
+                        index + 1,
+                        "expected `name = content`",
+                    ));
+                };
+                resources.push(ImportedResource {
+                    id: id.trim().to_owned(),
+                    r#type: "file".to_owned(),
+                    params: BTreeMap::from([(
+                        "content".to_owned(),
+                        Value::String(content.trim().to_owned()),
+                    )]),
+                    origin,
+                    ..ImportedResource::default()
+                });
+            }
+        }
+        Ok(Imported {
+            documents: vec![ImportedDocument {
+                kind: DocumentKind::Infrastructure,
+                name,
+                resources,
+                ..ImportedDocument::default()
+            }],
+            notes,
+        })
+    }
+}
+
+/// Serves the fake plugin, offering the operations `FAKE_OPERATIONS` names
 /// (`none`, `plan`, or anything else for all of them), so a host can be
-/// checked against a plugin that offers only some.
+/// checked against a plugin that offers only some. `FAKE_INPUTS=none` makes
+/// it a plugin that does not take inputs.
 pub fn serve_from_env() -> Result<(), ServeError> {
     let operations = match std::env::var("FAKE_OPERATIONS").as_deref() {
         Ok("none") => None,
@@ -305,9 +389,15 @@ pub fn serve_from_env() -> Result<(), ServeError> {
         }),
         _ => Some(Operations::ALL),
     };
-    let plugin = Plugin::new(Fake);
+    let mut plugin = Plugin::new(Fake);
+    if std::env::var("FAKE_IMPORT").as_deref() != Ok("none") {
+        plugin = plugin.with_importer(FakeImporter);
+    }
     match operations {
-        Some(operations) => serve(plugin.with_runner(FakeRunner { operations })),
+        Some(operations) => serve(plugin.with_runner(FakeRunner {
+            operations,
+            accepts_inputs: std::env::var("FAKE_INPUTS").as_deref() != Ok("none"),
+        })),
         None => serve(plugin),
     }
 }

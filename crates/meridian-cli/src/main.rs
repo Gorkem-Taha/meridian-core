@@ -5,14 +5,21 @@
 //! own output and errors, and the exit status says whether everything asked
 //! for was done.
 
+use std::collections::BTreeMap;
+mod import;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
+use std::time::Duration;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
-    run_selected, selected, Mode, Observer, Options, Outcome, Selector, StageId, StageReport, MASK,
+    lock, record, run_selected, selected, Backend, Drift, Event, ExecBackend, LocalBackend, Mode,
+    Observer, OnFailure, Options, Outcome, Policy, Resume, RollbackOutcome, RollbackReport,
+    RunRecord, Selector, StageId, StageReport, MASK, REASON_POLICY_DENIED,
 };
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
@@ -61,6 +68,96 @@ enum Command {
     Apply {
         #[command(flatten)]
         workflow: Workflow,
+        /// Continue an apply that failed or was interrupted: stages it
+        /// already applied, from documents that have not changed since, are
+        /// left alone. With no value, the last apply; or a run id
+        #[arg(long, value_name = "RUN", num_args = 0..=1, default_missing_value = "last")]
+        resume: Option<String>,
+        /// What to do when a stage fails: stop, leaving what was applied in
+        /// place, or rollback, putting every stage this run changed back to
+        /// what was applied before
+        #[arg(long, value_name = "ACTION", default_value = "stop")]
+        on_failure: FailureAction,
+    },
+    /// Check whether what was applied is still what is there, changing
+    /// nothing; exits 2 when something has drifted
+    Drift {
+        #[command(flatten)]
+        workflow: Workflow,
+    },
+    /// Put back what the last apply changed: each stage it applied is
+    /// applied again from what was applied before it, last stage first
+    Rollback {
+        #[command(flatten)]
+        workflow: Workflow,
+        /// The apply to put back; the last one when not given
+        #[arg(long, value_name = "RUN")]
+        run: Option<String>,
+    },
+    /// Show the current or last run, step by step, and who holds the lock
+    Status {
+        #[command(flatten)]
+        state: State,
+    },
+    /// List the runs recorded in the state, oldest first
+    Runs {
+        #[command(flatten)]
+        state: State,
+    },
+    /// Print a run's events, one JSON object per line
+    Events {
+        /// The run; the last one when not given
+        run: Option<String>,
+        /// Only events of this type, such as step.failed; step.* takes a
+        /// whole family; may be given more than once
+        #[arg(long = "type", value_name = "TYPE")]
+        types: Vec<String>,
+        #[command(flatten)]
+        state: State,
+    },
+    /// Remove the state lock a run left behind when it was killed
+    Unlock {
+        /// The lock's id, as `meridian status` and the refused run show it
+        id: String,
+        #[command(flatten)]
+        state: State,
+    },
+    /// Turn a tool's existing configuration into Meridian documents
+    ///
+    /// Reads the files, or the files in the directories, and writes one
+    /// document for each thing the plugin finds in them. Whatever cannot be
+    /// carried over is reported and marked in the documents with
+    /// TODO(meridian-import); nothing is dropped quietly. Nothing is run and
+    /// nothing is changed: importing only reads.
+    Import {
+        /// The files to import, or directories holding them
+        #[arg(required = true)]
+        paths: Vec<PathBuf>,
+        /// The tool the files belong to, as the name of its plugin, such as
+        /// terraform or ansible. Left out, it is worked out from the file
+        /// names when only one plugin claims them
+        #[arg(long, value_name = "TARGET")]
+        from: Option<String>,
+        /// What to call the imported document. Defaults to the name of the
+        /// directory or file
+        #[arg(long, value_name = "NAME")]
+        name: Option<String>,
+        /// Write the documents into this directory, one file each. Left out,
+        /// they are printed
+        #[arg(short, long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Look in the directories inside a directory too
+        #[arg(short, long)]
+        recursive: bool,
+        /// Replace a document that already exists in the output directory
+        #[arg(long)]
+        force: bool,
+        /// Exit with an error when anything was not carried over as written.
+        /// The documents are still written
+        #[arg(long)]
+        strict: bool,
+        #[command(flatten)]
+        plugins: PluginDirs,
     },
     /// List the plugins Meridian can find and what each can do
     Plugins {
@@ -192,14 +289,13 @@ struct PluginDirs {
     dirs: Vec<PathBuf>,
 }
 
+/// Where Meridian keeps what it knows.
 #[derive(Args)]
-struct Workflow {
-    /// The documents that make up the workflow
-    #[arg(required = true)]
-    files: Vec<PathBuf>,
+struct State {
     #[command(flatten)]
     plugins: PluginDirs,
-    /// Where each tool's working files and Meridian's run-state are kept
+    /// Where each tool's working files are kept, and with the local backend
+    /// Meridian's own record: the run-state, the runs and the lock
     #[arg(
         long,
         value_name = "DIR",
@@ -207,6 +303,56 @@ struct Workflow {
         default_value = ".meridian"
     )]
     state_dir: PathBuf,
+    /// Where Meridian's own record is kept: `local`, the state directory,
+    /// or the name of a backend program, meridian-backend-<NAME>, in a
+    /// plugin directory
+    #[arg(
+        long,
+        value_name = "NAME",
+        env = "MERIDIAN_BACKEND",
+        default_value = "local"
+    )]
+    backend: String,
+    /// A setting for the backend, as key=value; may be given more than
+    /// once. The backend program reads it as MERIDIAN_BACKEND_<KEY>
+    #[arg(long, value_name = "KEY=VALUE")]
+    backend_config: Vec<String>,
+}
+
+/// What an apply does when a stage fails.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum FailureAction {
+    /// Stop, and leave what was applied in place
+    Stop,
+    /// Stop, then put back every stage this run changed
+    Rollback,
+}
+
+/// How the events of a run are written to standard output.
+#[derive(Clone, Copy, ValueEnum)]
+enum EventFormat {
+    /// One JSON object per line
+    Json,
+}
+
+#[derive(Args)]
+struct Workflow {
+    /// The documents that make up the workflow
+    #[arg(required = true)]
+    files: Vec<PathBuf>,
+    #[command(flatten)]
+    state: State,
+    /// How long to wait for another run to release the state lock, as in
+    /// 30s, 5m or 1h. By default a locked state is refused at once
+    #[arg(long, value_name = "DURATION", default_value = "0s", value_parser = parse_duration)]
+    lock_timeout: Duration,
+    /// Write every event of the run to standard output as it happens, one
+    /// JSON object per line. The report for people moves to standard error
+    #[arg(long, value_name = "FORMAT")]
+    events: Option<EventFormat>,
+    /// How many runs' records to keep; older ones are removed when a run ends
+    #[arg(long, value_name = "N", default_value_t = meridian_orchestrator::DEFAULT_KEEP_RUNS)]
+    keep_runs: usize,
     /// Run only the documents whose metadata.labels match, as in
     /// `tier=web,env!=prod`; may be given more than once, and every
     /// requirement must hold. Forms: key=value, key!=value, key, !key
@@ -217,6 +363,16 @@ struct Workflow {
     /// replace an earlier file's
     #[arg(long, value_name = "FILE")]
     data: Vec<PathBuf>,
+    /// A policy file or directory that plan and apply check every stage
+    /// against before anything is applied; may be given more than once. A
+    /// change the policy denies, or a policy that cannot be asked, fails
+    /// the run
+    #[arg(long, value_name = "PATH")]
+    policy: Vec<PathBuf>,
+    /// The engine that reads the policies: the program
+    /// meridian-policy-<NAME> in a plugin directory
+    #[arg(long, value_name = "NAME", env = "MERIDIAN_POLICY_ENGINE", default_value = meridian_orchestrator::policy::DEFAULT_ENGINE)]
+    policy_engine: String,
     /// One value for `when` conditions, as in `--set env=prod` or
     /// `--set region.name=eu-west-1`; may be given more than once. It is
     /// applied after every --data file, so it wins. The value is typed as
@@ -262,9 +418,62 @@ fn main() -> ExitCode {
         Command::Secret {
             command: SecretCommand::Check { files, state_dir },
         } => check_secrets(&files, &state_dir),
-        Command::Compile { workflow, out } => orchestrate(&workflow, Mode::Compile, out.as_deref()),
-        Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None),
-        Command::Apply { workflow } => orchestrate(&workflow, Mode::Apply, None),
+        Command::Compile { workflow, out } => orchestrate(
+            &workflow,
+            Mode::Compile,
+            &How {
+                out: out.as_deref(),
+                ..How::default()
+            },
+        ),
+        Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, &How::default()),
+        Command::Apply {
+            workflow,
+            resume,
+            on_failure,
+        } => orchestrate(
+            &workflow,
+            Mode::Apply,
+            &How {
+                resume: resume.as_deref(),
+                rollback_on_failure: on_failure == FailureAction::Rollback,
+                ..How::default()
+            },
+        ),
+        Command::Drift { workflow } => orchestrate(&workflow, Mode::Drift, &How::default()),
+        Command::Rollback { workflow, run } => orchestrate(
+            &workflow,
+            Mode::Rollback,
+            &How {
+                rollback_of: run.as_deref(),
+                ..How::default()
+            },
+        ),
+        Command::Status { state } => status(&state),
+        Command::Runs { state } => runs(&state),
+        Command::Events { run, types, state } => events(&state, run.as_deref(), &types),
+        Command::Unlock { id, state } => unlock(&state, &id),
+        Command::Import {
+            paths,
+            from,
+            name,
+            out,
+            recursive,
+            force,
+            strict,
+            plugins,
+        } => import_configuration(
+            &plugins,
+            &import::Request {
+                paths: &paths,
+                from: from.as_deref(),
+                name: name.as_deref(),
+                out: out.as_deref(),
+                recursive,
+                force,
+                strict,
+            },
+        ),
         Command::Plugins { plugins } => list_plugins(&plugins),
         Command::Rules {
             command:
@@ -295,6 +504,7 @@ fn main() -> ExitCode {
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(Failure::Reported) => ExitCode::FAILURE,
+        Err(Failure::Drifted) => ExitCode::from(2),
         Err(Failure::Message(msg)) => {
             eprintln!("error: {msg}");
             ExitCode::FAILURE
@@ -307,6 +517,8 @@ enum Failure {
     Message(String),
     /// Already printed, stage by stage.
     Reported,
+    /// A drift check ran, and found drift. Already printed.
+    Drifted,
 }
 
 fn count(n: usize, noun: &str) -> String {
@@ -664,6 +876,26 @@ fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
     Ok(data)
 }
 
+/// A length of time as a person writes one: `90`, `30s`, `5m`, `1h`,
+/// `250ms`. A bare number is seconds.
+fn parse_duration(text: &str) -> Result<Duration, String> {
+    let text = text.trim();
+    let digits = text.chars().take_while(char::is_ascii_digit).count();
+    let (number, unit) = text.split_at(digits);
+    let number: u64 = number
+        .parse()
+        .map_err(|_| format!("{text:?} is not a duration; write one as 30s, 5m or 1h"))?;
+    match unit {
+        "ms" => Ok(Duration::from_millis(number)),
+        "" | "s" => Ok(Duration::from_secs(number)),
+        "m" => Ok(Duration::from_secs(number.saturating_mul(60))),
+        "h" => Ok(Duration::from_secs(number.saturating_mul(3600))),
+        other => Err(format!(
+            "{other:?} is not a unit of time; use ms, s, m or h"
+        )),
+    }
+}
+
 /// `meridian rules check`: loads the layers, checks every rule, and says
 /// which layer belongs to whom. Every violation is printed, not only the
 /// first, and none of them shows a value.
@@ -771,8 +1003,9 @@ fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
     Ok(())
 }
 
-fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
-    let dirs = if plugins.dirs.is_empty() {
+/// The directories plugins, and backend programs, are looked for in.
+fn plugin_dirs(plugins: &PluginDirs) -> Vec<PathBuf> {
+    if plugins.dirs.is_empty() {
         std::env::current_exe()
             .ok()
             .and_then(|exe| exe.parent().map(Path::to_path_buf))
@@ -780,7 +1013,36 @@ fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
             .collect()
     } else {
         plugins.dirs.clone()
-    };
+    }
+}
+
+/// Where Meridian's record is kept, as the command line chose it.
+fn backend(state: &State) -> Result<Arc<dyn Backend>, Failure> {
+    let mut settings = BTreeMap::new();
+    for setting in &state.backend_config {
+        let Some((key, value)) = setting.split_once('=').filter(|(key, _)| !key.is_empty()) else {
+            return Err(Failure::Message(format!(
+                "--backend-config takes key=value, and was given {setting:?}"
+            )));
+        };
+        settings.insert(key.to_owned(), value.to_owned());
+    }
+    if state.backend == "local" {
+        if let Some(key) = settings.keys().next() {
+            return Err(Failure::Message(format!(
+                "the local backend takes no settings, and was given {key:?}; it keeps the \
+                 record in --state-dir"
+            )));
+        }
+        return Ok(Arc::new(LocalBackend::new(&state.state_dir)));
+    }
+    ExecBackend::find(&state.backend, &plugin_dirs(&state.plugins), settings)
+        .map(|found| Arc::new(found) as Arc<dyn Backend>)
+        .map_err(Failure::Message)
+}
+
+fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
+    let dirs = plugin_dirs(plugins);
     let mut registry = Registry::new();
     for dir in dirs {
         registry
@@ -788,6 +1050,15 @@ fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
             .map_err(|e| Failure::Message(e.to_string()))?;
     }
     Ok(registry)
+}
+
+fn import_configuration(plugins: &PluginDirs, request: &import::Request) -> Result<(), Failure> {
+    let registry = registry(plugins)?;
+    let outcome = import::run(&registry, request);
+    if let Err(e) = registry.close() {
+        eprintln!("warning: {e}");
+    }
+    outcome
 }
 
 fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
@@ -812,12 +1083,25 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
         if info.operations.outputs {
             can.push("outputs");
         }
+        if info.accepts_inputs {
+            can.push("inputs");
+        }
+        if !info.import_formats.is_empty() {
+            can.push("import");
+        }
         println!("{name}");
         println!("  category:  {}", info.category);
         println!("  can:       {}", can.join(", "));
         println!("  resources: {}", info.resource_types.join(", "));
         if !info.target_versions.is_empty() {
             println!("  versions:  {}", info.target_versions.join(", "));
+        }
+        for format in &info.import_formats {
+            println!(
+                "  imports:   {} ({})",
+                format.description,
+                format.patterns.join(", ")
+            );
         }
         println!(
             "  sdk:       {} (protocol {})",
@@ -880,13 +1164,27 @@ fn check_secrets(files: &[PathBuf], state_dir: &Path) -> Result<(), Failure> {
     }
 }
 
-fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<(), Failure> {
-    let bundle = load(&workflow.files, &workflow.state_dir)?;
+/// What a command adds to the workflow it runs.
+#[derive(Default)]
+struct How<'a> {
+    /// `compile --out`
+    out: Option<&'a Path>,
+    /// `apply --resume`
+    resume: Option<&'a str>,
+    /// `apply --on-failure rollback`
+    rollback_on_failure: bool,
+    /// `rollback --run`
+    rollback_of: Option<&'a str>,
+}
+
+fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Failure> {
+    let (out, resume) = (how.out, how.resume);
+    let bundle = load(&workflow.files, &workflow.state.state_dir)?;
     let mut selector = Selector::all();
     for text in &workflow.selector {
         selector = selector.and(Selector::parse(text).map_err(Failure::Message)?);
     }
-    let mut data = read_data(&workflow.data, &workflow.state_dir)?;
+    let mut data = read_data(&workflow.data, &workflow.state.state_dir)?;
     apply_sets(&mut data, &workflow.set)?;
     if selected(&bundle, &selector, &data) == 0 {
         // Doing nothing and reporting success would read as "all applied".
@@ -894,29 +1192,285 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
             "no document's labels match the selector {selector}"
         )));
     }
-    let registry = registry(&workflow.plugins)?;
-    let options = Options {
-        state_dir: workflow.state_dir.clone(),
-        data,
-        strict_secrets: workflow.strict_secrets,
+    // What was typed, for the record: the files and the selection. Backend
+    // settings are left out, because one of them can be a credential.
+    let mut command = vec![mode.as_str().to_owned()];
+    command.extend(workflow.files.iter().map(|f| f.display().to_string()));
+    for text in &workflow.selector {
+        command.push(format!("-l {text}"));
+    }
+    if resume.is_some() {
+        command.push("--resume".to_owned());
+    }
+    if how.rollback_on_failure {
+        command.push("--on-failure rollback".to_owned());
+    }
+    for path in &workflow.policy {
+        command.push(format!("--policy {}", path.display()));
+    }
+    let policy = if workflow.policy.is_empty() {
+        None
+    } else if !matches!(mode, Mode::Plan | Mode::Apply) {
+        // Saying nothing would read as "checked".
+        return Err(Failure::Message(format!(
+            "--policy is checked by plan and apply, and {} asks no policy; remove it",
+            mode.as_str()
+        )));
+    } else {
+        Some(
+            Policy::find(
+                &workflow.policy_engine,
+                &plugin_dirs(&workflow.state.plugins),
+                workflow.policy.clone(),
+            )
+            .map_err(Failure::Message)?,
+        )
     };
-    let mut printer = Printer { mode, out };
+    let options = Options {
+        data,
+        // Compiling keeps no record, so it needs no backend to be there.
+        backend: match mode {
+            Mode::Compile => None,
+            Mode::Plan | Mode::Apply | Mode::Drift | Mode::Rollback => {
+                Some(backend(&workflow.state)?)
+            }
+        },
+        lock_timeout: workflow.lock_timeout,
+        resume: resume.map(|run| match run {
+            "last" => Resume::Last,
+            id => Resume::Run(id.to_owned()),
+        }),
+        command: command.join(" "),
+        keep_runs: workflow.keep_runs,
+        on_failure: if how.rollback_on_failure {
+            OnFailure::Rollback
+        } else {
+            OnFailure::Stop
+        },
+        rollback_of: match how.rollback_of {
+            None => Resume::Last,
+            Some(id) => Resume::Run(id.to_owned()),
+        },
+        policy,
+        strict_secrets: workflow.strict_secrets,
+        ..Options::new(&workflow.state.state_dir)
+    };
+    let registry = registry(&workflow.state.plugins)?;
+    let mut printer = Printer {
+        mode,
+        out,
+        events: workflow.events.is_some(),
+    };
     let report = run_selected(&bundle, &registry, mode, &options, &selector, &mut printer);
     // A plugin that will not exit is worth a warning, not a failed run.
     if let Err(e) = registry.close() {
         eprintln!("warning: {e}");
     }
-    if report.succeeded() {
-        Ok(())
-    } else {
-        Err(Failure::Reported)
+    for warning in &report.warnings {
+        eprintln!("warning: {warning}");
     }
+    if let Some(refusal) = &report.refused {
+        return Err(Failure::Message(refusal.to_string()));
+    }
+    if mode == Mode::Drift {
+        let drifted = report
+            .stages
+            .iter()
+            .filter(|s| matches!(s.outcome, Outcome::Drift(Drift::Drifted(_))))
+            .count();
+        let line = format!(
+            "drift: {drifted} of {} drifted",
+            count(report.stages.len(), "stage")
+        );
+        if workflow.events.is_some() {
+            eprintln!("{line}");
+        } else {
+            println!("{line}");
+        }
+    }
+    if !report.succeeded() {
+        let failed: Vec<&StageReport> = report
+            .stages
+            .iter()
+            .filter(|s| matches!(s.outcome, Outcome::Failed(_)))
+            .collect();
+        let denied = !failed.is_empty() && failed.iter().all(|s| s.reason == REASON_POLICY_DENIED);
+        let applied = report
+            .stages
+            .iter()
+            .any(|s| matches!(s.outcome, Outcome::Applied { .. }));
+        if denied && mode == Mode::Apply && !applied {
+            eprintln!(
+                "run {} was stopped by its policy before anything was applied",
+                report.run_id
+            );
+        } else if mode == Mode::Apply && report.rollbacks.is_empty() {
+            eprintln!(
+                "run {} failed. Once the cause is fixed, `meridian apply --resume` with the \
+                 same documents continues from the stage that failed",
+                report.run_id
+            );
+        }
+        return Err(Failure::Reported);
+    }
+    if report.drifted() {
+        return Err(Failure::Drifted);
+    }
+    Ok(())
+}
+
+/// Shows the current or last run, and whether the state is locked.
+fn status(state: &State) -> Result<(), Failure> {
+    let backend = backend(state)?;
+    let backend = backend.as_ref();
+    let held = lock::holder(backend).map_err(Failure::Message)?;
+    match record::last_run(backend, None).map_err(Failure::Message)? {
+        None => println!("no run has been recorded in {}", backend.describe()),
+        Some(run) => print_run(&run, held.as_ref().is_some_and(|lock| lock.id == run.id)),
+    }
+    match held {
+        Some(lock) => println!("locked: {lock}"),
+        None => println!("not locked"),
+    }
+    Ok(())
+}
+
+fn print_run(run: &RunRecord, holds_lock: bool) {
+    let status = match (run.status, holds_lock) {
+        (record::RunStatus::Running, false) => {
+            "interrupted: it never said how it ended, and it does not hold the lock"
+        }
+        (status, _) => status.as_str(),
+    };
+    println!("run {}: {}, {status}", run.id, run.mode);
+    if !run.command.is_empty() {
+        println!("  command:  meridian {}", run.command);
+    }
+    let by = match (run.user.as_str(), run.host.as_str()) {
+        ("", "") => String::new(),
+        (user, host) => format!(
+            " by {}@{}",
+            if user.is_empty() { "?" } else { user },
+            if host.is_empty() { "?" } else { host }
+        ),
+    };
+    println!("  started:  {}{by}", run.started);
+    if !run.finished.is_empty() {
+        println!("  finished: {}", run.finished);
+    }
+    if !run.resumes.is_empty() {
+        println!("  resumes:  {}", run.resumes);
+    }
+    for step in &run.steps {
+        let on = if step.endpoint.is_empty() {
+            String::new()
+        } else {
+            format!(" on {}", step.endpoint)
+        };
+        let mut line = format!(
+            "  {} ({}, target {}{on}): {}",
+            step.id.name,
+            step.id.kind.as_str(),
+            step.target,
+            step.status.as_str()
+        );
+        if !step.reason.is_empty() {
+            line.push_str(&format!(" ({})", step.reason));
+        }
+        if step.changes > 0 {
+            line.push_str(&format!(", {}", count(step.changes as usize, "change")));
+        }
+        println!("{line}");
+    }
+}
+
+/// Lists every recorded run, oldest first.
+fn runs(state: &State) -> Result<(), Failure> {
+    let backend = backend(state)?;
+    let backend = backend.as_ref();
+    let ids = record::list_runs(backend).map_err(Failure::Message)?;
+    if ids.is_empty() {
+        println!("no run has been recorded in {}", backend.describe());
+        return Ok(());
+    }
+    for id in ids {
+        let Some(run) = record::load_run(backend, &id).map_err(Failure::Message)? else {
+            continue;
+        };
+        let failed = run
+            .steps
+            .iter()
+            .filter(|step| step.status == record::StepStatus::Failed)
+            .count();
+        let mut line = format!(
+            "{}  {:<8} {:<10} {}",
+            run.id,
+            run.mode,
+            run.status.as_str(),
+            count(run.steps.len(), "step")
+        );
+        if failed > 0 {
+            line.push_str(&format!(", {failed} failed"));
+        }
+        if !run.resumes.is_empty() {
+            line.push_str(&format!(", resumes {}", run.resumes));
+        }
+        println!("{line}");
+    }
+    Ok(())
+}
+
+/// Prints a run's events as they were recorded.
+fn events(state: &State, run: Option<&str>, types: &[String]) -> Result<(), Failure> {
+    let backend = backend(state)?;
+    let backend = backend.as_ref();
+    let id = match run {
+        Some(id) => {
+            if record::load_run(backend, id)
+                .map_err(Failure::Message)?
+                .is_none()
+            {
+                return Err(Failure::Message(format!(
+                    "there is no run {id} in {}",
+                    backend.describe()
+                )));
+            }
+            id.to_owned()
+        }
+        None => match record::last_run(backend, None).map_err(Failure::Message)? {
+            Some(run) => run.id,
+            None => {
+                return Err(Failure::Message(format!(
+                    "no run has been recorded in {}",
+                    backend.describe()
+                )))
+            }
+        },
+    };
+    let mut out = std::io::stdout().lock();
+    for event in record::load_events(backend, &id).map_err(Failure::Message)? {
+        if types.is_empty() || types.iter().any(|pattern| event.matches(pattern)) {
+            let _ = writeln!(out, "{}", event.to_json());
+        }
+    }
+    Ok(())
+}
+
+/// Removes a lock a run left behind.
+fn unlock(state: &State, id: &str) -> Result<(), Failure> {
+    let backend = backend(state)?;
+    let removed = lock::force_unlock(backend.as_ref(), id).map_err(Failure::Message)?;
+    println!("removed {removed}");
+    Ok(())
 }
 
 /// Prints a run as it happens.
 struct Printer<'a> {
     mode: Mode,
     out: Option<&'a Path>,
+    /// Whether standard output carries the events, which moves the report
+    /// for people to standard error.
+    events: bool,
 }
 
 impl Observer for Printer<'_> {
@@ -931,8 +1485,80 @@ impl Observer for Printer<'_> {
     }
 
     fn stage_finished(&mut self, report: &StageReport) {
-        let mut out = std::io::stdout().lock();
-        let _ = self.print(&mut out, report);
+        if self.events {
+            let _ = self.print(&mut std::io::stderr().lock(), report);
+        } else {
+            let _ = self.print(&mut std::io::stdout().lock(), report);
+        }
+    }
+
+    fn event(&mut self, event: &Event) {
+        if self.events {
+            let _ = writeln!(std::io::stdout().lock(), "{}", event.to_json());
+        }
+    }
+
+    fn rollback_finished(&mut self, report: &RollbackReport) {
+        if self.events {
+            let _ = print_rollback(&mut std::io::stderr().lock(), report);
+        } else {
+            let _ = print_rollback(&mut std::io::stdout().lock(), report);
+        }
+    }
+}
+
+/// The first characters of an artifact hash, enough to tell two apart.
+fn short(hash: &str) -> &str {
+    let hex = hash.strip_prefix("sha256:").unwrap_or(hash);
+    &hex[..hex.len().min(12)]
+}
+
+fn print_rollback(out: &mut dyn Write, report: &RollbackReport) -> std::io::Result<()> {
+    let on = if report.host.is_empty() {
+        String::new()
+    } else {
+        format!(" on {}", report.host)
+    };
+    writeln!(
+        out,
+        "rolling back {} ({}, target {}{on})",
+        report.id.name,
+        report.id.kind.as_str(),
+        report.target
+    )?;
+    match &report.outcome {
+        RollbackOutcome::RolledBack { to, changes } => {
+            for change in changes {
+                writeln!(out, "  {}", change_line(change))?;
+            }
+            writeln!(
+                out,
+                "  rolled back to what was applied before (artifact {}), {}",
+                short(to),
+                count(changes.len(), "change")
+            )
+        }
+        RollbackOutcome::Unchanged => writeln!(
+            out,
+            "  nothing to put back: the run applied what was already applied"
+        ),
+        RollbackOutcome::Unavailable(why) => writeln!(out, "  NOT ROLLED BACK: {why}"),
+        RollbackOutcome::Failed(why) => {
+            let mut lines = why.lines();
+            writeln!(
+                out,
+                "  ROLLBACK FAILED: {}",
+                lines.next().unwrap_or_default()
+            )?;
+            for line in lines {
+                writeln!(out, "    {line}")?;
+            }
+            Ok(())
+        }
+        RollbackOutcome::NotAttempted { because_of } => writeln!(
+            out,
+            "  not attempted, because rolling back {because_of} failed"
+        ),
     }
 }
 
@@ -952,6 +1578,14 @@ impl Printer<'_> {
         )?;
         for warning in &report.warnings {
             writeln!(out, "  warning: {warning}")?;
+        }
+        if let Some(policy) = &report.policy {
+            for warning in &policy.warn {
+                writeln!(out, "  policy warning: {warning}")?;
+            }
+            if policy.allowed() {
+                writeln!(out, "  policy: allowed")?;
+            }
         }
         // Every decision a condition made, so that something missing from
         // the compiled output is never a surprise.
@@ -1026,10 +1660,60 @@ impl Printer<'_> {
                 out,
                 "  deferred: needs the output {output:?} of {waiting_on}, which has not been applied yet"
             )?,
+            Outcome::Drift(drift) => match drift {
+                Drift::NeverApplied => writeln!(out, "  never applied, so nothing to compare")?,
+                Drift::InSync => writeln!(out, "  in sync with what was applied")?,
+                Drift::Unknown => writeln!(
+                    out,
+                    "  unknown: this tool cannot preview, so it cannot say whether anything \
+                     drifted"
+                )?,
+                Drift::Drifted(changes) => {
+                    for change in changes {
+                        writeln!(out, "  {}", change_line(change))?;
+                    }
+                    writeln!(
+                        out,
+                        "  DRIFTED: {} from what was applied",
+                        count(changes.len(), "difference")
+                    )?;
+                }
+                Drift::Pending {
+                    changes,
+                    last_apply_failed,
+                } => {
+                    for change in changes {
+                        writeln!(out, "  {}", change_line(change))?;
+                    }
+                    let why = if *last_apply_failed {
+                        "the last apply failed part way"
+                    } else {
+                        "the document has changed since the last apply"
+                    };
+                    writeln!(
+                        out,
+                        "  pending: {why}, so {} waiting to be applied and cannot be told \
+                         from drift",
+                        match changes.len() {
+                            0 => "nothing is".to_owned(),
+                            1 => "1 change is".to_owned(),
+                            n => format!("{n} changes are"),
+                        }
+                    )?;
+                }
+            },
+            Outcome::Skipped { applied_in } => writeln!(
+                out,
+                "  already applied by run {applied_in}, and unchanged since; left alone"
+            )?,
             Outcome::LeftOut { condition } => {
                 writeln!(out, "  skipped: its when ({condition}) is false")?
             }
             Outcome::Failed(why) => {
+                // What the tool had already done is part of what happened.
+                for change in &report.done_before_failing {
+                    writeln!(out, "  {}", change_line(change))?;
+                }
                 // The first line beside the label, the rest indented under it.
                 let mut lines = why.lines();
                 writeln!(out, "  FAILED: {}", lines.next().unwrap_or_default())?;

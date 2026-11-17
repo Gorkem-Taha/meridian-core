@@ -92,11 +92,7 @@ fn registry() -> Registry {
 fn options(test: &str) -> Options {
     let state_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(test);
     let _ = fs::remove_dir_all(&state_dir);
-    Options {
-        state_dir,
-        data: Data::new(),
-        strict_secrets: false,
-    }
+    Options::new(state_dir)
 }
 
 fn id(kind: StageKind, name: &str) -> StageId {

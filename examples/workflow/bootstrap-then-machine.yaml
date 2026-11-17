@@ -1,0 +1,85 @@
+# A machine created with its own first-boot configuration.
+#
+# The first document says what the machine does on its first boot, and
+# compiles to cloud-init user-data. The second creates the machine, and
+# imports that user-data: it reaches Terraform as the variable `user_data`,
+# so the machine boots already configured.
+#
+# The machine is written second and runs second, because it needs what the
+# first document compiles to. Nothing is copied between the two by hand.
+#
+#   meridian plan  examples/workflow/bootstrap-then-machine.yaml
+#   meridian apply examples/workflow/bootstrap-then-machine.yaml
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: bootstrap
+spec:
+  target: cloud-init
+  # cloud-init runs on the machine itself, so this is only the name the
+  # user-data is kept under. It does not have to resolve.
+  targetHost:
+    from: inline
+    host: web-1
+  resources:
+    - id: deploy_user
+      type: user
+      params:
+        name: deploy
+        shell: /bin/bash
+        sudo: "ALL=(ALL) NOPASSWD:ALL"
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyReplaceWithYourOwnPublicKey00 deploy@example.com
+
+    - id: nginx
+      type: package
+      params:
+        name: nginx
+
+    - id: motd
+      type: file
+      params:
+        path: /etc/motd
+        content: |
+          Configured by Meridian on first boot.
+        mode: "0644"
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: machine
+spec:
+  target: terraform
+  imports:
+    # The file `user-data` that the document `bootstrap` compiles to,
+    # handed to Terraform as the variable `user_data`.
+    - name: user_data
+      from: artifact
+      ref: bootstrap
+      file: user-data
+      sensitive: true
+  resources:
+    - id: aws
+      type: provider
+      params:
+        region: eu-west-1
+
+    # The import arrives in the variable of the same name.
+    - id: user_data
+      type: variable
+      params:
+        type: string
+        sensitive: true
+
+    - id: web
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.micro
+        user_data: ${user_data}
+        tags:
+          Name: web-1
+
+  outputs:
+    - name: address
+      value: ${web.public_ip}

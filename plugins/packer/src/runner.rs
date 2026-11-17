@@ -99,6 +99,10 @@ impl Runner for PackerRunner {
         Operations::ALL
     }
 
+    fn accepts_inputs(&self) -> bool {
+        true
+    }
+
     /// Packer has no plan, and does not need one to be honest: a build never
     /// changes an image that exists, it always makes a new one. So the
     /// preview is one creation per source, after Packer itself has checked
