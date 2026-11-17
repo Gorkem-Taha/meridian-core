@@ -157,6 +157,10 @@ it with the same model.
   type, lends a secret field as a `SecretValue`, and wipes them when dropped.
 - An error names the field and the provider, and nothing a provider read.
 
+The first user is the module system: a project declares credentials under
+`spec.credentials` in `meridian.yaml` and names one for a registry. See
+[registry logins](../reference/modules.md#registry-logins).
+
 ## Handing a secret to a tool
 
 In order of preference: the tool's standard input or a file descriptor, then a

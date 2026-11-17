@@ -591,7 +591,7 @@ the current directory requires.
 | `meridian module list` | Lists the pinned modules, their versions and sources |
 | `meridian module sign --key FILE` | Signs the module in the current directory, writing `meridian.sig` in it |
 | `meridian module pack [--out FILE]` | Writes the module in the current directory as the archive a registry stores |
-| `meridian module push REPOSITORY [--insecure]` | Publishes the module in the current directory to an OCI registry under its version. A version that is already published is never replaced with other content |
+| `meridian module push REPOSITORY [--insecure] [--credential NAME]` | Publishes the module in the current directory to an OCI registry under its version. A version that is already published is never replaced with other content. `--credential` logs in with a [credential the manifest declares](modules.md#registry-logins) instead of the Docker configuration |
 
 Only `install`, `update` and `push` use the network. Each command, its output and its
 errors are described in [Modules](modules.md#commands).
