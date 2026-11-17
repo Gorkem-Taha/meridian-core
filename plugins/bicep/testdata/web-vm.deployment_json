@@ -1,0 +1,11 @@
+{
+  "name": "web-vm",
+  "resourceGroup": "web-prod",
+  "resources": {
+    "microsoft.authorization/locks/keep-web-ip": "lock",
+    "microsoft.network/networkinterfaces/web-nic": "nic",
+    "microsoft.network/publicipaddresses/web-ip": "web_ip",
+    "microsoft.network/virtualnetworks/web-vnet": "vnet"
+  },
+  "subscription": ""
+}

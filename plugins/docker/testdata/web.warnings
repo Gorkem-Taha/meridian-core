@@ -1,0 +1,1 @@
+docker: proxy: restarts by being recreated whenever the content of "site" changes; the trigger is the label meridian.dev/restart-on-site on the service
