@@ -1,0 +1,51 @@
+{
+  "atomic": false,
+  "chart": {
+    "name": "web-app-prod",
+    "version": "0.1.0"
+  },
+  "createNamespace": false,
+  "kustomize": true,
+  "namespace": "prod",
+  "outputs": [
+    {
+      "name": "deployment",
+      "parts": [
+        {
+          "text": "prod-web"
+        }
+      ],
+      "sensitive": false
+    },
+    {
+      "name": "ready_replicas",
+      "parts": [
+        {
+          "path": [
+            "status",
+            "readyReplicas"
+          ],
+          "resource": "web"
+        }
+      ],
+      "sensitive": false
+    }
+  ],
+  "release": "web-app",
+  "resources": {
+    "web": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "name": "prod-web",
+      "namespace": ""
+    },
+    "web_settings": {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "name": "prod-web-settings",
+      "namespace": ""
+    }
+  },
+  "timeout": "",
+  "wait": false
+}

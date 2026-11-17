@@ -1,0 +1,5 @@
+apiVersion: v2
+name: web-app-prod
+description: Compiled by Meridian from the document web-app-prod.
+type: application
+version: 0.1.0

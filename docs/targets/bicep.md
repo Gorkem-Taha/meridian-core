@@ -1,5 +1,7 @@
 # Target: `bicep`
 
+<img src="../branding/logos/meridian-bicep.svg" width="72" alt="Meridian Bicep plugin logo">
+
 Compiles an Infrastructure document into an Azure Bicep file and deploys it to a
 resource group with the `az` command line.
 

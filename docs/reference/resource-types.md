@@ -7,6 +7,9 @@ page says Puppet, the same holds for `openvox`.
 Anything outside these tables is refused, never dropped: a param a target does
 not take, a state it cannot express, an action it cannot perform.
 
+How the rest of a configuration management document is written is in
+[the configuration management flavour](dsl/configuration-management.md).
+
 Other targets do not use these types. Their resources are the tool's own; see
 [documents, resources and targets](../concepts/ir-overview.md#two-families-of-types).
 

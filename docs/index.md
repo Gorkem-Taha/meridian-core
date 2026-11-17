@@ -1,8 +1,10 @@
 # Meridian
 
+<img src="branding/logos/meridian-core.svg" width="96" alt="Meridian logo">
+
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
-cloud-init, Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
-you chose to plan and apply it.
+cloud-init, Terraform, CloudFormation, Bicep, Docker Compose, Kubernetes and Helm, and then drives
+the tool you chose to plan and apply it.
 
 ## Honest scope statement
 
@@ -44,6 +46,10 @@ byte. The reasons, the layout and the order of work are in
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
+| [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
+| The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
+| The language by segment | how `type`, `state`, `params`, references and notifies are written for [configuration management](reference/dsl/configuration-management.md), [infrastructure as code](reference/dsl/infrastructure-as-code.md), [containerization](reference/dsl/containerization.md) and [container orchestration](reference/dsl/container-orchestration.md) |
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 
@@ -51,7 +57,7 @@ byte. The reasons, the layout and the order of work are in
 |---|---|
 | Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [openvox](targets/openvox.md), [chef](targets/chef.md), [dsc](targets/dsc.md), [cloud-init](targets/cloud-init.md) |
 | Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
-| Containers | [docker](targets/docker.md), [podman](targets/podman.md), [kubernetes](targets/kubernetes.md) |
+| Containers | [docker](targets/docker.md), [podman](targets/podman.md), [kubernetes](targets/kubernetes.md), [helm](targets/helm.md) (with Kustomize) |
 
 Every target page opens with what the target does and does not support. Every example the
 pages show is a file under [`examples/`](../examples) that a test compiles with the real
