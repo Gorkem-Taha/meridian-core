@@ -9,9 +9,17 @@
 //! them. The resource's id is the element's name in the file.
 //!
 //! One resource may have the type `project`. It is not part of the Compose
-//! file: it says what the project is called and which Docker daemon it runs
-//! on (`name`, `host`, `context`). A document that names a target host runs
-//! on that host's daemon over SSH.
+//! file: it says what the project is called, which Docker daemon it runs on
+//! and how it is brought up (`name`, `host`, `context`, `directory`,
+//! `profiles`, `wait`, `wait_timeout`). A document that names a target host
+//! runs on that host's daemon over SSH.
+//!
+//! # What is checked before Docker sees it
+//!
+//! An attribute Compose does not know is refused, with the one that was
+//! probably meant. So is a network, volume, config or secret a service uses
+//! and the document does not declare, a `depends_on` that names something
+//! that is not a service, and services that wait for each other in a circle.
 //!
 //! # References
 //!
@@ -23,7 +31,9 @@
 //!
 //! # Ordering and notification
 //!
-//! `dependsOn` between two services is Compose's own `depends_on`. `notifies`
+//! `dependsOn` between two services is Compose's own `depends_on`, waiting
+//! for the other service to be healthy when it declares a healthcheck and to
+//! have started when it does not. `notifies`
 //! with the action `restart` from one service to another is `depends_on` with
 //! `restart: true`, which Compose acts on itself. From anything else (a
 //! config, a secret, a network, a volume) it is a checksum of the notifier in
@@ -34,6 +44,7 @@
 // A refusal carries its position and resource by value, as the SDK's does.
 #![allow(clippy::result_large_err)]
 
+mod check;
 mod emit;
 mod runner;
 mod sort;
@@ -115,6 +126,16 @@ pub(crate) struct Project {
     pub host: String,
     /// A Docker context, or empty.
     pub context: String,
+    /// The directory relative paths in the file are resolved against. Empty
+    /// means the directory Meridian keeps the compiled file in.
+    pub directory: String,
+    /// The Compose profiles to bring up with the project.
+    pub profiles: Vec<String>,
+    /// Wait for every service to be running, or healthy, before an apply
+    /// reports success.
+    pub wait: bool,
+    /// How long to wait, in seconds. Zero leaves it to Compose.
+    pub wait_timeout: u64,
 }
 
 /// One piece of an output's value.
@@ -190,8 +211,13 @@ impl Emitter for Docker {
 
     fn emit(&self, graph: &ResourceGraph, _data: &Data) -> Result<Emitted, CompileError> {
         let mut composition = transform::transform(graph)?;
-        let warnings = sort::apply_ordering(graph, &mut composition)?;
+        let mut warnings = sort::apply_ordering(graph, &mut composition)?;
         validate::validate(&composition)?;
+        if composition.project.directory.is_empty() {
+            for element in &composition.elements {
+                warnings.extend(check::relative_paths(element));
+            }
+        }
         Ok(Emitted {
             artifact: Artifact {
                 files: emit::serialise(&composition),

@@ -754,6 +754,7 @@ dependencies = [
 name = "meridian-target-docker"
 version = "0.1.0"
 dependencies = [
+ "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-yaml",

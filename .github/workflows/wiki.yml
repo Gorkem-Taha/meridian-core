@@ -1,0 +1,159 @@
+name: wiki
+
+# Publishes docs/ as the documentation site (GitHub Pages) and as the GitHub Wiki.
+# docs/contributing/documentation-site.md describes it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Mondays 04:17 UTC: rebuild, and fetch the links to other websites.
+    - cron: '17 4 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wiki-${{ github.ref }}
+  # A newer push to a pull request replaces the run before it. Runs on main are
+  # never cancelled part-way through a publish; they queue.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  MDBOOK_VERSION: 0.5.4
+  MDBOOK_MERMAID_VERSION: 0.17.1
+  SITE_URL: /meridian-core/
+
+jobs:
+  build:
+    name: build and check links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Restore mdBook
+        id: mdbook
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/mdbook*
+          key: mdbook-${{ runner.os }}-${{ env.MDBOOK_VERSION }}-mermaid-${{ env.MDBOOK_MERMAID_VERSION }}
+
+      - name: Install mdBook
+        if: steps.mdbook.outputs.cache-hit != 'true'
+        run: |
+          cargo install --locked mdbook --version "$MDBOOK_VERSION"
+          cargo install --locked mdbook-mermaid --version "$MDBOOK_MERMAID_VERSION"
+
+      - name: Stage docs/ as the site and as wiki pages
+        run: python3 tools/wiki/build.py all
+
+      - name: Build the site
+        run: |
+          mdbook-mermaid install target/wiki/site
+          mdbook build target/wiki/site
+
+      - name: Check every link in the built site
+        run: python3 tools/wiki/check_site.py target/wiki/site/book --site-url="$SITE_URL"
+
+      - name: List links to other websites
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: python3 tools/wiki/check_site.py target/wiki/site/book --external > target/wiki/external-links.txt
+
+      - name: Fetch links to other websites
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        uses: lycheeverse/lychee-action@v2
+        with:
+          # Not fetched: "edit this page" links, which need a sign-in, and the
+          # published site and wiki themselves, which this workflow writes.
+          args: >-
+            --no-progress --max-retries 3 --retry-wait-time 5
+            --accept '200..=299,403,429'
+            --exclude '^https://github\.com/[^/]+/[^/]+/(edit|wiki)\b'
+            --exclude '^https://[^/]+\.github\.io/'
+            target/wiki/external-links.txt
+          fail: true
+
+      - name: Keep the site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: target/wiki/site/book
+
+      - name: Keep the wiki pages
+        uses: actions/upload-artifact@v4
+        with:
+          name: wiki-pages
+          path: target/wiki/wiki
+          if-no-files-found: error
+
+  publish-site:
+    name: publish the site to GitHub Pages
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Is GitHub Pages set to deploy from GitHub Actions?
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type="$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true)"
+          if [ "$build_type" = "workflow" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=The site was not published::GitHub Pages is not set to deploy from GitHub Actions. An owner needs to choose Settings > Pages > Build and deployment > Source: GitHub Actions, then re-run this workflow."
+          fi
+
+      - name: Deploy
+        id: deploy
+        if: steps.pages.outputs.ready == 'true'
+        uses: actions/deploy-pages@v4
+
+      - name: Say where it went
+        if: steps.pages.outputs.ready == 'true'
+        run: echo "Published the site to ${{ steps.deploy.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
+
+  publish-wiki:
+    name: publish the pages to the GitHub Wiki
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: wiki-pages
+          path: pages
+
+      - name: Replace the wiki's contents
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          remote="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git"
+          if ! git ls-remote "$remote" > /dev/null 2>&1; then
+            echo "::warning title=The wiki was not published::The repository has no wiki yet. An owner needs to tick Settings > General > Features > Wikis, create one page in the Wiki tab (any content; it is replaced), then re-run this workflow."
+            exit 0
+          fi
+          git clone --depth 1 "$remote" wiki
+          rsync -a --delete --exclude .git pages/ wiki/
+          cd wiki
+          git add -A
+          if git diff --cached --quiet; then
+            echo "The wiki already matches docs/." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit --quiet -m "Publish docs/ at ${GITHUB_SHA}"
+          git push --quiet
+          echo "Published the wiki: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/wiki" >> "$GITHUB_STEP_SUMMARY"
