@@ -206,7 +206,11 @@ fn a_workload_is_planned_applied_read_back_and_restarted_by_a_notify() {
     assert_eq!(output(&applied.outputs, "greeting"), "hello");
     assert_eq!(output(&applied.outputs, "workload"), "meridian-real/web");
     let uid = output(&applied.outputs, "uid").to_owned();
-    assert_eq!(uid.len(), 36, "a uid the API server assigned: {uid}");
+    assert_eq!(
+        uid.len(),
+        36,
+        "the API server assigns a uid of 36 characters"
+    );
 
     // Outputs can be read again later, without an apply.
     let read = KubernetesRunner::from_env()

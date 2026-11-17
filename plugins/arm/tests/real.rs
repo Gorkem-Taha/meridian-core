@@ -62,14 +62,39 @@ fn compile(graph: &ResourceGraph) -> Artifact {
         .artifact
 }
 
+/// The Bicep compiler's own complaints about what it converted a template
+/// to, by their codes.
+fn error_codes(output: &str) -> Vec<&str> {
+    output
+        .lines()
+        .filter_map(|line| line.split_once(": Error ")?.1.split(':').next())
+        .collect()
+}
+
 /// Reads a compiled template with the Bicep compiler and returns the Bicep
 /// it was converted to.
+///
+/// One kind of complaint is allowed. A template names another resource by
+/// its id, in `dependsOn` and in an extension resource's `scope`, which is
+/// what Resource Manager expects. Bicep wants a resource symbol there, and
+/// the converter cannot always find the resource an id expression means
+/// (BCP034 for a dependency, BCP036 for a scope). By then it has parsed the
+/// whole template and written every resource out, so the Bicep is still
+/// returned. Anything else it says is a failure.
 fn read_back(dir: &Path, artifact: &Artifact) -> Result<String, String> {
     write_artifact(dir, artifact).unwrap();
-    az(
+    let ran = az(
         dir,
         &["bicep", "decompile", "--file", TEMPLATE_PATH, "--force"],
-    )?;
+    );
+    if let Err(why) = ran {
+        let codes = error_codes(&why);
+        let only_ids = !codes.is_empty() && codes.iter().all(|c| ["BCP034", "BCP036"].contains(c));
+        if !only_ids {
+            return Err(why);
+        }
+        eprintln!("the reader could not turn a resource id into a symbol:\n{why}");
+    }
     let converted = Path::new(TEMPLATE_PATH).with_extension("bicep");
     fs::read_to_string(dir.join(&converted))
         .map_err(|e| format!("{} was not written: {e}", converted.display()))
@@ -129,17 +154,8 @@ fn every_example_is_a_template_real_tooling_reads() {
     }
 }
 
-/// The Bicep compiler's own complaints about what it converted a template
-/// to, by their codes.
-fn error_codes(output: &str) -> Vec<&str> {
-    output
-        .lines()
-        .filter_map(|line| line.split_once(": Error ")?.1.split(':').next())
-        .collect()
-}
-
 #[test]
-fn child_resources_are_read_and_a_scope_is_the_one_thing_the_reader_cannot_convert() {
+fn child_resources_and_an_extension_resource_are_read() {
     if !asked_for_the_reader() {
         return;
     }
@@ -167,21 +183,13 @@ fn child_resources_are_read_and_a_scope_is_the_one_thing_the_reader_cannot_conve
         assert!(bicep.contains(piece), "no {piece:?} in\n{bicep}");
     }
 
-    // With the lock, the reader parses the template and converts every
-    // resource, then stops at the lock's `scope`. In a template that is the
-    // id of the resource the lock extends, which is what Resource Manager
-    // expects; Bicep wants a resource symbol there and the converter cannot
-    // make one from an id built by an expression. Those two complaints, about
-    // the scope and the dependency on the same id, are the only ones allowed.
-    // Whether Azure accepts the scope is for the subscription test to prove.
+    // With the lock, whose `scope` is the id of the database it extends.
+    // Whether Azure accepts that scope is for the subscription test to prove.
     let dir = scratch(TMP, "real-read-sql-database-lock");
     let artifact = compile(&graph_from_file("examples/arm/sql-database.yaml", "arm"));
-    if let Err(why) = read_back(&dir, &artifact) {
-        let mut codes = error_codes(&why);
-        codes.sort_unstable();
-        assert_eq!(codes, ["BCP034", "BCP036"], "{why}");
-        assert!(why.contains("The property \"scope\""), "{why}");
-    }
+    let bicep = read_back(&dir, &artifact).unwrap_or_else(|why| panic!("{why}"));
+    let lock = "'Microsoft.Authorization/locks@2020-05-01'";
+    assert!(bicep.contains(lock), "no {lock:?} in\n{bicep}");
 }
 
 #[test]
