@@ -104,6 +104,12 @@ jobs:
           rustup default stable
           rustup target add "$TARGET"
 
+      # The TLS code a module registry is reached with has C in it, and a
+      # static Linux build compiles that with the musl C compiler.
+      - name: Install the musl C compiler
+        if: contains(matrix.target, 'linux-musl')
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
       # A rehearsal may reuse an earlier build. A release never does: what it
       # ships is compiled from the tagged source and nothing else.
       - uses: Swatinem/rust-cache@v2
