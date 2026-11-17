@@ -1,0 +1,16 @@
+[package]
+name = "meridian-target-chef"
+description = "The Meridian plugin for Chef: compiles a document to a cookbook and converges it with chef-client or chef-run"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

@@ -1,0 +1,92 @@
+# A web application and its database on one Docker host, run with Docker
+# Compose.
+#
+# Every resource's type is something a Compose file declares (service,
+# network, volume, config, secret) and its params are that element's fields,
+# exactly as the Compose specification documents them. The resource's id is
+# the element's name, and ${id} refers to it.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web
+spec:
+  target: docker
+  resources:
+    # Not part of the Compose file: which Docker daemon the project runs on.
+    # Leave it out to use the local one.
+    - id: target
+      type: project
+      params:
+        host: deploy@web01.example.com
+
+    - id: backend
+      type: network
+      params: {}
+
+    - id: db_data
+      type: volume
+      params: {}
+
+    - id: site
+      type: config
+      params:
+        content: |
+          server {
+            listen 80;
+            location / { proxy_pass http://app:8000; }
+          }
+      # Compose does not restart a service when a config it mounts changes.
+      # This does: the service carries a checksum of the config in a label.
+      notifies:
+        - resource: proxy
+          action: restart
+
+    - id: db
+      type: service
+      params:
+        image: postgres:16
+        environment:
+          POSTGRES_DB: app
+          POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+        secrets:
+          - ${db_password}
+        networks:
+          - ${backend}
+        volumes:
+          - ${db_data}:/var/lib/postgresql/data
+
+    - id: app
+      type: service
+      params:
+        image: ghcr.io/example/app:1.4.2
+        environment:
+          DATABASE_HOST: ${db}
+        networks:
+          - ${backend}
+      dependsOn:
+        - resource: db
+
+    - id: proxy
+      type: service
+      params:
+        image: nginx:1.27
+        ports:
+          - "80"
+        configs:
+          - source: ${site}
+            target: /etc/nginx/conf.d/default.conf
+        networks:
+          - ${backend}
+      dependsOn:
+        - resource: app
+
+    - id: db_password
+      type: secret
+      params:
+        environment: DB_PASSWORD
+
+  # Read from Docker once the project is up: the host port the proxy's port
+  # 80 was published on.
+  outputs:
+    - name: web_port
+      value: ${proxy.port.80}

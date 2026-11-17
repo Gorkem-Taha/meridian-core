@@ -690,6 +690,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-bicep"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-chef"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
 name = "meridian-target-cloud-init"
 version = "0.1.0"
 dependencies = [
@@ -712,10 +728,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-docker"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
+name = "meridian-target-dsc"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-fake"
 version = "0.1.0"
 dependencies = [
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-kubernetes"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]
