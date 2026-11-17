@@ -1,5 +1,7 @@
 # Target: `docker`
 
+<img src="../branding/logos/meridian-docker.svg" width="72" alt="Meridian Docker plugin logo">
+
 Compiles an Infrastructure document into a Compose file and brings it up with
 `docker compose`.
 

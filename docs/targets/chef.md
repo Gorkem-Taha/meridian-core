@@ -1,5 +1,7 @@
 # Target: `chef`
 
+<img src="../branding/logos/meridian-chef.svg" width="72" alt="Meridian Chef plugin logo">
+
 Compiles a ResourceSet into a Chef cookbook and converges it with `chef-client`
 in local mode, or with `chef-run` for another machine.
 
