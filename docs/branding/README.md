@@ -54,6 +54,25 @@ Each module has two files in [`logos/`](logos/), drawn on a 64 by 64 grid:
 - `meridian-<module>-mono.svg` has no tile and uses `currentColor`, for single-colour
   contexts such as dark surfaces, terminals and print.
 
+## Banner
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="banner/meridian-banner-dark.svg">
+  <img src="banner/meridian-banner-light.svg" alt="Meridian: one DSL for everything" width="100%">
+</picture>
+
+The banner opens the core mark out across a 1280 by 320 canvas: the four category
+meridians all leave the single point that stands for the DSL. It sits at the top of the
+repository README and the documentation home page.
+
+- [`banner/meridian-banner-dark.svg`](banner/meridian-banner-dark.svg) is for dark
+  backgrounds.
+- [`banner/meridian-banner-light.svg`](banner/meridian-banner-light.svg) is for light
+  backgrounds, and uses the deeper category colours so they keep their contrast.
+
+Use both through a `<picture>` element with a `prefers-color-scheme` source, as the README
+does, so each reader gets the one that matches their theme.
+
 ## Adding a logo for a new plugin
 
 Copy an existing plugin file from the same category, keep the tile, ring, faint meridians
