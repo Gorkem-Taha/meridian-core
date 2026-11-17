@@ -89,6 +89,10 @@ fn matrix() -> String {
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
         ),
         row(
+            &meridian_target_podman::Podman,
+            &meridian_target_podman::PodmanRunner::from_env(),
+        ),
+        row(
             &meridian_target_puppet::Puppet,
             &meridian_target_puppet::PuppetRunner::from_env(),
         ),

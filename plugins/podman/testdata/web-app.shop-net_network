@@ -1,0 +1,5 @@
+# Written by Meridian from the document "web-app". The next apply overwrites any change made here.
+
+[Network]
+Label=app=shop
+Subnet=10.89.7.0/24
