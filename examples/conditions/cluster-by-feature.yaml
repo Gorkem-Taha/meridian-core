@@ -1,0 +1,55 @@
+# Conditions on cluster objects.
+#
+# Features are switched on by listing them in the data. Each object says which
+# feature it belongs to, and an object whose feature is off is not among the
+# manifests Kubernetes is given.
+#
+#   meridian compile examples/conditions/cluster-by-feature.yaml \
+#     --data examples/conditions/cluster-by-feature.data.yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: shop
+spec:
+  target: kubernetes
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: prod
+        namespace: shop
+
+    - id: shop_config
+      type: v1/ConfigMap
+      params:
+        data:
+          LOG_LEVEL: info
+
+    # A key of a mapping: 'metrics' in data.features is true when the key is
+    # there, whatever its value.
+    - id: metrics_config
+      type: v1/ConfigMap
+      when: "'metrics' in data.features"
+      params:
+        data:
+          SCRAPE_INTERVAL: 30s
+
+    # Labels and a selector, in the language -l uses on the command line.
+    - id: shop_budget
+      type: policy/v1/PodDisruptionBudget
+      when: "matchesSelector(data.labels, 'tier=web,env!=dev') && data.replicas >= 2"
+      params:
+        spec:
+          minAvailable: 1
+          selector:
+            matchLabels:
+              app: shop
+
+    # Not in the list of namespaces that are exempt.
+    - id: shop_quota
+      type: v1/ResourceQuota
+      when: "data.namespace not in data.quota_exempt"
+      params:
+        spec:
+          hard:
+            pods: "20"

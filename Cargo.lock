@@ -665,6 +665,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-expr"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "meridian-value",
+ "regex",
+ "sha2",
+]
+
+[[package]]
 name = "meridian-graph"
 version = "0.1.0"
 dependencies = [
@@ -675,6 +685,7 @@ dependencies = [
 name = "meridian-ir"
 version = "0.1.0"
 dependencies = [
+ "meridian-expr",
  "meridian-value",
  "meridian-yaml",
  "saphyr-parser",

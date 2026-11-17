@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+meridian-expr = { path = "../meridian-expr" }
 meridian-value = { path = "../meridian-value" }
 meridian-yaml = { path = "../meridian-yaml" }
 saphyr-parser = "0.3"
