@@ -1,0 +1,10 @@
+# The values the conditions of network-by-size.yaml read.
+env: prod
+account: production
+vpc_cidr: 10.20.0.0/16
+bastion_ip: 10.20.0.10
+min_retention_days: 30
+subnets:
+  - {name: public-a, public: true}
+  - {name: private-a, public: false}
+  - {name: private-b, public: false}

@@ -168,8 +168,8 @@ can be written.
 | Numbers | `min`, `max`, `abs`, `floor`, `ceil`, `round`, `sum` |
 | Lists and mappings | `length`, `keys`, `values`, `entries`, `merge`, `deepMerge`, `concat`, `flatten`, `unique`, `sort`, `reverse`, `first`, `last`, `slice`, `range`, `zip`, `lookup(map, key, fallback)`, `pick`, `omit`, `any`, `all` |
 | Selection | `where(list, 'field', value)`, `pluck(list, 'field')`, `groupBy(list, 'field')` |
-| Types | `type(x)`, `toString`, `toNumber`, `toBool`, `toJson`, `fromJson`, `toYaml`, `fromYaml` |
-| Encoding | `base64Encode`, `base64Decode`, `urlEncode`, `sha256`, `sha1`, `md5` |
+| Types | `type(x)`, `toString`, `toNumber`, `toBool`, `toJson`, `fromJson`; `toYaml`, `fromYaml` with phase 3 |
+| Encoding | `base64Encode`, `base64Decode`, `urlEncode`, `sha256` (no SHA-1 or MD5: a weak hash should be a deliberate choice of the tool, not a convenience here) |
 | Network | `cidrHost`, `cidrSubnet`, `cidrNetmask`, `cidrContains` |
 | Versions | `semverCompare(a, b)`, `semverSatisfies(v, '>=1.2 <2')` |
 | Files | `file('path')`, `fileExists('path')`, `template('path', {vars})`, `basename`, `dirname`, `joinPath` |
@@ -2050,7 +2050,7 @@ green before the next starts.
 
 | Phase | Lands | Depends on |
 |---|---|---|
-| 1 | `meridian-expr`: the expression language and function library; `when` moves onto it; `--set` | |
+| 1 (built) | `meridian-expr`: the expression language and function library; `when` moves onto it; `--set`. Reference: [expressions and functions](../reference/dsl/expressions.md) | |
 | 2 | `${{ }}` in every allowed place; `variables`; named `conditions`; `when` on documents, outputs and edges; decisions shown in `plan` | 1 |
 | 3 | `forEach`; `file()` and `template()` with blocks | 2 |
 | 4 | the shared `spec`: `settings`, `description`, resource `labels`, outputs on every document, `outputs.<doc>.<name>` anywhere | 2 |

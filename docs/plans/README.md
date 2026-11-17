@@ -18,6 +18,7 @@ issue — it is closed and is a historical record of how the plan was first stat
 | `security.md` | #8 |
 | `run-safety.md` | written as a pull request; amends design plan §11.5 and closes #47 when built |
 | `language-expansion.md` | none: accepted by the owner on 2026-11-17 in pull request #59; being built in phases |
+| `modules-and-versioning.md` | none: written as a pull request. Proposed, not yet accepted |
 
 A plan that contradicts another plan is a bug in whichever one was written later. Raise
 it as an issue rather than resolving it silently in one file.
