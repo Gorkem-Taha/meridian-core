@@ -50,6 +50,7 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+| [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
 
 | Reference | |
 |---|---|
@@ -62,6 +63,7 @@ byte. The reasons, the layout and the order of work are in
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 | [Conformance matrix](reference/conformance-matrix.md) | the same document on every configuration management target, cell by cell; generated from the plugins |
 | [Compatibility](reference/compatibility.md) | which language versions a build reads, and which plugins it loads; generated from the code |
+| [Compile rules](reference/compile-rules.md) | the rules file, every rule and every refusal, and `meridian rules check` |
 
 | Targets | |
 |---|---|
@@ -95,6 +97,7 @@ plugins.
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | from a fresh clone to a merged pull request: set up, the checks, review, and the changes that need a second reviewer |
 | [Writing a plugin](contributing/writing-a-plugin.md) | add a tool to Meridian, step by step, starting from a template that already works |
 | [How Meridian is tested](contributing/testing.md) | unit tests and golden files, property tests, cross-target conformance, examples, coverage; and how to add to each |
+| [Real-tool tests](contributing/real-tool-tests.md) | what each target is tested against for real, what that proves and what it cannot, and the settings the Azure job needs |
 | [Code of Conduct](../CODE_OF_CONDUCT.md) | how we treat each other |
 
 Security reports go through [`SECURITY.md`](../SECURITY.md), not the issue tracker.

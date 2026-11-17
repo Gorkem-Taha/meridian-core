@@ -29,7 +29,9 @@ The recipe has one block a resource, named by its id. A file whose state is
 `directory` becomes Chef's `directory` resource. A service's `enabled` becomes
 an `:enable` or `:disable` action in front of `:start` or `:stop`. A user's
 `groups` become one `group` block each, with `append true`, because Chef's
-`user` has a primary group only.
+`user` has a primary group only. A `group` resource is written with
+`append true` as well: a document declares the group, not its whole
+membership, and without it Chef would remove every member on each converge.
 
 `runtimeWhen` is the Ruby an `only_if` guard holds, so it can read node
 attributes:
@@ -87,6 +89,10 @@ Chosen by the document's host:
 Changes are read from chef-client's report. `chef-run` does not say which
 resources it changed, so an apply through it reports success without a list.
 
-This plugin's runner has been tested against stand-ins for the Chef tools, and
-its recipes pass a Ruby syntax check. It has not yet been run against a real
-Chef installation.
+The runner is tested against a real Chef client (Cinc Client 18, the community
+build of Chef Infra Client) in local mode on every pull request that touches
+it: a why-run plan, a converge checked on disk, a second plan that is in sync,
+a notification, a `runtimeWhen` guard, a failing command, and, as root, a
+package, a group, a user and a service. Running against a Chef server, and
+`knife` and `chef-run` reaching another machine, have only met stand-ins. See
+[Real-tool tests](../contributing/real-tool-tests.md).
