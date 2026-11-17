@@ -22,6 +22,7 @@ flowchart TD
 | Golden files | `plugins/<name>/testdata/` | `cargo test -p meridian-target-<name>`; record with `UPDATE_GOLDEN=1` |
 | Property tests | `crates/meridian-cli/tests/properties.rs` | `cargo test -p meridian-cli --test properties` |
 | Conformance tests | `crates/meridian-cli/tests/conformance.rs` | `cargo test -p meridian-cli --test conformance` |
+| Robustness tests | `crates/meridian-cli/tests/robustness.rs` | `cargo test -p meridian-cli --test robustness` |
 | Examples | `crates/meridian-cli/tests/examples.rs` | `cargo test -p meridian-cli --test examples` |
 | Real tools | a workflow per tool under `.github/workflows/` | in CI; each target's page says how |
 
@@ -148,6 +149,21 @@ UPDATE_GOLDEN=1 cargo test -p meridian-cli --test conformance
 Read the row it adds. If the targets disagree where you expected them to
 agree, that is a finding: either a target is wrong, or the case is `Varies` and
 the reference should say why.
+
+## Robustness tests
+
+A plugin is a separate program, and must not trust that the tree it is handed
+was checked. `robustness.rs` takes every example's tree and damages it in the
+ways a careless or hostile host could: about fifty awkward strings (empty,
+newlines, quotes, every tool's own interpolation syntax, path traversal,
+control characters) and a dozen awkward values in every name, id, type, state
+and param; resources missing, doubled or reversed; edges that point nowhere or
+in a circle; outputs that read nothing. Tens of thousands of trees per run,
+and one rule for every target: the answer is files at relative paths, or a
+refusal that names the target and the rule. Never a panic.
+
+The first run found one: a resource id used twice made the Ansible, Puppet and
+OpenVox sort stages panic. They now refuse it as `duplicate-resource`.
 
 ## Examples
 
