@@ -14,13 +14,15 @@
 //! two of them read each other in a circle.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use meridian_expr::{has_interpolation, Expr, Names, Scope, Template};
+use meridian_secret::{SecretTable, SecretValue};
 use meridian_value::Value;
 
 use crate::condition::{self, Data};
 use crate::error::{Error, ErrorList, Position};
-use crate::types::{Document, Output};
+use crate::types::{Document, Output, Secret};
 
 /// Something a false condition took out of a document.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -44,19 +46,82 @@ pub enum Resolution {
     Skipped { condition: String },
 }
 
+/// The secrets a document reads, for one run of one stage.
+///
+/// A document's values hold only which secret is meant; the secrets are in
+/// the table here. Dropping this wipes every one of them, so it lives exactly
+/// as long as the stage that needs them.
+#[derive(Debug)]
+pub struct Secrets {
+    table: Arc<SecretTable>,
+    values: BTreeMap<String, Value>,
+}
+
+impl Secrets {
+    /// The document's secrets by name, none of them fetched. This is all
+    /// `validate` and `compile` ever have: a secret used in a value is
+    /// described, as `(secret name)`, and one a condition must decide on is
+    /// an error that says a secret is not fetched there.
+    pub fn declared(doc: &Document) -> Secrets {
+        let table = Arc::new(SecretTable::new());
+        let values = doc
+            .secrets()
+            .iter()
+            .map(|s| (s.name.clone(), Value::Secret(table.declare(&s.name))))
+            .collect();
+        Secrets { table, values }
+    }
+
+    /// Gives the secret `name` its value, fetched just now.
+    pub fn hold(&mut self, name: &str, value: SecretValue) {
+        match self.values.get(name) {
+            Some(Value::Secret(at)) => {
+                self.table.hold(*at, value);
+            }
+            _ => {
+                let at = self.table.insert(value);
+                self.values.insert(name.to_owned(), Value::Secret(at));
+            }
+        }
+    }
+
+    /// Records that the optional secret `name` was not found: it reads as
+    /// null.
+    pub fn absent(&mut self, name: &str) {
+        self.values.insert(name.to_owned(), Value::Null);
+    }
+
+    /// The table the values point into.
+    pub fn table(&self) -> &Arc<SecretTable> {
+        &self.table
+    }
+}
+
+impl Drop for Secrets {
+    fn drop(&mut self) {
+        // Values made from these may still be about, in a report or a plan;
+        // they name slots that now hold nothing.
+        self.table.wipe_all();
+    }
+}
+
 /// The names an expression in a document can read.
 pub(crate) fn names() -> Names {
     Names::new()
         .allow("data")
         .allow("var")
         .allow("cond")
+        .allow("secret")
         .refuse(
             "facts",
             "facts are not available: Meridian does not gather facts from a node yet, so a \
              condition can only read data.<key>. To decide on the node while applying, use \
              runtimeWhen on a target that supports it",
         )
-        .hint("an expression reads data.<key>, var.<name> or cond.<name>; text is quoted")
+        .hint(
+            "an expression reads data.<key>, var.<name>, cond.<name> or secret.<name>; text is \
+             quoted",
+        )
 }
 
 /// The scope before any variable or condition is known.
@@ -66,6 +131,18 @@ pub(crate) fn scope(data: &Data) -> Scope {
         .with_unset_hint(
             "data",
             "give it with --data or --set, or test for it with defined({path})",
+        )
+}
+
+/// [`scope`], with the document's secrets to read as `secret.<name>`.
+fn scope_with(data: &Data, secrets: &Secrets) -> Scope {
+    scope(data)
+        .with("secret", Value::Map(secrets.values.clone()))
+        .with_secrets(Arc::clone(&secrets.table))
+        .with_unset_hint(
+            "secret",
+            "an optional secret that was not found is null: test for it with defined({path}) \
+             or give a default with ??",
         )
 }
 
@@ -145,6 +222,11 @@ fn declared(reads: &BTreeSet<(String, Option<String>)>, doc: &Document) -> Resul
         let (known, field, noun): (Vec<&String>, _, _) = match root.as_str() {
             "var" => (doc.variables().keys().collect(), "variables", "variable"),
             "cond" => (doc.conditions().keys().collect(), "conditions", "condition"),
+            "secret" => (
+                doc.secrets().iter().map(|s| &s.name).collect(),
+                "secrets",
+                "secret",
+            ),
             _ => continue,
         };
         let Some(key) = key else {
@@ -163,6 +245,114 @@ fn declared(reads: &BTreeSet<(String, Option<String>)>, doc: &Document) -> Resul
         }
     }
     Ok(())
+}
+
+/// The providers a secret can come from.
+const PROVIDERS: &[&str] = &["env", "exec", "file"];
+
+/// What is wrong with one entry of `spec.secrets`, with where.
+fn secret_problems(secret: &Secret, path: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut fail = |field: &str, why: String| found.push((format!("{path}.{field}"), why));
+
+    if secret.name.is_empty() {
+        fail(
+            "name",
+            "a secret needs a name; it is read as secret.<name>".to_owned(),
+        );
+    } else if !is_name(&secret.name) {
+        fail(
+            "name",
+            format!(
+                "{:?} is not a usable name: a secret is read as secret.<name>, so its name is \
+                 letters, digits and underscores, and does not start with a digit",
+                secret.name
+            ),
+        );
+    }
+
+    let written: Vec<(&str, &str)> = [
+        ("name", secret.name.as_str()),
+        ("from", secret.from.as_str()),
+        ("key", secret.key.as_str()),
+        ("path", secret.path.as_str()),
+    ]
+    .into_iter()
+    .chain(secret.command.iter().map(|arg| ("command", arg.as_str())))
+    .collect();
+    for (field, text) in written {
+        if has_interpolation(text) {
+            fail(
+                field,
+                "where a secret comes from is written out, so that it can be read without any \
+                 data; it cannot be interpolated"
+                    .to_owned(),
+            );
+        }
+    }
+
+    // What each provider needs, and the fields that mean nothing to it.
+    let has = |field: &str| match field {
+        "key" => !secret.key.is_empty(),
+        "path" => !secret.path.is_empty(),
+        "command" => !secret.command.is_empty(),
+        "allowWideMode" => secret.allow_wide_mode,
+        "keepTrailingNewline" => secret.keep_trailing_newline,
+        _ => false,
+    };
+    let (needs, takes): (&str, &[&str]) = match secret.from.as_str() {
+        "env" => ("key", &[]),
+        "file" => ("path", &["allowWideMode", "keepTrailingNewline"]),
+        "exec" => ("command", &[]),
+        "" => {
+            fail(
+                "from",
+                format!(
+                    "a secret needs a provider: from is one of {}",
+                    PROVIDERS.join(", ")
+                ),
+            );
+            return found;
+        }
+        other => {
+            fail(
+                "from",
+                format!(
+                    "{other:?} is not a provider this version has; from is one of {}",
+                    PROVIDERS.join(", ")
+                ),
+            );
+            return found;
+        }
+    };
+    let what = match needs {
+        "key" => "key, the environment variable to read",
+        "path" => "path, the file to read",
+        _ => "command, the program to run and its arguments, as a list",
+    };
+    if !has(needs) {
+        fail(needs, format!("from: {} needs {what}", secret.from));
+    } else if needs == "command" && secret.command[0].is_empty() {
+        fail(
+            needs,
+            "the first item of command is the program to run".to_owned(),
+        );
+    }
+    for field in [
+        "key",
+        "path",
+        "command",
+        "allowWideMode",
+        "keepTrailingNewline",
+    ] {
+        if field != needs && !takes.contains(&field) && has(field) {
+            fail(
+                field,
+                format!("{field} means nothing to from: {}; remove it", secret.from),
+            );
+        }
+    }
+    found
 }
 
 /// Visits every piece of text inside a value, with the path to it. A mapping
@@ -223,6 +413,11 @@ fn reads_of(decl: &Decl, doc: &Document) -> BTreeSet<Decl> {
             }
         }
     }
+    declarations_among(reads, doc)
+}
+
+/// The variables and named conditions among what an expression reads.
+fn declarations_among(reads: BTreeSet<(String, Option<String>)>, doc: &Document) -> BTreeSet<Decl> {
     reads
         .into_iter()
         .filter_map(|(root, key)| {
@@ -234,6 +429,23 @@ fn reads_of(decl: &Decl, doc: &Document) -> BTreeSet<Decl> {
             Some(Decl { root, name: key? })
         })
         .collect()
+}
+
+/// Every variable and named condition `spec.when` needs, directly or through
+/// another.
+fn needed_by_when(doc: &Document) -> BTreeSet<Decl> {
+    let mut needed = BTreeSet::new();
+    let mut waiting: Vec<Decl> = condition(doc.when())
+        .map(|expr| declarations_among(expr.reads(), doc))
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    while let Some(decl) = waiting.pop() {
+        if needed.insert(decl.clone()) {
+            waiting.extend(reads_of(&decl, doc));
+        }
+    }
+    needed
 }
 
 /// The order to work the declarations out in, each after what it reads; or
@@ -310,6 +522,34 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
         template.check(&names)?;
         declared(&template.reads(), doc)
     };
+    // Text in a field that is shown, stored or shapes the document.
+    let check_shown = |text: &str| -> Result<(), String> {
+        check_text(text)?;
+        if has_interpolation(text)
+            && Template::parse(text)?
+                .reads()
+                .iter()
+                .any(|(root, _)| root == "secret")
+        {
+            return Err(NOT_FOR_SECRETS.to_owned());
+        }
+        Ok(())
+    };
+
+    let mut seen = BTreeSet::new();
+    for (i, secret) in doc.secrets().iter().enumerate() {
+        let path = format!("spec.secrets[{i}]");
+        for (at, why) in secret_problems(secret, &path) {
+            fail(&secret.pos, at, why);
+        }
+        if !secret.name.is_empty() && !seen.insert(&secret.name) {
+            fail(
+                &secret.pos,
+                format!("{path}.name"),
+                format!("the secret {:?} is declared twice", secret.name),
+            );
+        }
+    }
 
     for (name, value) in doc.variables() {
         let path = format!("spec.variables.{name}");
@@ -399,7 +639,7 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
         ("spec.target", doc.target()),
         ("spec.targetVersion", doc.target_version()),
     ] {
-        if let Err(why) = check_text(text) {
+        if let Err(why) = check_shown(text) {
             fail(pos, path.into(), why);
         }
     }
@@ -414,7 +654,7 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
                 format!("a label name {SKELETON}"),
             );
         }
-        if let Err(why) = check_text(value) {
+        if let Err(why) = check_shown(value) {
             fail(pos, format!("metadata.labels.{key}"), why);
         }
     }
@@ -422,7 +662,7 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
         .as_resource_set()
         .and_then(|d| d.spec.target_host.as_ref())
     {
-        if let Err(why) = check_text(&th.host) {
+        if let Err(why) = check_shown(&th.host) {
             fail(&th.pos, "spec.targetHost.host".into(), why);
         }
         for (field, text) in [
@@ -448,7 +688,7 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
                 fail(&r.pos, format!("{path}.when"), why);
             }
         }
-        if let Err(why) = check_text(&r.state) {
+        if let Err(why) = check_shown(&r.state) {
             fail(&r.pos, format!("{path}.state"), why);
         }
         let mut problems = Vec::new();
@@ -506,7 +746,7 @@ pub(crate) fn check(doc: &Document, errs: &mut ErrorList) {
                 fail(&o.pos, format!("{p}.when"), why);
             }
         }
-        if let Err(why) = check_text(&o.value) {
+        if let Err(why) = check_shown(&o.value) {
             fail(&o.pos, format!("{p}.value"), why);
         }
     }
@@ -553,6 +793,11 @@ fn place(
     })
 }
 
+/// Why a secret is refused everywhere but a resource's `params`.
+const NOT_FOR_SECRETS: &str = "a secret cannot be used here: this field is shown, stored or \
+                               shapes the document. A secret can be read by a when, and placed \
+                               in a resource's params";
+
 /// Places the interpolations of a field that is text, such as `state`.
 fn place_text(text: &mut String, scope: &Scope, literal: bool) -> Result<(), String> {
     if !has_interpolation(text) {
@@ -569,6 +814,7 @@ fn place_text(text: &mut String, scope: &Scope, literal: bool) -> Result<(), Str
         value @ (Value::Bool(_) | Value::Int(_) | Value::Uint(_) | Value::Float(_)) => {
             value.canonical()
         }
+        Value::Secret(_) => return Err(NOT_FOR_SECRETS.to_owned()),
         other => {
             return Err(format!(
                 "this field is text, and the interpolation gives {}",
@@ -581,9 +827,17 @@ fn place_text(text: &mut String, scope: &Scope, literal: bool) -> Result<(), Str
 
 /// Works out the document's variables and named conditions, each after what
 /// it reads, and returns the scope every other expression is decided in.
-fn declarations(doc: &Document, data: &Data) -> Result<Scope, Error> {
+///
+/// With `only`, just those are worked out: what `spec.when` needs, so that a
+/// document it leaves out is not worked out any further, and fetches nothing.
+fn declarations(
+    doc: &Document,
+    data: &Data,
+    secrets: &Secrets,
+    only: Option<&BTreeSet<Decl>>,
+) -> Result<Scope, Error> {
     let pos = doc.position();
-    let base = scope(data);
+    let base = scope_with(data, secrets);
     if doc.variables().is_empty() && doc.conditions().is_empty() {
         return Ok(base
             .with("var", Value::Map(BTreeMap::new()))
@@ -609,6 +863,9 @@ fn declarations(doc: &Document, data: &Data) -> Result<Scope, Error> {
             .with("cond", Value::Map(conds.clone()))
     };
     for decl in order {
+        if only.is_some_and(|needed| !needed.contains(&decl)) {
+            continue;
+        }
         let scope = scoped(&vars, &conds);
         if decl.root == "var" {
             let path = format!("spec.variables.{}", decl.name);
@@ -641,11 +898,21 @@ fn decide(text: &str, scope: &Scope) -> Result<bool, String> {
 /// The document must already be valid ([`crate::validate`]); what is checked
 /// here is only what needs the data. The first thing that cannot be decided
 /// is an error, never a guess.
+///
+/// No secret is fetched: one placed in a param is only named there, and a
+/// condition that must decide on one is an error.
 pub fn resolve(doc: &Document, data: &Data) -> Result<Resolution, Error> {
+    resolve_with(doc, data, &Secrets::declared(doc))
+}
+
+/// [`resolve`], with the document's secrets as far as they have been
+/// fetched. The resolved document's params hold only which secret is meant;
+/// `secrets` must outlive every use of them.
+pub fn resolve_with(doc: &Document, data: &Data, secrets: &Secrets) -> Result<Resolution, Error> {
     let pos = doc.position().clone();
-    let scope = declarations(doc, data)?;
 
     if !doc.when().is_empty() {
+        let scope = declarations(doc, data, secrets, Some(&needed_by_when(doc)))?;
         let keep =
             decide(doc.when(), &scope).map_err(|why| Error::new(pos.clone(), "spec.when", why))?;
         if !keep {
@@ -654,6 +921,7 @@ pub fn resolve(doc: &Document, data: &Data) -> Result<Resolution, Error> {
             });
         }
     }
+    let scope = declarations(doc, data, secrets, None)?;
 
     let mut removed = Vec::new();
     let mut resources = condition::prune_in(doc.resources(), &scope, &mut removed)?;
@@ -689,6 +957,7 @@ pub fn resolve(doc: &Document, data: &Data) -> Result<Resolution, Error> {
                 &mut d.spec.variables,
                 &mut d.spec.conditions,
             );
+            d.spec.secrets.clear();
             labels(&mut d.metadata.labels, &scope, &pos)?;
         }
         Document::ResourceSet(d) => {
@@ -704,6 +973,7 @@ pub fn resolve(doc: &Document, data: &Data) -> Result<Resolution, Error> {
                 &mut d.spec.variables,
                 &mut d.spec.conditions,
             );
+            d.spec.secrets.clear();
             labels(&mut d.metadata.labels, &scope, &pos)?;
         }
     }
@@ -725,7 +995,7 @@ pub fn resolve(doc: &Document, data: &Data) -> Result<Resolution, Error> {
 pub fn resolved_labels(doc: &Document, data: &Data) -> Result<BTreeMap<String, String>, Error> {
     let mut found = doc.labels().clone();
     if found.values().any(|v| has_interpolation(v)) {
-        let scope = declarations(doc, data)?;
+        let scope = declarations(doc, data, &Secrets::declared(doc), None)?;
         labels(&mut found, &scope, doc.position())?;
     }
     Ok(found)

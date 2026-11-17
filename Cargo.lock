@@ -641,6 +641,7 @@ dependencies = [
  "meridian-resolve",
  "meridian-rules",
  "meridian-sdk",
+ "meridian-secret",
  "meridian-target-ansible",
  "meridian-target-arm",
  "meridian-target-bicep",
@@ -689,6 +690,7 @@ name = "meridian-ir"
 version = "0.1.0"
 dependencies = [
  "meridian-expr",
+ "meridian-secret",
  "meridian-value",
  "meridian-yaml",
  "saphyr-parser",
@@ -703,6 +705,7 @@ dependencies = [
  "meridian-ir",
  "meridian-plugin-host",
  "meridian-sdk",
+ "meridian-secret",
  "meridian-target-fake",
  "sha2",
 ]

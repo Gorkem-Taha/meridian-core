@@ -11,6 +11,7 @@ meridian-ast = { path = "../meridian-ast" }
 meridian-ir = { path = "../meridian-ir" }
 meridian-plugin-host = { path = "../meridian-plugin-host" }
 meridian-sdk = { path = "../meridian-sdk" }
+meridian-secret = { path = "../meridian-secret" }
 sha2 = "0.10"
 
 [dev-dependencies]

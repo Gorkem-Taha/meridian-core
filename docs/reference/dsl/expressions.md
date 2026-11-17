@@ -68,7 +68,7 @@ the [language expansion](../../plans/language-expansion.md#22-names-an-expressio
 A name the place does not offer is refused when the document is validated:
 
 ```
-site.yaml:9:7: spec.resources[1].when: unknown name "env" (an expression reads data.<key>, var.<name> or cond.<name>; text is quoted)
+site.yaml:9:7: spec.resources[1].when: unknown name "env" (an expression reads data.<key>, var.<name>, cond.<name> or secret.<name>; text is quoted)
 ```
 
 ## Operators
@@ -328,7 +328,7 @@ Inside a document it is reported with the file, line and field.
 |---|---|
 | Not in the language | `unexpected "=" (to compare two values in a condition, write ==)` |
 | Unfinished | `expected ")", but the condition ends` |
-| An unknown name | `unknown name "env" (an expression reads data.<key>, var.<name> or cond.<name>; text is quoted)` |
+| An unknown name | `unknown name "env" (an expression reads data.<key>, var.<name>, cond.<name> or secret.<name>; text is quoted)` |
 | An unknown function | `unknown function "Length" (did you mean length?)` |
 | The wrong number of arguments | `replace(...) takes 3 arguments, and was given 2` |
 | A name that is not set | `data.env is not set (give it with --data or --set, or test for it with defined(data.env))` |

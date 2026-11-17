@@ -265,7 +265,7 @@ an edge, are on the [conditions](conditions.md) page.
 | An interpolation that is never closed | `"${{ data.env" opens an interpolation that is never closed with }}` |
 | An empty one | `"x-${{ }}" holds an empty interpolation` |
 | An expression that does not read | `in ${{ data.env == }}: the expression ends where a value was expected` |
-| A name this place cannot read | `in ${{ secret.db }}: unknown name "secret" (...)` |
+| A name this place cannot read | `in ${{ endpoint.db }}: unknown name "endpoint" (...)` |
 | An unknown function, or the wrong number of arguments | `in ${{ uper(data.a) }}: unknown function "uper"` |
 | A variable or condition that is not declared | `var.nmae is not declared (spec.variables declares: name, ports)` |
 | A circle | `these read each other in a circle, so none can be worked out: var.a -> var.b -> var.a` |

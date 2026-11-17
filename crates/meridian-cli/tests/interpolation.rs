@@ -324,8 +324,8 @@ fn validate_checks_every_expression_and_needs_no_data() {
         ),
         (
             "host: ${{ var.name }}.example.com",
-            "host: ${{ secret.host }}",
-            "spec.targetHost.host: in ${{ secret.host }}: unknown name \"secret\"",
+            "host: ${{ endpoint.host }}",
+            "spec.targetHost.host: in ${{ endpoint.host }}: unknown name \"endpoint\"",
         ),
     ] {
         assert!(SITE.contains(from), "{from}");

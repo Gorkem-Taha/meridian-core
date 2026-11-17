@@ -360,6 +360,7 @@ impl Decoder<'_> {
                         "when",
                         "variables",
                         "conditions",
+                        "secrets",
                         "resources",
                         "outputs",
                     ],
@@ -370,6 +371,7 @@ impl Decoder<'_> {
                     when: self.string(f.get("when"), "spec.when"),
                     variables: self.value_map(f.get("variables"), "spec.variables"),
                     conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                     outputs: self.outputs(f.get("outputs"), &pos),
                 };
@@ -390,6 +392,7 @@ impl Decoder<'_> {
                         "when",
                         "variables",
                         "conditions",
+                        "secrets",
                         "targetHost",
                         "resources",
                     ],
@@ -400,6 +403,7 @@ impl Decoder<'_> {
                     when: self.string(f.get("when"), "spec.when"),
                     variables: self.value_map(f.get("variables"), "spec.variables"),
                     conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     target_host: self.target_host(f.get("targetHost"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                 };
@@ -592,6 +596,71 @@ impl Decoder<'_> {
             });
         }
         out
+    }
+
+    /// `spec.secrets`: where each secret comes from. Never a value.
+    fn secrets(&mut self, node: Option<&Node>, doc_pos: &Position) -> Vec<Secret> {
+        let mut out = Vec::new();
+        for (i, item) in self.list(node, "spec.secrets").iter().enumerate() {
+            let path = format!("spec.secrets[{i}]");
+            let f = self.fields(
+                Some(item),
+                &path,
+                &[
+                    "name",
+                    "from",
+                    "key",
+                    "path",
+                    "command",
+                    "optional",
+                    "allowWideMode",
+                    "keepTrailingNewline",
+                ],
+            );
+            let command_path = join(&path, "command");
+            let command = self
+                .list(f.get("command"), &command_path)
+                .iter()
+                .enumerate()
+                .map(|(j, arg)| self.string(Some(arg), &format!("{command_path}[{j}]")))
+                .collect();
+            out.push(Secret {
+                name: self.string(f.get("name"), &join(&path, "name")),
+                from: self.string(f.get("from"), &join(&path, "from")),
+                key: self.string(f.get("key"), &join(&path, "key")),
+                path: self.string(f.get("path"), &join(&path, "path")),
+                command,
+                optional: self.flag(f.get("optional"), &join(&path, "optional")),
+                allow_wide_mode: self.flag(f.get("allowWideMode"), &join(&path, "allowWideMode")),
+                keep_trailing_newline: self.flag(
+                    f.get("keepTrailingNewline"),
+                    &join(&path, "keepTrailingNewline"),
+                ),
+                pos: self.at_or(item, doc_pos),
+            });
+        }
+        out
+    }
+
+    /// A yes or a no; left out, it is no.
+    fn flag(&mut self, node: Option<&Node>, path: &str) -> bool {
+        let Some(node) = node.filter(|n| !n.is_null()) else {
+            return false;
+        };
+        match &node.kind {
+            NodeKind::Scalar {
+                resolved: Scalar::Bool(b),
+                ..
+            } => *b,
+            _ => {
+                self.error(
+                    node,
+                    path,
+                    format!("expected true or false, found {}", node.describe()),
+                );
+                false
+            }
+        }
     }
 
     fn target_host(&mut self, node: Option<&Node>, doc_pos: &Position) -> Option<TargetHost> {
