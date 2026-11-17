@@ -62,6 +62,20 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Configuration, CompileE
                 ));
             }
             runner_seen = true;
+            // The runner resource is settings, not something DSC applies, so
+            // there is no moment a condition on it could be checked.
+            if !r.runtime_when.is_empty() {
+                return Err(refuse(
+                    r,
+                    "unsupported-runtime-condition",
+                    format!(
+                        "resource carries runtimeWhen {:?}, which a \"runner\" cannot express: \
+                         it says how the configuration is run and is not applied to the node. \
+                         Put the condition on the DSC resources it should guard",
+                        r.runtime_when
+                    ),
+                ));
+            }
             read_settings(r, &mut configuration.settings)?;
             if let Some(engine) = asked {
                 if configuration.settings.engine != engine {

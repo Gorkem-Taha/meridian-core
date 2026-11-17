@@ -67,8 +67,11 @@ impl Node {
 /// Aliases are expanded by copying, so a small document can describe a very
 /// large tree. Past this many nodes the document is refused.
 const MAX_NODES: usize = 1_000_000;
-/// Nesting deeper than this is refused rather than risking the stack.
-const MAX_DEPTH: usize = 256;
+/// Nesting deeper than this is refused rather than risking the stack. No
+/// real document comes near it, and the limit has to hold on the smallest
+/// stack the reader runs on: a thread with 1 MiB, in an unoptimised build,
+/// overflowed at 128 levels when the limit was 256.
+const MAX_DEPTH: usize = 64;
 
 /// Loads every document in a YAML stream. A syntax error ends the stream: the
 /// documents before it are discarded and the error is returned alone, located
@@ -294,6 +297,27 @@ fn size(node: &Node) -> usize {
         NodeKind::Seq(items) => items.iter().map(size).sum(),
         NodeKind::Map(entries) => entries.iter().map(|(k, v)| size(k) + size(v)).sum(),
     }
+}
+
+/// Whether a parsed JSON value nests past [`MAX_DEPTH`]. It walks with a list
+/// of its own, not by recursion, since the point is to protect the stack.
+pub(crate) fn json_too_deep(root: &serde_json::Value) -> bool {
+    let mut pending = vec![(root, 0usize)];
+    while let Some((value, depth)) = pending.pop() {
+        if depth > MAX_DEPTH {
+            return true;
+        }
+        match value {
+            serde_json::Value::Array(items) => {
+                pending.extend(items.iter().map(|item| (item, depth + 1)));
+            }
+            serde_json::Value::Object(map) => {
+                pending.extend(map.values().map(|item| (item, depth + 1)));
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Converts a parsed JSON value into the same tree. JSON carries no positions

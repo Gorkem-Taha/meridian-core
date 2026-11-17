@@ -128,3 +128,156 @@ fn namevar_of(d: &Declaration) -> Option<&str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Reference;
+    use meridian_sdk::Position;
+
+    fn text(s: &str) -> Attr {
+        Attr::Value(Value::String(s.to_owned()))
+    }
+
+    fn declaration(r#type: &str, id: &str, namevar: &str, name: &str) -> Declaration {
+        Declaration {
+            r#type: r#type.to_owned(),
+            title: id.to_owned(),
+            attrs: [
+                (namevar.to_owned(), text(name)),
+                ("ensure".to_owned(), Attr::Bare("present")),
+            ]
+            .into(),
+            resource_id: id.to_owned(),
+            pos: Position {
+                line: 11,
+                ..Position::default()
+            },
+            ..Declaration::default()
+        }
+    }
+
+    fn to(r#type: &str, title: &str) -> Reference {
+        Reference {
+            r#type: r#type.to_owned(),
+            title: title.to_owned(),
+        }
+    }
+
+    fn manifest() -> Manifest {
+        Manifest {
+            class: "web".to_owned(),
+            host: "web01".to_owned(),
+            resources: vec![
+                declaration("package", "pkg", "name", "nginx"),
+                Declaration {
+                    require: vec![to("package", "pkg")],
+                    ..declaration("file", "conf", "path", "/etc/nginx/nginx.conf")
+                },
+                Declaration {
+                    notify: vec![to("file", "conf")],
+                    ..declaration("service", "svc", "name", "nginx")
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn each_rule_refuses_the_one_mistake_it_is_for() {
+        type Break = fn(&mut Manifest);
+        let table: &[(&str, &str, Break)] = &[
+            ("missing-host", "", |m| m.host.clear()),
+            ("empty-title", "pkg", |m| {
+                m.resources[0].title = " ".to_owned()
+            }),
+            ("multiline-title", "pkg", |m| {
+                m.resources[0].title = "pkg\nother".to_owned();
+            }),
+            ("multiline-title", "pkg", |m| {
+                m.resources[0].title = "pkg\rother".to_owned();
+            }),
+            ("quoted-title", "pkg", |m| {
+                m.resources[0].title = "pkg' }".to_owned();
+            }),
+            ("duplicate-title", "again", |m| {
+                let mut d = declaration("package", "again", "name", "curl");
+                d.title = "pkg".to_owned();
+                m.resources.push(d);
+            }),
+            ("duplicate-namevar", "again", |m| {
+                m.resources
+                    .push(declaration("package", "again", "name", "nginx"));
+            }),
+            ("duplicate-namevar", "copy", |m| {
+                m.resources
+                    .push(declaration("file", "copy", "path", "/etc/nginx/nginx.conf"));
+            }),
+            ("empty-resource", "pkg", |m| m.resources[0].attrs.clear()),
+            ("dangling-reference", "conf", |m| {
+                m.resources[1].require.push(to("package", "gone"));
+            }),
+            ("dangling-reference", "svc", |m| {
+                m.resources[2].notify = vec![to("exec", "gone")];
+            }),
+        ];
+
+        assert_eq!(validate(&manifest()), Ok(()));
+        for (rule, resource, break_it) in table {
+            let mut broken = manifest();
+            break_it(&mut broken);
+            let err = validate(&broken).expect_err(rule);
+            assert_eq!(err.rule, *rule);
+            assert_eq!(err.resource, *resource, "{rule}");
+            assert_eq!(err.target, NAME, "{rule}");
+            assert!(!err.msg.is_empty(), "{rule}");
+            if !resource.is_empty() {
+                assert_eq!(err.pos.line, 11, "{rule} must point at the resource");
+            }
+        }
+    }
+
+    #[test]
+    fn what_looks_alike_but_is_allowed_is_accepted() {
+        type Change = fn(&mut Manifest);
+        let table: &[(&str, Change)] = &[
+            ("a package and a service of one name", |_| {}),
+            ("one title on two different types", |m| {
+                let mut d = declaration("user", "deploy", "name", "deploy");
+                d.title = "pkg".to_owned();
+                m.resources.push(d);
+            }),
+            ("a namevar that is not text is not compared", |m| {
+                for id in ["one", "two"] {
+                    let mut d = declaration("package", id, "name", "x");
+                    d.attrs.insert(
+                        "name".to_owned(),
+                        Attr::Value(Value::List(vec![Value::String("x".to_owned())])),
+                    );
+                    m.resources.push(d);
+                }
+            }),
+            ("a type with no namevar table is not compared", |m| {
+                m.resources
+                    .push(declaration("notify", "one", "message", "hello"));
+                m.resources
+                    .push(declaration("notify", "two", "message", "hello"));
+            }),
+            ("two files at different paths", |m| {
+                m.resources
+                    .push(declaration("file", "site", "path", "/etc/nginx/site.conf"));
+            }),
+            ("a manifest with nothing in it", |m| m.resources.clear()),
+        ];
+        for (what, change) in table {
+            let mut m = manifest();
+            change(&mut m);
+            assert_eq!(validate(&m), Ok(()), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_reference_is_written_the_way_puppet_reads_it() {
+        assert_eq!(to("package", "nginx").to_string(), "Package['nginx']");
+        assert_eq!(to("", "x").to_string(), "['x']");
+    }
+}
