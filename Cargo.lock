@@ -740,6 +740,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-openvox"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-target-puppet",
+]
+
+[[package]]
 name = "meridian-target-puppet"
 version = "0.1.0"
 dependencies = [

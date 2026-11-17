@@ -18,6 +18,7 @@ start with the [design plan](docs/plans/design-plan.md).
 |---|---|---|---|
 | `ansible` | configuration management | `playbook.yml`, `inventory.ini` | `ansible-playbook` |
 | `puppet` | configuration management | `manifests/init.pp`, `site.pp` | `puppet apply`, or `bolt apply` for another host |
+| [`openvox`](docs/targets/openvox.md) | configuration management | `manifests/init.pp`, `site.pp` | OpenVox's `puppet apply`, or OpenBolt's `bolt apply` for another host |
 
 ## The `meridian` command
 

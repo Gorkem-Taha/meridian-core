@@ -39,6 +39,12 @@ byte. The reasons, the layout and the order of work are in
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
 
+## Targets
+
+| Target | What it covers |
+|---|---|
+| [OpenVox](targets/openvox.md) | What `target: openvox` supports and refuses, examples, settings, troubleshooting |
+
 ## Contributing
 
 The merge bar for a target plugin, and the changes that need a second reviewer, are in
