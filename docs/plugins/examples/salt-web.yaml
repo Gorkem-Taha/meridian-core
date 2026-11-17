@@ -1,0 +1,85 @@
+# A web server, described once. The Salt plugin compiles it to a state file
+# and a top file; the guide in ../salt.md walks through the result.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: salt
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: deploy_group
+      type: group
+      params:
+        name: deploy
+        gid: 1200
+    - id: deploy_user
+      type: user
+      params:
+        name: deploy
+        uid: 1200
+        shell: /bin/bash
+        groups: [deploy]
+      dependsOn:
+        - resource: deploy_group
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: /srv/www/app
+        owner: deploy
+        group: deploy
+        mode: "0755"
+      dependsOn:
+        - resource: deploy_user
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+    - id: nginx_conf
+      type: file
+      params:
+        path: /etc/nginx/nginx.conf
+        owner: root
+        mode: "0644"
+        content: |
+          worker_processes auto;
+          events { worker_connections 1024; }
+          http { include /etc/nginx/sites-enabled/*; }
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: restart
+    - id: nginx_site
+      type: file
+      params:
+        path: /etc/nginx/sites-enabled/app
+        content: |
+          server {
+            listen 80;
+            root /srv/www/app;
+          }
+      dependsOn:
+        - resource: nginx_pkg
+        - resource: site_root
+      notifies:
+        - resource: nginx_svc
+          action: reload
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg
+    - id: open_firewall
+      type: exec
+      runtimeWhen: grains['os_family'] == 'Debian'
+      params:
+        command: ufw allow 80/tcp
+      dependsOn:
+        - resource: nginx_svc

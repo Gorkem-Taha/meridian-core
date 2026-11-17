@@ -13,6 +13,7 @@ project's own: one DSL for everything.
 | Ansible | <img src="logos/meridian-ansible.svg" width="48" alt="Meridian Ansible plugin logo"> | Configuration management |
 | Puppet | <img src="logos/meridian-puppet.svg" width="48" alt="Meridian Puppet plugin logo"> | Configuration management |
 | Chef | <img src="logos/meridian-chef.svg" width="48" alt="Meridian Chef plugin logo"> | Configuration management |
+| Salt | <img src="logos/meridian-salt.svg" width="48" alt="Meridian Salt plugin logo"> | Configuration management |
 | Docker | <img src="logos/meridian-docker.svg" width="48" alt="Meridian Docker plugin logo"> | Containers |
 | Kubernetes | <img src="logos/meridian-kubernetes.svg" width="48" alt="Meridian Kubernetes plugin logo"> | Orchestration |
 

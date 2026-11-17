@@ -714,6 +714,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-salt"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-terraform"
 version = "0.1.0"
 dependencies = [

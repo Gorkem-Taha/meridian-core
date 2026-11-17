@@ -18,6 +18,7 @@ start with the [design plan](docs/plans/design-plan.md).
 |---|---|---|---|
 | `ansible` | configuration management | `playbook.yml`, `inventory.ini` | `ansible-playbook` |
 | `puppet` | configuration management | `manifests/init.pp`, `site.pp` | `puppet apply`, or `bolt apply` for another host |
+| [`salt`](docs/plugins/salt.md) | configuration management | `states/<name>.sls`, `states/top.sls` | `salt-call --local`, or `salt-ssh` for another host |
 
 ## The `meridian` command
 
