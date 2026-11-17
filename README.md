@@ -50,6 +50,7 @@ The Rust core is a Cargo workspace under `crates/`. Ported so far:
 - `crates/meridian-ir` — parsing and validation, the counterpart of `internal/ir`
 - `crates/meridian-resolve` — hierarchical data resolution, the counterpart of `internal/resolve`
 - `crates/meridian-graph` — dependency graph and topological sort, the counterpart of `internal/graph`
+- `crates/meridian-ast` — the target-agnostic resource tree, the counterpart of `internal/ast`
 
 ```
 cargo test --workspace
