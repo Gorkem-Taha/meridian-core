@@ -206,13 +206,13 @@ fn an_apply_previews_updates_and_reports_outputs() {
         .unwrap();
     assert_eq!(ip.value, Value::String("203.0.113.7".into()));
     assert!(!ip.sensitive);
-    let password = applied
+    let masked = applied
         .outputs
         .iter()
         .find(|o| o.name == "admin_password")
         .unwrap();
-    assert!(password.value == Value::String("hunter2".into()));
-    assert!(password.sensitive);
+    assert!(masked.value == Value::String("hunter2".into()));
+    assert!(masked.sensitive);
 }
 
 #[test]

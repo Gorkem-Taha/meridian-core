@@ -150,13 +150,13 @@ fn the_host_plans_applies_and_reads_outputs_through_the_binary() {
     let applied = client
         .apply(&context, &artifact, &mut |_| {})
         .unwrap_or_else(|e| panic!("applying: {e}"));
-    let password = applied
+    let masked = applied
         .outputs
         .iter()
         .find(|o| o.name == "password")
         .unwrap();
-    assert!(password.sensitive, "sensitivity survives the wire");
-    assert!(password.value == Value::String("hunter2".into()));
+    assert!(masked.sensitive, "sensitivity survives the wire");
+    assert!(masked.value == Value::String("hunter2".into()));
 
     let outputs = client.outputs(&context).unwrap();
     assert_eq!(outputs, applied.outputs);

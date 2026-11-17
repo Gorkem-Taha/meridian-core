@@ -128,7 +128,7 @@ pub(crate) fn serialise(program: &Program) -> BTreeMap<String, String> {
         ),
         (
             "secretsProvider".to_owned(),
-            Value::String(program.settings.secrets_provider.clone()),
+            Value::String(program.settings.encryption.clone()),
         ),
     ]));
 

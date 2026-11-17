@@ -129,7 +129,7 @@ pub(crate) struct Settings {
     pub backend: String,
     /// The secrets provider a new stack is created with. Empty is Pulumi's
     /// default for the backend.
-    pub secrets_provider: String,
+    pub encryption: String,
     /// The id and position of the `stack` resource, when there is one.
     pub declared: Option<(String, Position)>,
 }
@@ -139,7 +139,7 @@ impl Default for Settings {
         Settings {
             stack: DEFAULT_STACK.to_owned(),
             backend: String::new(),
-            secrets_provider: String::new(),
+            encryption: String::new(),
             declared: None,
         }
     }

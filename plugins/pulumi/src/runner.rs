@@ -46,7 +46,7 @@ pub struct PulumiRunner {
 struct Stack {
     name: String,
     backend: String,
-    secrets_provider: String,
+    encryption: String,
 }
 
 impl Stack {
@@ -67,7 +67,7 @@ impl Stack {
         let stack = Stack {
             name: text("stack"),
             backend: text("backend"),
-            secrets_provider: text("secretsProvider"),
+            encryption: text("secretsProvider"),
         };
         if stack.name.is_empty() {
             return Err(bad());
@@ -161,8 +161,8 @@ impl PulumiRunner {
             .pulumi(context, &stack)
             .args(["stack", "select", &stack.name, "--create"])
             .args(["--non-interactive", "--color", "never"]);
-        if !stack.secrets_provider.is_empty() {
-            select = select.args(["--secrets-provider", &stack.secrets_provider]);
+        if !stack.encryption.is_empty() {
+            select = select.args(["--secrets-provider", &stack.encryption]);
         }
         select.run_ok("pulumi could not select or create the stack", log)?;
 
@@ -605,7 +605,7 @@ mod tests {
             Stack {
                 name: "prod".into(),
                 backend: "s3://state".into(),
-                secrets_provider: "awskms://alias/x".into(),
+                encryption: "awskms://alias/x".into(),
             }
         );
         for bad in ["", "[]", r#"{"stack":""}"#, "{}"] {

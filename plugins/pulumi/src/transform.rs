@@ -196,7 +196,7 @@ fn stack(r: &Resource, settings: &mut Settings) -> Result<(), CompileError> {
         settings.stack = name;
     }
     settings.backend = string_param(r, "backend")?.unwrap_or_default();
-    settings.secrets_provider = string_param(r, "secretsProvider")?.unwrap_or_default();
+    settings.encryption = string_param(r, "secretsProvider")?.unwrap_or_default();
     settings.declared = Some((r.id.clone(), r.pos.clone()));
     Ok(())
 }

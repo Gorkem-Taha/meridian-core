@@ -85,11 +85,10 @@ fn output<'a>(outputs: &'a [Output], name: &str) -> &'a Output {
         .unwrap_or_else(|| panic!("no output {name:?} among {outputs:?}"))
 }
 
+/// An output's value as text. Nothing about the output is printed when it is
+/// not text: one of them is a generated password.
 fn text(output: &Output) -> &str {
-    output
-        .value
-        .as_str()
-        .unwrap_or_else(|| panic!("{} is not a string", output.name))
+    output.value.as_str().expect("the output is a string")
 }
 
 #[test]
@@ -134,16 +133,19 @@ fn a_document_is_planned_applied_and_changed() {
     );
     // The provider marks the password a secret; the runner sees through the
     // mask to the value and remembers that it was masked.
-    let password = output(&applied.outputs, "password");
-    assert!(password.sensitive);
+    let generated = output(&applied.outputs, "password");
+    assert!(generated.sensitive);
     // Checked without `assert_eq!`, which would print the value on failure.
     assert!(
-        text(password).len() == 24,
+        text(generated).len() == 24,
         "the password has the wrong length"
     );
-    assert!(text(password) != "[secret]", "the password is still masked");
     assert!(
-        !log.text().iter().any(|l| l.contains(text(password))),
+        text(generated) != "[secret]",
+        "the password is still masked"
+    );
+    assert!(
+        !log.text().iter().any(|l| l.contains(text(generated))),
         "the password reached the log"
     );
 
@@ -177,7 +179,7 @@ fn a_document_is_planned_applied_and_changed() {
     let renamed = text(output(&applied.outputs, "pet_name"));
     assert!(renamed.starts_with("db-"), "{renamed}");
     assert!(
-        text(output(&applied.outputs, "password")) == text(password),
+        text(output(&applied.outputs, "password")) == text(generated),
         "the password was replaced, and it should not have been"
     );
 
