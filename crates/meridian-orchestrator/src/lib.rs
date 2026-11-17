@@ -27,7 +27,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use meridian_ast::ResourceGraph;
-use meridian_ir::{Bundle, Document, Infrastructure, ResourceSet, TARGET_HOST_FROM_INFRASTRUCTURE};
+use meridian_ir::{
+    Bundle, Document, Infrastructure, Removed, Resolution, ResourceSet,
+    TARGET_HOST_FROM_INFRASTRUCTURE,
+};
 use meridian_plugin_host::{to_sdk, EmitError, Registry, RunFailure};
 use meridian_sdk::{
     Artifact, Category, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning,
@@ -94,6 +97,9 @@ pub enum Outcome {
     /// failure. A plan simply cannot see past infrastructure that is not
     /// there.
     Deferred { waiting_on: StageId, output: String },
+    /// The document's own `spec.when` was false, so it is not part of this
+    /// run. Nothing went wrong, and nothing was compiled.
+    LeftOut { condition: String },
     /// The stage failed, and the run stopped here.
     Failed(String),
     /// An earlier stage failed, so this one was not attempted.
@@ -112,6 +118,8 @@ pub struct StageReport {
     /// What the document compiled to, when it got that far.
     pub artifact: Option<Artifact>,
     pub warnings: Vec<Warning>,
+    /// What the document's conditions removed before it was compiled.
+    pub removed: Vec<Removed>,
     pub outcome: Outcome,
 }
 
@@ -201,9 +209,16 @@ pub fn run_selected(
     let mut report = RunReport::default();
     let mut failed: Option<StageId> = None;
 
-    for stage in stages(bundle, selector) {
+    for stage in stages(bundle, selector, &options.data) {
         let id = stage.id();
-        let target = stage.target().to_owned();
+        // Everything the core decides is decided here, before the stage
+        // starts: its conditions and its interpolations, the target among
+        // them.
+        let resolution = meridian_ir::resolve(&stage.document(), &options.data);
+        let target = match &resolution {
+            Ok(Resolution::Kept { document, .. }) => document.target().to_owned(),
+            _ => stage.target().to_owned(),
+        };
         if let Some(because_of) = &failed {
             let skipped = StageReport {
                 id,
@@ -211,6 +226,7 @@ pub fn run_selected(
                 host: String::new(),
                 artifact: None,
                 warnings: Vec::new(),
+                removed: Vec::new(),
                 outcome: Outcome::NotRun {
                     because_of: because_of.clone(),
                 },
@@ -220,7 +236,7 @@ pub fn run_selected(
             continue;
         }
         observer.stage_started(&id, &target);
-        let stage_report = run.stage(stage, observer);
+        let stage_report = run.stage(id, target, resolution, observer);
         if matches!(stage_report.outcome, Outcome::Failed(_)) {
             failed = Some(stage_report.id.clone());
         }
@@ -258,18 +274,18 @@ impl Stage<'_> {
         }
     }
 
-    fn target_version(&self) -> &str {
-        match self {
-            Stage::Infrastructure(d) => &d.spec.target_version,
-            Stage::ResourceSet(d) => &d.spec.target_version,
+    fn document(&self) -> Document {
+        match *self {
+            Stage::Infrastructure(d) => Document::Infrastructure(d.clone()),
+            Stage::ResourceSet(d) => Document::ResourceSet(d.clone()),
         }
     }
 }
 
 /// How many documents of `bundle` a selector picks. A run that picks none
 /// does nothing, which a caller will usually want to say out loud.
-pub fn selected(bundle: &Bundle, selector: &Selector) -> usize {
-    stages(bundle, selector).len()
+pub fn selected(bundle: &Bundle, selector: &Selector, data: &Data) -> usize {
+    stages(bundle, selector, data).len()
 }
 
 /// Whether a document of this kind can be aimed at a target of this
@@ -331,8 +347,15 @@ pub fn version_fits(asked: &str, declared: &[String]) -> bool {
 /// Every Infrastructure document, then every ResourceSet, each in the order
 /// written. A ResourceSet can only depend on an Infrastructure document, so
 /// this order satisfies every dependency a workflow can express.
-fn stages<'a>(bundle: &'a Bundle, selector: &Selector) -> Vec<Stage<'a>> {
-    let selected = |doc: &&Document| selector.matches(doc.labels());
+///
+/// A selector matches a document's labels as they are once their
+/// interpolations are placed. A document whose labels cannot be decided stays
+/// a stage, so that its error is reported instead of the document quietly
+/// dropping out of the run.
+fn stages<'a>(bundle: &'a Bundle, selector: &Selector, data: &Data) -> Vec<Stage<'a>> {
+    let selected = |doc: &&Document| {
+        meridian_ir::resolved_labels(doc, data).map_or(true, |labels| selector.matches(&labels))
+    };
     let infrastructure = bundle
         .documents
         .iter()
@@ -367,19 +390,40 @@ enum Halt {
 }
 
 impl Run<'_> {
-    fn stage(&mut self, stage: Stage<'_>, observer: &mut dyn Observer) -> StageReport {
-        let id = stage.id();
+    fn stage(
+        &mut self,
+        id: StageId,
+        target_name: String,
+        resolution: Result<Resolution, meridian_ir::Error>,
+        observer: &mut dyn Observer,
+    ) -> StageReport {
         let mut report = StageReport {
             id: id.clone(),
-            target: stage.target().to_owned(),
+            target: target_name.clone(),
             host: String::new(),
             artifact: None,
             warnings: Vec::new(),
+            removed: Vec::new(),
             outcome: Outcome::Compiled,
         };
         let fail = |mut report: StageReport, why: String| {
             report.outcome = Outcome::Failed(why);
             report
+        };
+
+        // What the document's conditions and interpolations come to. A
+        // document its own `when` leaves out stops here, before a plugin is
+        // even looked for.
+        let stage = match resolution {
+            Ok(Resolution::Kept { document, removed }) => {
+                report.removed = removed;
+                *document
+            }
+            Ok(Resolution::Skipped { condition }) => {
+                report.outcome = Outcome::LeftOut { condition };
+                return report;
+            }
+            Err(e) => return fail(report, e.to_string()),
         };
 
         let Some(target) = self.registry.target(stage.target()) else {
@@ -425,31 +469,13 @@ impl Run<'_> {
             }
         }
 
-        // Decide every `when`, so the tree holds only what will be applied.
-        let pruned = |resources: &[meridian_ir::Resource]| {
-            meridian_ir::prune(resources, &self.options.data).map_err(|e| e.to_string())
-        };
-
         // Resolve what the stage needs from earlier ones, then build its tree.
-        let (graph, inputs) = match stage {
-            Stage::Infrastructure(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, why),
-                };
-                match ResourceGraph::build_infrastructure(&doc) {
-                    Ok(graph) => (graph, Data::new()),
-                    Err(e) => return fail(report, e.to_string()),
-                }
-            }
-            Stage::ResourceSet(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, why),
-                };
-                let doc = &doc;
+        let (graph, inputs) = match &stage {
+            Document::Infrastructure(doc) => match ResourceGraph::build_infrastructure(doc) {
+                Ok(graph) => (graph, Data::new()),
+                Err(e) => return fail(report, e.to_string()),
+            },
+            Document::ResourceSet(doc) => {
                 let (host, inputs) = match self.host_of(doc) {
                     Ok(found) => found,
                     Err(Halt::Failed(why)) => return fail(report, why),

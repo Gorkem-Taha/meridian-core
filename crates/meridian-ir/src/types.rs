@@ -86,6 +86,9 @@ pub struct Metadata {
 pub struct Dependency {
     pub resource: String,
     pub if_missing: IfMissing,
+    /// A condition on the edge itself; empty means always. A false one drops
+    /// the entry and leaves both resources.
+    pub when: String,
     pub pos: Position,
 }
 
@@ -100,6 +103,8 @@ pub struct Notification {
     pub on: String,
     pub action: String,
     pub if_missing: IfMissing,
+    /// A condition on the notify itself; empty means always.
+    pub when: String,
     pub pos: Position,
 }
 
@@ -126,6 +131,9 @@ pub struct Resource {
 pub struct Output {
     pub name: String,
     pub value: String,
+    /// A condition on the output; empty means always. A false one means the
+    /// output is not declared.
+    pub when: String,
     pub pos: Position,
 }
 
@@ -145,6 +153,12 @@ pub struct TargetHost {
 pub struct InfrastructureSpec {
     pub target: String,
     pub target_version: String,
+    /// `spec.when`: a condition on the whole document; empty means always.
+    pub when: String,
+    /// `spec.variables`: named values, worked out once per document.
+    pub variables: BTreeMap<String, Value>,
+    /// `spec.conditions`: named conditions, read as `cond.<name>`.
+    pub conditions: BTreeMap<String, String>,
     pub resources: Vec<Resource>,
     pub outputs: Vec<Output>,
 }
@@ -171,6 +185,12 @@ impl Infrastructure {
 pub struct ResourceSetSpec {
     pub target: String,
     pub target_version: String,
+    /// `spec.when`: a condition on the whole document; empty means always.
+    pub when: String,
+    /// `spec.variables`: named values, worked out once per document.
+    pub variables: BTreeMap<String, Value>,
+    /// `spec.conditions`: named conditions, read as `cond.<name>`.
+    pub conditions: BTreeMap<String, String>,
     pub target_host: Option<TargetHost>,
     pub resources: Vec<Resource>,
 }
@@ -235,6 +255,38 @@ impl Document {
         match self {
             Document::Infrastructure(d) => &d.spec.target,
             Document::ResourceSet(d) => &d.spec.target,
+        }
+    }
+
+    /// `spec.when`; empty when the document is unconditional.
+    pub fn when(&self) -> &str {
+        match self {
+            Document::Infrastructure(d) => &d.spec.when,
+            Document::ResourceSet(d) => &d.spec.when,
+        }
+    }
+
+    /// `spec.variables`.
+    pub fn variables(&self) -> &BTreeMap<String, Value> {
+        match self {
+            Document::Infrastructure(d) => &d.spec.variables,
+            Document::ResourceSet(d) => &d.spec.variables,
+        }
+    }
+
+    /// `spec.conditions`.
+    pub fn conditions(&self) -> &BTreeMap<String, String> {
+        match self {
+            Document::Infrastructure(d) => &d.spec.conditions,
+            Document::ResourceSet(d) => &d.spec.conditions,
+        }
+    }
+
+    /// `spec.outputs`; a ResourceSet declares none.
+    pub fn outputs(&self) -> &[Output] {
+        match self {
+            Document::Infrastructure(d) => &d.spec.outputs,
+            Document::ResourceSet(_) => &[],
         }
     }
 

@@ -21,7 +21,8 @@ flowchart LR
 | Decided when | before anything is compiled | on the machine, at the moment the resource is applied |
 | Written in | Meridian's [expression language](expressions.md) | the tool's own language |
 | Effect when false | the resource is not in the compiled output | the resource is in the output; the tool skips it |
-| Can read | the values given with `--data` and `--set` | whatever the tool can see on the machine |
+| Can read | the values given with `--data` and `--set`, and the document's [variables and named conditions](interpolation.md#variables) | whatever the tool can see on the machine |
+| Can be written on | a resource, a document, an output, a `dependsOn` or `notifies` entry: [where a `when` can be written](#where-a-when-can-be-written) | a resource |
 | Available | on every target | on the targets that can |
 
 ## `runtimeWhen`
@@ -131,7 +132,7 @@ The full language, with every operator, every function and every error, is on
 | Rule | Checked by | Message |
 |---|---|---|
 | The condition must be written in the language | `validate` | `spec.resources[0].when: unexpected "=" (to compare two values in a condition, write ==)` |
-| Every name must be one a condition can read | `validate` | `unknown name "env" (a condition reads data.<key>; text is quoted)` |
+| Every name must be one a condition can read | `validate` | `unknown name "env" (an expression reads data.<key>, var.<name> or cond.<name>; text is quoted)` |
 | Every function must exist and be given a number of arguments it takes | `validate` | `unknown function "Length" (did you mean length?)` |
 | `facts.*` is not available: nothing gathers facts from a node yet | `validate` | `facts are not available: ... a condition can only read data.<key>` |
 | A key the condition reads must be set | `compile` | `data.env is not set (give it with --data or --set, or test for it with defined(data.env))` |
@@ -223,8 +224,105 @@ Also:
 
 | Command | A document that uses `when` |
 |---|---|
-| `validate` | the condition's syntax is checked |
+| `validate` | the condition's syntax is checked, and that every `var.<name>` and `cond.<name>` it reads is declared |
 | `compile`, `plan`, `apply` | the condition is decided from `--data` and `--set`, and the resource is kept or removed |
+
+## Where a `when` can be written
+
+A `when` is not only for resources. It is the same language, decided at the
+same moment, in each of these places:
+
+| Place | When false |
+|---|---|
+| a resource: `when` | the resource is not in the compiled output |
+| a document: `spec.when` | the document is not part of this run. It is reported as `skipped`, and the run still succeeds |
+| an output: `when` | the output is not declared |
+| a `dependsOn` or `notifies` entry: `when` | the entry is dropped. Both resources stay |
+
+```yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+spec:
+  target: terraform
+  when: data.regions.eu ?? false          # the whole document
+  conditions:
+    public: length(data.public_ports ?? []) > 0
+  resources:
+    - id: main
+      type: aws_vpc
+      params: {cidr_block: 10.20.0.0/16}
+    - id: public
+      type: aws_subnet
+      when: cond.public                    # a resource
+      params: {vpc_id: "${main.id}", cidr_block: 10.20.0.0/24}
+    - id: gateway
+      type: aws_internet_gateway
+      params: {vpc_id: "${main.id}"}
+      dependsOn:
+        - resource: public
+          when: cond.public                # an edge
+  outputs:
+    - name: public_subnet_id
+      value: ${public.id}
+      when: cond.public                    # an output
+```
+
+**A document.** `spec.when` is decided after the document's variables and named
+conditions and before anything else in it. A skipped document is not read
+further: its resources are not decided and its interpolations are not placed,
+so data only that document needs does not have to be given. Another document
+that takes its host from a skipped one finds it from that document's last
+apply, exactly as it does for a document a selector left out.
+
+**An edge.** A `when` on a `dependsOn` or `notifies` entry is decided before
+`ifMissing` is looked at. An entry its own `when` drops is gone whatever became
+of the resource it named, so it needs no `ifMissing`. It is how an order, or a
+reaction, is made to hold only where it matters:
+
+```yaml
+dependsOn:
+  - resource: site_cert
+    when: cond.needs_tls
+notifies:
+  - resource: web_svc
+    action: reload
+    when: "data.env != 'dev'"
+```
+
+**An output.** An output whose `when` is false is not declared, so a document
+that asks for it is told it does not exist. Give an output a `when` when the
+resource it reads has one.
+
+### What is reported
+
+Every decision is printed with the stage, so something missing from the
+compiled output is never a surprise:
+
+```
+site (ResourceSet, target ansible on shop-dev.example.com)
+  when: 2 removed
+    resource "site_cert": cond.needs_tls is false
+    "site_conf" depends on "site_cert": cond.needs_tls is false
+  compiled 2 files into build/site
+monitoring (Infrastructure, target kubernetes)
+  skipped: its when (data.monitoring.enabled ?? false) is false
+```
+
+### Named conditions
+
+A condition used more than once is given a name under `spec.conditions` and
+read as `cond.<name>`, so a document agrees with itself on what "production"
+means. Named conditions, and the variables they can read, are on the
+[interpolation](interpolation.md#named-conditions) page.
+
+```yaml
+spec:
+  conditions:
+    is_prod: data.env == 'prod'
+    needs_tls: cond.is_prod || (data.force_tls ?? false)
+```
 
 ## Choosing
 
@@ -234,3 +332,12 @@ Also:
 | which environment or kind of machine the document is for, as far as you can say it in a data file | `when`, on any target |
 | which documents of a workflow to run at all | not a condition: [labels and a selector](index.md#labels-and-selectors) |
 | whether another resource changed | not a condition: [`notifies`](notifies.md) |
+
+## A worked example
+
+[`examples/workflow/environments.yaml`](../../../examples/workflow/environments.yaml)
+is one workflow for development and production: a Terraform document, an
+Ansible one and a Kubernetes one, with the same conditions in each, two data
+files, `ifMissing: skip`, a guarded optional key and one `runtimeWhen`.
+[Worked workflows](../../quickstart/workflows.md#environments) goes through it,
+with what each condition keeps in each environment.

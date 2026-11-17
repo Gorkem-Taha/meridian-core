@@ -92,5 +92,11 @@ resource web_ip 'Microsoft.Network/publicIPAddresses@2023-09-01' = {
 Credentials are the `az` command's own (`az login`). An output of a secure type
 is reported as sensitive and never printed.
 
-This plugin's runner has been tested against a stand-in for the `az` command. It
-has not yet been run against a real Azure subscription.
+What this plugin writes is built by the real Bicep compiler on every pull
+request that touches it, which checks each resource against Azure's published
+types. The runner itself (`az deployment group what-if`, `create` and `show`)
+has only met a stand-in for the `az` command: Azure has no emulator, so running
+it for real needs a subscription. The job that does so is written and is
+switched on by four repository settings, listed under
+[Real-tool tests](../contributing/real-tool-tests.md#azure). Until it has run, treat the runner as untested
+against Azure.

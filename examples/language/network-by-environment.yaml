@@ -1,0 +1,82 @@
+# Interpolation beside references, on infrastructure.
+#
+# Two things are written with a dollar sign here, and they are decided at
+# different times:
+#
+#   ${{ data.env }}   decided by Meridian before compiling, the same on
+#                     every target
+#   ${main.id}        a reference: left alone by Meridian, rewritten by the
+#                     plugin, and resolved by Terraform while it applies
+#
+#   meridian compile examples/language/network-by-environment.yaml \
+#     --data examples/language/network-by-environment.data.yaml
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+  labels:
+    env: ${{ data.env }}
+spec:
+  target: terraform
+
+  variables:
+    name: ${{ data.project }}-${{ data.env }}
+    # Functions work on the values as they are: this cuts the first /24 out
+    # of the network's range.
+    public_cidr: ${{ cidrSubnet(data.cidr, 8, 0) }}
+    tags:
+      Project: ${{ data.project }}
+      Environment: ${{ data.env }}
+      Owner: ${{ upper(data.team) }}
+
+  conditions:
+    is_prod: data.env == 'prod'
+    public: length(data.public_ports ?? []) > 0
+
+  resources:
+    - id: aws
+      type: provider
+      params:
+        region: ${{ data.region }}
+
+    - id: main
+      type: aws_vpc
+      params:
+        cidr_block: ${{ data.cidr }}
+        enable_dns_hostnames: ${{ cond.is_prod }}
+        # A whole mapping, placed with its shape.
+        tags: ${{ var.tags }}
+
+    - id: public
+      type: aws_subnet
+      when: cond.public
+      params:
+        # A reference and an interpolation in one resource.
+        vpc_id: ${main.id}
+        cidr_block: ${{ var.public_cidr }}
+        tags:
+          Name: ${{ var.name }}-public
+
+    - id: gateway
+      type: aws_internet_gateway
+      when: cond.public
+      params:
+        vpc_id: ${main.id}
+      dependsOn:
+        - resource: public
+
+    - id: flow_logs
+      type: aws_cloudwatch_log_group
+      params:
+        name: /vpc/${{ var.name }}/flow-logs
+        # Quoted because the expression holds ": ".
+        retention_in_days: "${{ cond.is_prod ? 90 : 7 }}"
+
+  outputs:
+    - name: vpc_id
+      value: ${main.id}
+    # An output can have a condition of its own: it is declared only when
+    # the subnet it reads is there.
+    - name: public_subnet_id
+      value: ${public.id}
+      when: cond.public

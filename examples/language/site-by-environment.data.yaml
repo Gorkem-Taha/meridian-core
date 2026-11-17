@@ -1,0 +1,5 @@
+# The values site-by-environment.yaml reads.
+env: prod
+project: shop
+team: web
+cpus: 4

@@ -158,6 +158,68 @@ pub(crate) fn roots(node: &Node, bound: &mut Vec<String>, out: &mut BTreeSet<Str
     }
 }
 
+/// Every root an expression reads, with the first key under it when that is
+/// written out: `var.name` and `var['name']` are `("var", Some("name"))`, and
+/// `var` alone or `var[x]` is `("var", None)`.
+pub(crate) fn reads(
+    node: &Node,
+    bound: &mut Vec<String>,
+    out: &mut BTreeSet<(String, Option<String>)>,
+) {
+    let free = |name: &String, bound: &Vec<String>| !bound.contains(name);
+    match node {
+        Node::Literal(_) => {}
+        Node::Name(name) => {
+            if free(name, bound) {
+                out.insert((name.clone(), None));
+            }
+        }
+        Node::Field(base, key) => match base.as_ref() {
+            Node::Name(name) => {
+                if free(name, bound) {
+                    out.insert((name.clone(), Some(key.clone())));
+                }
+            }
+            other => reads(other, bound, out),
+        },
+        Node::Index(base, index) => {
+            match (base.as_ref(), index.as_ref()) {
+                (Node::Name(name), Node::Literal(Value::String(key))) => {
+                    if free(name, bound) {
+                        out.insert((name.clone(), Some(key.clone())));
+                    }
+                }
+                (other, _) => reads(other, bound, out),
+            }
+            reads(index, bound, out);
+        }
+        Node::Unary(_, inner) => reads(inner, bound, out),
+        Node::Binary(_, left, right) => {
+            reads(left, bound, out);
+            reads(right, bound, out);
+        }
+        Node::Choice(a, b, c) => {
+            reads(a, bound, out);
+            reads(b, bound, out);
+            reads(c, bound, out);
+        }
+        Node::List(items) => items.iter().for_each(|item| reads(item, bound, out)),
+        Node::Map(entries) => entries.iter().for_each(|(_, v)| reads(v, bound, out)),
+        Node::Call(name, args) => {
+            if matches!(name.as_str(), "map" | "filter") && args.len() == 3 {
+                reads(&args[0], bound, out);
+                if let Node::Literal(Value::String(item)) = &args[1] {
+                    bound.push(item.clone());
+                    reads(&args[2], bound, out);
+                    bound.pop();
+                }
+            } else {
+                args.iter().for_each(|arg| reads(arg, bound, out));
+            }
+        }
+    }
+}
+
 pub(crate) struct Evaluator<'a> {
     scope: &'a Scope,
     /// Names bound by `map` and `filter`, innermost last.

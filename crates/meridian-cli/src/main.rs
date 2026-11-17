@@ -62,6 +62,11 @@ enum Command {
         #[command(flatten)]
         plugins: PluginDirs,
     },
+    /// Work with compile rules: the policies layered data must keep
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
     /// Rewrite documents into a newer language version (apiVersion)
     Migrate {
         /// The files to rewrite, in place
@@ -82,6 +87,33 @@ enum Command {
     Signing {
         #[command(subcommand)]
         command: SigningCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// Load a hierarchy's layers and check them against its compile rules,
+    /// compiling nothing
+    Check {
+        /// The hierarchy file; its layers are found relative to it
+        #[arg(long, value_name = "FILE")]
+        hierarchy: PathBuf,
+        /// The rules file. Defaults to rules.yaml beside the hierarchy file
+        #[arg(long, value_name = "FILE")]
+        rules: Option<PathBuf>,
+        /// Fail when there is no rules file, so that removing it cannot
+        /// switch the rules off unnoticed
+        #[arg(long)]
+        require_rules: bool,
+        /// One value, as on compile: merged over the hierarchy last and
+        /// checked as its most specific layer. The hierarchy's layer paths
+        /// also read it as %{KEY}; may be given more than once
+        #[arg(long = "set", value_name = "KEY=VALUE")]
+        set: Vec<String>,
+        /// A YAML or JSON file of values merged over the hierarchy, checked
+        /// as its most specific layer; may be given more than once
+        #[arg(long, value_name = "FILE")]
+        data: Vec<PathBuf>,
     },
 }
 
@@ -256,6 +288,24 @@ fn main() -> ExitCode {
         Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None),
         Command::Apply { workflow } => orchestrate(&workflow, Mode::Apply, None),
         Command::Plugins { plugins } => list_plugins(&plugins),
+        Command::Rules {
+            command:
+                RulesCommand::Check {
+                    hierarchy,
+                    rules,
+                    require_rules,
+                    set,
+                    data,
+                },
+        } => check_rules(
+            meridian_rules::Files {
+                hierarchy,
+                rules,
+                require_rules,
+            },
+            &set,
+            &data,
+        ),
         Command::Migrate { files, to, check } => migrate(&files, to.as_deref(), check),
         Command::Version => {
             print!("{}", versions());
@@ -425,6 +475,68 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
         }
     }
     Ok(data)
+}
+
+/// `meridian rules check`: loads the layers, checks every rule, and says
+/// which layer belongs to whom. Every violation is printed, not only the
+/// first, and none of them shows a value.
+fn check_rules(
+    files: meridian_rules::Files,
+    set: &[String],
+    data_files: &[PathBuf],
+) -> Result<(), Failure> {
+    // Each --data file is a layer of its own, so a refusal can say which.
+    let mut command_line = Vec::new();
+    for file in data_files {
+        let data = read_data(std::slice::from_ref(file))?;
+        command_line.push(meridian_rules::Layer::command_line(
+            format!("--data {}", file.display()),
+            data,
+        ));
+    }
+    // The --set values are what they are on compile: data, merged last. They
+    // are also what a layer path's %{KEY} reads.
+    let mut values = Data::new();
+    apply_sets(&mut values, set)?;
+    let scope: meridian_resolve::Scope = set
+        .iter()
+        .filter_map(|pair| pair.split_once('='))
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect();
+    if !values.is_empty() {
+        command_line.push(meridian_rules::Layer::set("--set", values));
+    }
+    let checked = meridian_rules::check_files(&files, &scope, &command_line)
+        .map_err(|refusal| Failure::Message(refusal.to_string()))?;
+    let Some((path, rules)) = &checked.rules else {
+        println!(
+            "no rules file ({} beside {}): nothing was checked",
+            meridian_rules::RULES_FILE,
+            files.hierarchy.display()
+        );
+        return Ok(());
+    };
+    println!(
+        "rules: {} ({})",
+        path.display(),
+        count(rules.rules.len(), "rule")
+    );
+    println!("layers, least specific first:");
+    let width = checked
+        .groups
+        .iter()
+        .map(|(p, _)| p.len())
+        .max()
+        .unwrap_or(0);
+    for (layer, group) in &checked.groups {
+        if rules.groups.is_empty() {
+            println!("  {layer}");
+        } else {
+            println!("  {layer:width$}  {group}");
+        }
+    }
+    println!("no violations");
+    Ok(())
 }
 
 /// Applies the `--set key=value` options to the data, in the order given.
@@ -625,14 +737,14 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
     for text in &workflow.selector {
         selector = selector.and(Selector::parse(text).map_err(Failure::Message)?);
     }
-    if selected(&bundle, &selector) == 0 {
+    let mut data = read_data(&workflow.data)?;
+    apply_sets(&mut data, &workflow.set)?;
+    if selected(&bundle, &selector, &data) == 0 {
         // Doing nothing and reporting success would read as "all applied".
         return Err(Failure::Message(format!(
             "no document's labels match the selector {selector}"
         )));
     }
-    let mut data = read_data(&workflow.data)?;
-    apply_sets(&mut data, &workflow.set)?;
     let registry = registry(&workflow.plugins)?;
     let options = Options {
         state_dir: workflow.state_dir.clone(),
@@ -690,6 +802,18 @@ impl Printer<'_> {
         )?;
         for warning in &report.warnings {
             writeln!(out, "  warning: {warning}")?;
+        }
+        // Every decision a condition made, so that something missing from
+        // the compiled output is never a surprise.
+        if !report.removed.is_empty() {
+            writeln!(out, "  when: {} removed", report.removed.len())?;
+            for removed in &report.removed {
+                writeln!(
+                    out,
+                    "    {}: {} is false",
+                    removed.subject, removed.condition
+                )?;
+            }
         }
 
         match &report.outcome {
@@ -752,6 +876,9 @@ impl Printer<'_> {
                 out,
                 "  deferred: needs the output {output:?} of {waiting_on}, which has not been applied yet"
             )?,
+            Outcome::LeftOut { condition } => {
+                writeln!(out, "  skipped: its when ({condition}) is false")?
+            }
             Outcome::Failed(why) => {
                 // The first line beside the label, the rest indented under it.
                 let mut lines = why.lines();

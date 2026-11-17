@@ -1,0 +1,7 @@
+# The values network-by-environment.yaml reads.
+env: prod
+project: shop
+team: platform
+region: eu-west-1
+cidr: 10.20.0.0/16
+public_ports: [443]
