@@ -23,10 +23,12 @@ meridian-target-ansible = { path = "../../plugins/ansible" }
 meridian-target-arm = { path = "../../plugins/arm" }
 meridian-target-bicep = { path = "../../plugins/bicep" }
 meridian-target-chef = { path = "../../plugins/chef" }
+meridian-target-cloud-init = { path = "../../plugins/cloud-init" }
 meridian-target-cloudformation = { path = "../../plugins/cloudformation" }
 meridian-target-docker = { path = "../../plugins/docker" }
 meridian-target-dsc = { path = "../../plugins/dsc" }
 meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
+meridian-target-podman = { path = "../../plugins/podman" }
 meridian-target-puppet = { path = "../../plugins/puppet" }
 meridian-target-terraform = { path = "../../plugins/terraform" }
 meridian-target-fake = { path = "../meridian-target-fake" }

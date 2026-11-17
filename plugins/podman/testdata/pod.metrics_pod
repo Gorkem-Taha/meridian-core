@@ -1,0 +1,8 @@
+# Written by Meridian from the document "metrics-pod". The next apply overwrites any change made here.
+
+[Pod]
+PodName=metrics
+PublishPort=9090:9090
+
+[Install]
+WantedBy=default.target

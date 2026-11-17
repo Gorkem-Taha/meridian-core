@@ -1,0 +1,9 @@
+# Written by Meridian from the document "metrics-pod". The next apply overwrites any change made here.
+
+[Container]
+Image=quay.io/prometheus/node-exporter:v1.8.2
+Pod=metrics.pod
+PodmanArgs=--pid=host
+
+[Install]
+WantedBy=default.target
