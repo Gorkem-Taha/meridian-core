@@ -616,8 +616,10 @@ dependencies = [
  "meridian-target-helm",
  "meridian-target-kubernetes",
  "meridian-target-opentofu",
+ "meridian-target-packer",
  "meridian-target-podman",
  "meridian-target-puppet",
+ "meridian-target-salt",
  "meridian-target-terraform",
 ]
 
@@ -745,6 +747,7 @@ dependencies = [
 name = "meridian-target-docker"
 version = "0.1.0"
 dependencies = [
+ "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-yaml",
@@ -794,6 +797,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-packer"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+]
+
+[[package]]
 name = "meridian-target-podman"
 version = "0.1.0"
 dependencies = [
@@ -808,6 +820,16 @@ version = "0.1.0"
 dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-salt"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-yaml",
 ]
 
 [[package]]

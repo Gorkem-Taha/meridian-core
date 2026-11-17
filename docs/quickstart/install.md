@@ -22,6 +22,7 @@ meridian-target-cloud-init
 meridian-target-terraform
 meridian-target-opentofu
 meridian-target-helm
+meridian-target-packer
 ...
 ```
 
@@ -51,12 +52,14 @@ hand:
 | `ansible` | `ansible-playbook` |
 | `puppet` | `puppet`, or `bolt` to reach another host |
 | `chef` | `chef-client`, or `chef-run` to reach another host |
+| `salt` | `salt-call`, or `salt-ssh` to reach another host |
 | `dsc` | PowerShell (`pwsh`) with the Dsc.PipelineRunner module |
 | `cloud-init` | `cloud-init`, to check the user-data (Linux only; the check can be turned off). `ssh` as well, if an apply is to wait for the machine's first boot |
 | `terraform` | `terraform` (or `tofu`) |
 | `opentofu` | `tofu`, version 1.8 or later |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
+| `packer` | `packer` 1.7 or later |
 | `docker` | `docker` with the Compose plugin |
 | `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |

@@ -1,0 +1,13 @@
+{
+  "build": "web-image",
+  "outputs": {
+    "image_artifact": "${ubuntu.artifact_id}",
+    "image_id": "${ubuntu.id}"
+  },
+  "sources": [
+    {
+      "id": "ubuntu",
+      "type": "amazon-ebs"
+    }
+  ]
+}

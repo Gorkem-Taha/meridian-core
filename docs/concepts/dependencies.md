@@ -23,8 +23,9 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`) |
-| its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
+| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
+| its own rules | `docker` | `depends_on` between services, waiting for the other to be healthy when it declares a healthcheck; everything else Compose already creates first |
+| the stages of a build | `packer` | the order of the provisioners, and post-processors chained into a sequence; a dependency against the fixed shape of a build is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 | the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not ([helm](../targets/helm.md#ordering)) |
 | the stages of a first boot | `cloud-init` | nothing written; each resource is placed at the step cloud-init handles it, a file that has to wait is deferred, and a dependency that points backwards through those steps is refused |
@@ -52,8 +53,9 @@ so with `dependsOn`.
 This is where tools differ most, and where Meridian is strict.
 
 **Native** means the tool has its own mechanism. Ansible's handlers, Puppet's
-`notify`, Chef's `notifies`, DscPipelineRunner's `notify`, Compose's
-`depends_on` with `restart: true`, and systemd's `PartOf=` for Podman units
+`notify`, Chef's `notifies`, Salt's `watch` and `onchanges` requisites,
+DscPipelineRunner's `notify`, Compose's `depends_on` with `restart: true`, and
+systemd's `PartOf=` for Podman units
 ([podman](../targets/podman.md#notifications)) are native.
 
 **Synthetic** means the tool has no such mechanism, and Meridian builds the
@@ -81,11 +83,14 @@ look like.
 **The action matters.** A notify names an action, and a target accepts only the
 actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
-Puppet with the reason, not turned into a restart. Kubernetes and Helm can roll pods and
+Puppet with the reason, not turned into a restart. Salt restarts and reloads a
+service through the state that keeps it running, so either action aimed at a
+service whose state is `stopped` is refused. Kubernetes and Helm can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. systemd can propagate a restart between Podman units and nothing
 else, so only `restart` is accepted there. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
+and refuse every notify. So does Packer: a build runs each step once, on a
+machine it then discards.
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to

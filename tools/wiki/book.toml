@@ -1,0 +1,34 @@
+# mdBook configuration for the published Meridian wiki.
+#
+# tools/wiki/build.py copies this file next to a staged copy of docs/ (in
+# target/wiki/site/) and mdBook is run there. See
+# docs/contributing/documentation-site.md.
+
+[book]
+title = "Meridian"
+description = "One declarative language for infrastructure as code, configuration management, containers and orchestration."
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+default-theme = "light"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/ZanattaMichael/meridian-core"
+edit-url-template = "https://github.com/ZanattaMichael/meridian-core/edit/main/{path}"
+site-url = "/meridian-core/"
+no-section-label = true
+additional-css = ["theme/meridian.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
+
+[output.html.fold]
+enable = true
+level = 1
+
+# Renders ```mermaid blocks as diagrams. `mdbook-mermaid install` writes the two
+# scripts named in additional-js above into the staged tree at build time.
+[preprocessor.mermaid]
+command = "mdbook-mermaid"

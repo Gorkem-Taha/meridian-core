@@ -1,0 +1,14 @@
+{
+  "context": "",
+  "directory": "",
+  "host": "",
+  "name": "relative",
+  "outputs": [],
+  "profiles": [],
+  "services": [
+    "web",
+    "worker"
+  ],
+  "wait": true,
+  "wait_timeout": 0
+}
