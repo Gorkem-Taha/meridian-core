@@ -5,7 +5,7 @@ use crate::error::{Error, ErrorList, Position};
 use crate::node::{self, Node, NodeKind};
 use crate::scalar::Scalar;
 use crate::types::*;
-use crate::value::Value;
+use meridian_value::Value;
 
 /// Reads `path` and parses every document it contains. The file extension is
 /// not trusted: the content decides between JSON and YAML.

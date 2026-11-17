@@ -360,6 +360,7 @@ meridian-core/
 │   ├── meridian-plugin-host/   # plugin protocol (gRPC), host-side loader and registry
 │   ├── meridian-orchestrator/  # stage sequencing, run-state tracking
 │   ├── meridian-secrets/       # masking/handling values flowing infra -> resourceset
+│   ├── meridian-value/         # dynamic value type + canonical JSON, shared by core and SDK
 │   └── meridian-sdk/           # public plugin SDK (third parties build against this)
 ├── plugins/                    # built-in plugins, each its own binary
 │   ├── ansible/
@@ -374,7 +375,10 @@ meridian-core/
 ```
 
 One crate per stage keeps the dependency direction checkable by the compiler: `meridian-sdk`
-depends on none of the internal crates, and no internal crate is visible to a plugin.
+depends on none of the compiler's crates, and none of them is visible to a plugin. The one
+crate both sides share is `meridian-value`, the value type a param or a data key holds,
+because its JSON form is what crosses the plugin boundary and the two ends must agree on it
+to the byte.
 
 ### 11.3 Per-plugin internal stages
 

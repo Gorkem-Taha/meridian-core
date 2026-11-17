@@ -1,0 +1,35 @@
+# A condition evaluated on the node at apply time. A target with no apply-time conditional cannot compile this.
+# The Rust mirror of the fixture of the same name in internal/fixtures/fixtures.go.
+# The plugin contract test compiles it through every shipped target and
+# compares the output with plugins/<target>/testdata. `target` is a placeholder:
+# the test sets it to each target in turn.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: stale_conf
+      type: file
+      state: absent
+      params:
+        path: /etc/old-app.conf
+    - id: warm_cache
+      type: exec
+      params:
+        command: /usr/local/bin/warm-cache --all
+        chdir: /srv/app
+      runtimeWhen: "ansible_facts['os_family'] == 'Debian'"
+      dependsOn:
+        - resource: stale_conf
+    - id: reindex
+      type: exec
+      params:
+        command: a | b
+        shell: true
+      dependsOn:
+        - resource: warm_cache

@@ -1,0 +1,1 @@
+ansible: resources "app_conf", "app_svc" are independent but will run in sequence; this target flattens the dependency graph and cannot express parallelism

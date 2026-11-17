@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+meridian-value = { path = "../meridian-value" }
 saphyr-parser = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 

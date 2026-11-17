@@ -1,0 +1,558 @@
+use std::io::{BufRead, BufReader, Read};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use meridian_sdk::pb::emitter_client::EmitterClient;
+use meridian_sdk::pb::DescribeRequest;
+use meridian_sdk::{wire, Data, Emitted, ResourceGraph, HANDSHAKE_MAGIC, PROTOCOL_VERSION};
+use tokio::runtime::Runtime;
+use tonic::transport::{Channel, Endpoint};
+
+use crate::{EmitError, Error, Info};
+
+/// How long a host waits for a plugin to announce itself. A plugin that has
+/// not printed its handshake line by then is either not a Meridian plugin or is
+/// wedged; both are better reported than waited on.
+pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long a plugin is given to exit once its stdin is closed.
+const EXIT_GRACE: Duration = Duration::from_secs(5);
+
+/// How much of a plugin's stderr is retained for diagnostics. A plugin in a
+/// crash loop can produce a great deal of it, and an unbounded buffer in the
+/// host would be a denial of service by a misbehaving target.
+const STDERR_LIMIT: usize = 64 << 10;
+
+/// How a plugin is launched.
+#[derive(Clone, Debug)]
+pub struct StartOptions {
+    /// Arguments passed to the plugin binary.
+    pub args: Vec<String>,
+    /// The plugin's whole environment, replacing the host's. `None` inherits.
+    pub env: Option<Vec<(String, String)>>,
+    /// How long to wait for the handshake line and the first reply.
+    pub handshake_timeout: Duration,
+}
+
+impl Default for StartOptions {
+    fn default() -> Self {
+        StartOptions {
+            args: Vec::new(),
+            env: None,
+            handshake_timeout: HANDSHAKE_TIMEOUT,
+        }
+    }
+}
+
+/// A running plugin process.
+///
+/// Dropping a client shuts the plugin down. [`Client::close`] does the same
+/// and reports whether it went cleanly.
+pub struct Client {
+    info: Info,
+    /// The runtime the connection lives on. It has its own worker thread, so
+    /// the connection keeps being serviced whichever thread is calling.
+    runtime: Runtime,
+    api: Option<EmitterClient<Channel>>,
+    process: Option<Process>,
+}
+
+impl std::fmt::Debug for Client {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Client")
+            .field("info", &self.info)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Client {
+    /// Launches a plugin binary and completes the handshake.
+    ///
+    /// On any failure the process is killed before returning, so a
+    /// half-started plugin never survives the error that describes it.
+    pub fn start(path: &str, options: &StartOptions) -> Result<Client, Error> {
+        let process = Process::spawn(path, options)?;
+        let deadline = Instant::now() + options.handshake_timeout;
+
+        let handshake = match process.read_handshake(options.handshake_timeout) {
+            Ok(handshake) => handshake,
+            Err(cause) => return Err(process.fail(path, "handshake failed", cause)),
+        };
+        if handshake.protocol_version != PROTOCOL_VERSION {
+            let cause = format!(
+                "the plugin speaks protocol version {} and this host implements {PROTOCOL_VERSION}; \
+                 rebuild the plugin against a matching SDK",
+                handshake.protocol_version
+            );
+            return Err(process.fail(path, "protocol mismatch", cause));
+        }
+
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                return Err(process.fail(
+                    path,
+                    "could not start the connection runtime",
+                    e.to_string(),
+                ))
+            }
+        };
+        let endpoint = match handshake.endpoint() {
+            Ok(endpoint) => endpoint,
+            Err(cause) => return Err(process.fail(path, "could not connect to the plugin", cause)),
+        };
+
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let described = runtime.block_on(async {
+            let connect_and_describe = async {
+                let channel = endpoint
+                    .connect()
+                    .await
+                    .map_err(|e| ("could not connect to the plugin", describe(&e)))?;
+                let mut api = EmitterClient::new(channel);
+                let reply = api
+                    .describe(DescribeRequest {})
+                    .await
+                    .map_err(|e| ("the plugin did not describe itself", status(&e)))?
+                    .into_inner();
+                Ok((api, reply))
+            };
+            match tokio::time::timeout(remaining, connect_and_describe).await {
+                Ok(result) => result,
+                Err(_) => Err((
+                    "the plugin did not describe itself",
+                    format!(
+                        "no reply within {:?} of starting it",
+                        options.handshake_timeout
+                    ),
+                )),
+            }
+        });
+        let (api, reply) = match described {
+            Ok(pair) => pair,
+            Err((msg, cause)) => return Err(process.fail(path, msg, cause)),
+        };
+        if reply.name.is_empty() {
+            let cause = "the plugin reported no target name".to_owned();
+            return Err(process.fail(path, "the plugin did not describe itself", cause));
+        }
+
+        let info = Info {
+            protocol_version: reply.protocol_version,
+            sdk_version: reply.sdk_version,
+            name: reply.name,
+            resource_types: reply.resource_types,
+            capabilities: wire::capabilities_from_wire(reply.capabilities),
+            path: path.to_owned(),
+        };
+        Ok(Client {
+            info,
+            runtime,
+            api: Some(api),
+            process: Some(process),
+        })
+    }
+
+    /// What the plugin reported when it was started.
+    pub fn info(&self) -> &Info {
+        &self.info
+    }
+
+    /// The target name documents select with `spec.target`.
+    pub fn name(&self) -> &str {
+        &self.info.name
+    }
+
+    /// Compiles a tree in the plugin process. Safe to call from several
+    /// threads at once.
+    pub fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, EmitError> {
+        let fault = |msg: &str, cause: String, stderr: String| {
+            EmitError::Plugin(Error {
+                plugin: self.info.name.clone(),
+                path: self.info.path.clone(),
+                msg: msg.to_owned(),
+                cause,
+                stderr,
+            })
+        };
+        let Some(api) = &self.api else {
+            return Err(fault(
+                "the plugin has been shut down",
+                String::new(),
+                String::new(),
+            ));
+        };
+        let mut api = api.clone();
+        let request = wire::emit_request(graph, data);
+        match self.runtime.block_on(api.emit(request)) {
+            Ok(reply) => wire::emit_response_from_wire(reply.into_inner(), &self.info.name)
+                .map_err(EmitError::Refused),
+            Err(e) => {
+                // A plugin that failed mid-call is usually still exiting, so
+                // give it a moment to finish saying why.
+                let stderr = self
+                    .process
+                    .as_ref()
+                    .map(|p| p.stderr_after(Duration::from_secs(1)))
+                    .unwrap_or_default();
+                Err(fault(
+                    "the plugin failed while compiling",
+                    status(&e),
+                    stderr,
+                ))
+            }
+        }
+    }
+
+    /// Shuts the plugin down and waits for it to exit.
+    pub fn close(mut self) -> Result<(), Error> {
+        self.shutdown()
+    }
+
+    fn shutdown(&mut self) -> Result<(), Error> {
+        self.api = None;
+        let Some(process) = self.process.take() else {
+            return Ok(());
+        };
+        if process.stop(EXIT_GRACE) {
+            return Ok(());
+        }
+        Err(Error {
+            plugin: self.info.name.clone(),
+            path: self.info.path.clone(),
+            msg: "did not exit when asked and was killed".to_owned(),
+            ..Error::default()
+        })
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.shutdown();
+    }
+}
+
+/// A transport error's whole chain of causes. Its own message is usually just
+/// "transport error"; the reason is further down.
+fn describe(e: &dyn std::error::Error) -> String {
+    let mut out = e.to_string();
+    let mut source = e.source();
+    while let Some(inner) = source {
+        out.push_str(": ");
+        out.push_str(&inner.to_string());
+        source = inner.source();
+    }
+    out
+}
+
+fn status(s: &tonic::Status) -> String {
+    format!("{:?}: {}", s.code(), s.message())
+}
+
+/// The parsed form of the plugin's announcement line,
+/// `MAGIC|protocol|sdk|network|address`.
+#[derive(Debug, PartialEq, Eq)]
+struct Handshake {
+    protocol_version: u32,
+    sdk_version: String,
+    network: String,
+    address: String,
+}
+
+impl Handshake {
+    fn parse(line: &str) -> Result<Handshake, String> {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() != 5 || parts[0] != HANDSHAKE_MAGIC {
+            return Err(format!(
+                "the first line of output was {:?}, which is not a Meridian plugin handshake",
+                truncate(line, 200)
+            ));
+        }
+        let Ok(protocol_version) = parts[1].parse::<u32>() else {
+            return Err(format!(
+                "the handshake reported protocol version {:?}, which is not a number",
+                parts[1]
+            ));
+        };
+        if parts[4].is_empty() {
+            return Err("the handshake reported no address to dial".to_owned());
+        }
+        Ok(Handshake {
+            protocol_version,
+            sdk_version: parts[2].to_owned(),
+            network: parts[3].to_owned(),
+            address: parts[4].to_owned(),
+        })
+    }
+
+    fn endpoint(&self) -> Result<Endpoint, String> {
+        let uri = match self.network.as_str() {
+            "unix" => format!("unix:{}", self.address),
+            "tcp" | "tcp4" | "tcp6" => format!("http://{}", self.address),
+            other => {
+                return Err(format!(
+                    "the handshake named network {other:?}, which this host cannot dial"
+                ))
+            }
+        };
+        Endpoint::from_shared(uri).map_err(|e| describe(&e))
+    }
+}
+
+fn truncate(s: &str, max_chars: usize) -> String {
+    match s.char_indices().nth(max_chars) {
+        Some((cut, _)) => format!("{}...", &s[..cut]),
+        None => s.to_owned(),
+    }
+}
+
+/// The first [`STDERR_LIMIT`] bytes a plugin wrote. The first bytes, not the
+/// last: a startup failure explains itself at the top, and truncating the head
+/// would throw away the sentence that matters.
+#[derive(Default)]
+struct Head {
+    buf: Vec<u8>,
+    over: bool,
+}
+
+impl Head {
+    fn write(&mut self, bytes: &[u8]) {
+        let room = STDERR_LIMIT - self.buf.len();
+        self.buf.extend_from_slice(&bytes[..bytes.len().min(room)]);
+        self.over |= bytes.len() > room;
+    }
+
+    fn text(&self) -> String {
+        let mut s = String::from_utf8_lossy(&self.buf).trim().to_owned();
+        if self.over {
+            s.push_str("\n... (truncated)");
+        }
+        s
+    }
+}
+
+/// The plugin's operating-system process and the pipes to it.
+struct Process {
+    child: Child,
+    /// Holding the write end of the plugin's stdin is how the host says "still
+    /// here": closing it is what tells the plugin to exit.
+    stdin: Option<ChildStdin>,
+    /// The first line the plugin wrote to stdout, or why there was none.
+    ///
+    /// The receivers sit behind mutexes only so a client can be shared between
+    /// threads; nothing contends for them.
+    first_line: Mutex<Receiver<Result<String, String>>>,
+    stderr: Arc<Mutex<Head>>,
+    /// Signals once every byte the plugin wrote to stderr has been collected.
+    stderr_done: Mutex<Receiver<()>>,
+}
+
+impl Process {
+    fn spawn(path: &str, options: &StartOptions) -> Result<Process, Error> {
+        let mut command = Command::new(path);
+        command
+            .args(&options.args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some(env) = &options.env {
+            command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
+        }
+        let mut child = command.spawn().map_err(|e| Error {
+            path: path.to_owned(),
+            msg: "could not start the plugin".to_owned(),
+            cause: e.to_string(),
+            ..Error::default()
+        })?;
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("stdout was piped");
+        let mut stderr_pipe = child.stderr.take().expect("stderr was piped");
+
+        let stderr = Arc::new(Mutex::new(Head::default()));
+        let (done_tx, stderr_done) = mpsc::channel();
+        let collected = Arc::clone(&stderr);
+        std::thread::spawn(move || {
+            let mut chunk = [0u8; 4096];
+            while let Ok(n @ 1..) = stderr_pipe.read(&mut chunk) {
+                collected
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .write(&chunk[..n]);
+            }
+            let _ = done_tx.send(());
+        });
+
+        // The read runs on its own thread so a plugin that prints nothing is
+        // bounded by the timeout instead of hanging the host forever.
+        let (line_tx, first_line) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut line = Vec::new();
+            // Bounded, so a binary that writes megabytes without a newline
+            // cannot make the host hold all of it.
+            let outcome = match (&mut reader).take(64 << 10).read_until(b'\n', &mut line) {
+                Ok(0) => Err("the plugin exited before announcing itself".to_owned()),
+                Ok(_) => Ok(String::from_utf8_lossy(&line)
+                    .trim_end_matches(['\r', '\n'])
+                    .to_owned()),
+                Err(e) => Err(format!("the plugin exited before announcing itself: {e}")),
+            };
+            let _ = line_tx.send(outcome);
+            // Keep reading, so a plugin that writes to stdout later is never
+            // blocked on a full pipe.
+            let _ = std::io::copy(&mut reader, &mut std::io::sink());
+        });
+
+        Ok(Process {
+            child,
+            stdin,
+            first_line: Mutex::new(first_line),
+            stderr,
+            stderr_done: Mutex::new(stderr_done),
+        })
+    }
+
+    fn read_handshake(&self, timeout: Duration) -> Result<Handshake, String> {
+        let first_line = self.first_line.lock().unwrap_or_else(|e| e.into_inner());
+        match first_line.recv_timeout(timeout) {
+            Ok(Ok(line)) => Handshake::parse(&line),
+            Ok(Err(why)) => Err(why),
+            Err(_) => Err(format!("no handshake line within {timeout:?}")),
+        }
+    }
+
+    /// What the plugin has written to stderr, waiting up to `grace` for it to
+    /// finish writing.
+    fn stderr_after(&self, grace: Duration) -> String {
+        let _ = self
+            .stderr_done
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .recv_timeout(grace);
+        self.stderr.lock().unwrap_or_else(|e| e.into_inner()).text()
+    }
+
+    /// Kills the process and returns the error describing why.
+    fn fail(mut self, path: &str, msg: &str, cause: String) -> Error {
+        self.stdin = None;
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        // Bounded, so a plugin that leaves the pipe open in a child process of
+        // its own cannot wedge the host's error path.
+        let stderr = self.stderr_after(Duration::from_secs(1));
+        Error {
+            plugin: String::new(),
+            path: path.to_owned(),
+            msg: msg.to_owned(),
+            cause,
+            stderr,
+        }
+    }
+
+    /// Asks the plugin to exit by closing its stdin, and kills it if it has
+    /// not gone within `grace`. Returns whether it exited on its own.
+    fn stop(mut self, grace: Duration) -> bool {
+        self.stdin = None;
+        let deadline = Instant::now() + grace;
+        loop {
+            match self.child.try_wait() {
+                // Being stopped on request is not a failure, whatever the status.
+                Ok(Some(_)) => return true,
+                Ok(None) if Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(5))
+                }
+                _ => {
+                    let _ = self.child.kill();
+                    let _ = self.child.wait();
+                    return false;
+                }
+            }
+        }
+    }
+}
+
+impl Drop for Process {
+    fn drop(&mut self) {
+        // Reached only if a process is dropped without being stopped or
+        // failed, which is a panic unwinding. Do not leave it running.
+        if let Ok(None) = self.child.try_wait() {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+    }
+}
+
+/// One plugin serves every document compiled for its target, so the client has
+/// to be usable from whichever thread is compiling.
+const _: fn() = || {
+    fn shareable<T: Send + Sync>() {}
+    shareable::<Client>();
+};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_handshake_line_parses() {
+        let h = Handshake::parse("MERIDIAN-PLUGIN|1|0.1.0|unix|/tmp/meridian-plugin-1/plugin.sock")
+            .unwrap();
+        assert_eq!(
+            h,
+            Handshake {
+                protocol_version: 1,
+                sdk_version: "0.1.0".to_owned(),
+                network: "unix".to_owned(),
+                address: "/tmp/meridian-plugin-1/plugin.sock".to_owned(),
+            }
+        );
+        assert!(h.endpoint().is_ok());
+        assert!(
+            Handshake::parse("MERIDIAN-PLUGIN|1|0.1.0|tcp|127.0.0.1:4000")
+                .unwrap()
+                .endpoint()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_malformed_handshake_says_what_is_wrong() {
+        for (line, want) in [
+            ("hello world", "the first line of output was \"hello world\", which is not a Meridian plugin handshake"),
+            ("OTHER|1|0.1.0|unix|/x", "is not a Meridian plugin handshake"),
+            ("MERIDIAN-PLUGIN|1|0.1.0|unix", "is not a Meridian plugin handshake"),
+            ("MERIDIAN-PLUGIN|one|0.1.0|unix|/x", "protocol version \"one\", which is not a number"),
+            ("MERIDIAN-PLUGIN|1|0.1.0|unix|", "no address to dial"),
+        ] {
+            let err = Handshake::parse(line).unwrap_err();
+            assert!(err.contains(want), "{line:?}: error = {err}");
+        }
+        let err = Handshake::parse("MERIDIAN-PLUGIN|1|0.1.0|carrier-pigeon|coop")
+            .unwrap()
+            .endpoint()
+            .unwrap_err();
+        assert!(err.contains("network \"carrier-pigeon\""), "{err}");
+        // A long first line is quoted only in part.
+        let err = Handshake::parse(&"x".repeat(5000)).unwrap_err();
+        assert!(err.len() < 400, "{}", err.len());
+    }
+
+    #[test]
+    fn retained_stderr_keeps_the_head_and_says_when_it_was_cut() {
+        let mut head = Head::default();
+        head.write(b"  first line\n");
+        assert_eq!(head.text(), "first line");
+        head.write(&vec![b'x'; STDERR_LIMIT]);
+        head.write(b"more");
+        let text = head.text();
+        assert!(text.starts_with("first line\nxxx"));
+        assert!(text.ends_with("\n... (truncated)"));
+        assert_eq!(head.buf.len(), STDERR_LIMIT);
+    }
+}

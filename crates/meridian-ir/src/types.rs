@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::error::Position;
-use crate::value::Value;
+use meridian_value::Value;
 
 /// The only `apiVersion` this build understands. Any other value is an
 /// explicit error, never a silent partial parse.

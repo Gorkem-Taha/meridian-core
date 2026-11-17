@@ -1,0 +1,13 @@
+[package]
+name = "meridian-value"
+description = "The free-form value Meridian carries for params and data, and its canonical JSON encoding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lints]
+workspace = true

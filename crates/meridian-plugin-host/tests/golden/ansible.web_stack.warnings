@@ -1,0 +1,1 @@
+ansible: resources "nginx_conf", "nginx_site", "nginx_svc" are independent but will run in sequence; this target flattens the dependency graph and cannot express parallelism

@@ -11,7 +11,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
 
 use meridian_graph::Graph;
-use meridian_ir::{canonical_map, Bundle, Position, ResourceSet, Value};
+pub use meridian_ir::Position;
+use meridian_ir::{canonical_map, Bundle, ResourceSet, Value};
 
 /// The graph crate's distinction between a hard ordering constraint and a
 /// deferred trigger, redeclared here so an emitter can depend on the tree

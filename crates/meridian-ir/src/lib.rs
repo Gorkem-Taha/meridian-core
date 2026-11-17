@@ -12,9 +12,9 @@ mod parse;
 mod scalar;
 mod types;
 mod validate;
-mod value;
 
 pub use error::{Error, ErrorList, Position};
+pub use meridian_value::{canonical_map, Value};
 pub use parse::{parse, parse_file, parse_value};
 pub use types::{
     Dependency, Document, IfMissing, Infrastructure, InfrastructureSpec, Kind, Metadata,
@@ -22,4 +22,3 @@ pub use types::{
     TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
 };
 pub use validate::{load, validate, Bundle};
-pub use value::{canonical_map, Value};

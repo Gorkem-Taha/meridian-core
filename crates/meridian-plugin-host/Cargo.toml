@@ -1,0 +1,19 @@
+[package]
+name = "meridian-plugin-host"
+description = "The host side of Meridian's plugin protocol: launching a target plugin and driving it"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-ast = { path = "../meridian-ast" }
+meridian-sdk = { path = "../meridian-sdk" }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
+tonic = "0.14"
+
+[dev-dependencies]
+meridian-ir = { path = "../meridian-ir" }
+
+[lints]
+workspace = true

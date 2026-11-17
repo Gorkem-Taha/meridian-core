@@ -1,3 +1,10 @@
+//! The free-form value Meridian carries wherever a document is not typed: a
+//! resource's `params`, and resolved hierarchy data.
+//!
+//! It lives in its own crate because both sides of the plugin boundary need
+//! it. The core builds values from documents; a plugin receives them over the
+//! wire. Neither should have to depend on the other to name the type.
+
 use std::collections::BTreeMap;
 
 /// A free-form value as it appears under a resource's `params`.
@@ -88,6 +95,52 @@ impl Value {
                 out.push(']');
             }
             Value::Map(map) => write_map(map, out),
+        }
+    }
+}
+
+/// Decodes the JSON object a params or data map crosses the wire as. Empty
+/// input is an empty map, so the receiving side never has to tell "absent"
+/// from "empty".
+///
+/// An integer literal decodes as an integer, not a float: a port of 8080 must
+/// not come back as 8080.0 and change the emitted artifact.
+pub fn decode_map(json: &[u8]) -> Result<BTreeMap<String, Value>, String> {
+    if json.is_empty() {
+        return Ok(BTreeMap::new());
+    }
+    let value: serde_json::Value =
+        serde_json::from_slice(json).map_err(|e| format!("decoding values: {e}"))?;
+    match Value::from(value) {
+        Value::Map(map) => Ok(map),
+        other => Err(format!(
+            "decoding values: expected an object, got {}",
+            other.describe()
+        )),
+    }
+}
+
+impl From<serde_json::Value> for Value {
+    fn from(value: serde_json::Value) -> Self {
+        match value {
+            serde_json::Value::Null => Value::Null,
+            serde_json::Value::Bool(b) => Value::Bool(b),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Value::Int(i)
+                } else if let Some(u) = n.as_u64() {
+                    Value::Uint(u)
+                } else {
+                    Value::Float(n.as_f64().unwrap_or(f64::NAN))
+                }
+            }
+            serde_json::Value::String(s) => Value::String(s),
+            serde_json::Value::Array(items) => {
+                Value::List(items.into_iter().map(Value::from).collect())
+            }
+            serde_json::Value::Object(map) => {
+                Value::Map(map.into_iter().map(|(k, v)| (k, Value::from(v))).collect())
+            }
         }
     }
 }
@@ -245,5 +298,36 @@ mod tests {
             r#"{"a":18446744073709551615,"b":[3,null,true],"c":"NaN","d":"-Inf"}"#
         );
         assert_eq!(Value::Map(map.clone()).canonical(), canonical_map(&map));
+    }
+
+    #[test]
+    fn a_map_survives_the_wire_with_its_number_types() {
+        let json = br#"{"port":8080,"ratio":0.5,"big":18446744073709551615,"neg":-3,"list":[1,"two",null,true],"nested":{"b":2,"a":1}}"#;
+        let map = decode_map(json).unwrap();
+        assert_eq!(map["port"], Value::Int(8080));
+        assert_eq!(map["ratio"], Value::Float(0.5));
+        assert_eq!(map["big"], Value::Uint(u64::MAX));
+        assert_eq!(map["neg"], Value::Int(-3));
+        assert_eq!(
+            canonical_map(&map),
+            r#"{"big":18446744073709551615,"list":[1,"two",null,true],"neg":-3,"nested":{"a":1,"b":2},"port":8080,"ratio":0.5}"#
+        );
+        // A whole-number float is written without a fraction, so it is read back
+        // as an integer. The emitted artifact is the same either way.
+        let whole: BTreeMap<String, Value> =
+            [("n".to_owned(), Value::Float(80.0))].into_iter().collect();
+        assert_eq!(
+            decode_map(canonical_map(&whole).as_bytes()).unwrap()["n"],
+            Value::Int(80)
+        );
+
+        assert!(decode_map(b"").unwrap().is_empty());
+        assert_eq!(
+            decode_map(b"[1]").unwrap_err(),
+            "decoding values: expected an object, got a list"
+        );
+        assert!(decode_map(b"{")
+            .unwrap_err()
+            .starts_with("decoding values: "));
     }
 }
