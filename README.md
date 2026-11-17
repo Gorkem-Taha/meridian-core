@@ -55,6 +55,11 @@ The Rust core is a Cargo workspace under `crates/`. Ported so far:
 - `crates/meridian-sdk` — what a plugin author builds against: the `Emitter` and `Runner` traits,
   `serve`, and the wire conversion. The counterpart of `pkg/sdk`
 - `crates/meridian-plugin-host` — launching, discovering and driving target plugins, the counterpart of `internal/plugin`
+- `crates/meridian-orchestrator` — runs a workflow: compiles each document, drives its tool through a
+  plugin, hands outputs from one stage to the next, and stops on the first failure
+- `crates/meridian-cli` — the `meridian` command
+- `crates/meridian-target-fake` — a small, complete plugin whose tool is a directory, used by the tests
+  and readable as a worked example of the SDK
 
 That is every layer the Go core has. The Rust host drives the Go Ansible and Puppet plugin
 binaries and reproduces every golden file under `plugins/*/testdata` byte for byte; the
@@ -65,6 +70,26 @@ in `fixtures/` and needs a Go toolchain to build the plugins.
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+### The `meridian` command
+
+```
+cargo build --workspace
+meridian validate site.yaml                 # check documents, load no plugin
+meridian plugins                            # what is installed, and what each can do
+meridian compile site.yaml --out build      # write each target's own files; change nothing
+meridian plan site.yaml                     # ask each tool what applying would change
+meridian apply site.yaml                    # make it so
+```
+
+Plugins are found beside the `meridian` binary, or in the directories named by `--plugin-dir`
+or `MERIDIAN_PLUGIN_DIR`. Each tool's working files and Meridian's own run-state live under
+`--state-dir` (`.meridian` by default).
+
+A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
+`targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever
+that output turns out to be; until that infrastructure has been applied it is reported as
+deferred. Values a tool marks sensitive are masked wherever Meridian prints.
 
 ### Building and running the target plugins
 

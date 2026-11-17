@@ -360,6 +360,7 @@ meridian-core/
 │   ├── meridian-plugin-host/   # plugin protocol (gRPC), host-side loader and registry
 │   ├── meridian-orchestrator/  # stage sequencing, run-state tracking
 │   ├── meridian-secrets/       # masking/handling values flowing infra -> resourceset
+│   ├── meridian-target-fake/   # a complete plugin whose tool is a directory: test double and worked example
 │   ├── meridian-value/         # dynamic value type + canonical JSON, shared by core and SDK
 │   └── meridian-sdk/           # public plugin SDK (third parties build against this)
 ├── plugins/                    # built-in plugins, each its own binary
@@ -564,7 +565,8 @@ work is resequenced below.
   configuration management. The protocol version is 2. `meridian-sdk` gained the serving
   half, so a plugin can be written in Rust. The Go SDK reports the category and still
   serves the compiling half only.
-- **R4. First orchestrated workflow.** The `meridian` CLI and a first orchestrator (§11.5)
+- **R4. First orchestrated workflow.** The CLI and orchestrator are done; the first real
+  tool plugin is next. The `meridian` CLI and a first orchestrator (§11.5)
   that compiles a workflow, runs its stages in dependency order through the plugins, hands
   outputs from one stage to the next, and stops cleanly on failure. The first new plugin is
   written in Rust against `meridian-sdk` alongside it, so there is a real two-tool workflow
