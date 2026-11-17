@@ -624,6 +624,7 @@ dependencies = [
  "meridian-target-puppet",
  "meridian-target-salt",
  "meridian-target-terraform",
+ "serde_json",
 ]
 
 [[package]]

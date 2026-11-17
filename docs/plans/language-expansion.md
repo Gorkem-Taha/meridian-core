@@ -329,6 +329,16 @@ collides with none of them and reads as "the same idea, decided earlier".
 | `$${{` | a literal `${{`, following the existing `$${` rule |
 | `${id.path}` | unchanged: a reference, rewritten by the plugin and resolved by the tool |
 
+Two rules were settled while building phase 2:
+
+- **A placed value is literal.** A value an interpolation places into `params`
+  or an output's `value` is handed to the plugin with the escape for a literal
+  `${`, so text that came from data can never become a reference the tool
+  resolves. Only what the author wrote in the document is a reference.
+- **A variable holds no reference.** A variable is worked out before the tool
+  runs, so `${id.path}` inside one is refused; the reference is written where
+  it is used.
+
 The two forms sit side by side, and the difference is *when* the value exists:
 
 | | `${{ ... }}` | `${id.path}` |
@@ -2051,7 +2061,7 @@ green before the next starts.
 | Phase | Lands | Depends on |
 |---|---|---|
 | 1 (built) | `meridian-expr`: the expression language and function library; `when` moves onto it; `--set`. Reference: [expressions and functions](../reference/dsl/expressions.md) | |
-| 2 | `${{ }}` in every allowed place; `variables`; named `conditions`; `when` on documents, outputs and edges; decisions shown in `plan` | 1 |
+| 2 (built) | Reference: [interpolation, variables and named conditions](../reference/dsl/interpolation.md). `${{ }}` in every allowed place; `variables`; named `conditions`; `when` on documents, outputs and edges; decisions shown in `plan` | 1 |
 | 3 | `forEach`; `file()` and `template()` with blocks | 2 |
 | 4 | the shared `spec`: `settings`, `description`, resource `labels`, outputs on every document, `outputs.<doc>.<name>` anywhere | 2 |
 | 5 | declarations: typed `parameters` with validation and sources, `variables`, `final`, `requires`, `Definitions`, user functions, `meridian describe` | 2 |

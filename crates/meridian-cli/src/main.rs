@@ -412,14 +412,14 @@ fn orchestrate(workflow: &Workflow, mode: Mode, out: Option<&Path>) -> Result<()
     for text in &workflow.selector {
         selector = selector.and(Selector::parse(text).map_err(Failure::Message)?);
     }
-    if selected(&bundle, &selector) == 0 {
+    let mut data = read_data(&workflow.data)?;
+    apply_sets(&mut data, &workflow.set)?;
+    if selected(&bundle, &selector, &data) == 0 {
         // Doing nothing and reporting success would read as "all applied".
         return Err(Failure::Message(format!(
             "no document's labels match the selector {selector}"
         )));
     }
-    let mut data = read_data(&workflow.data)?;
-    apply_sets(&mut data, &workflow.set)?;
     let registry = registry(&workflow.plugins)?;
     let options = Options {
         state_dir: workflow.state_dir.clone(),
@@ -477,6 +477,18 @@ impl Printer<'_> {
         )?;
         for warning in &report.warnings {
             writeln!(out, "  warning: {warning}")?;
+        }
+        // Every decision a condition made, so that something missing from
+        // the compiled output is never a surprise.
+        if !report.removed.is_empty() {
+            writeln!(out, "  when: {} removed", report.removed.len())?;
+            for removed in &report.removed {
+                writeln!(
+                    out,
+                    "    {}: {} is false",
+                    removed.subject, removed.condition
+                )?;
+            }
         }
 
         match &report.outcome {
@@ -539,6 +551,9 @@ impl Printer<'_> {
                 out,
                 "  deferred: needs the output {output:?} of {waiting_on}, which has not been applied yet"
             )?,
+            Outcome::LeftOut { condition } => {
+                writeln!(out, "  skipped: its when ({condition}) is false")?
+            }
             Outcome::Failed(why) => {
                 // The first line beside the label, the rest indented under it.
                 let mut lines = why.lines();

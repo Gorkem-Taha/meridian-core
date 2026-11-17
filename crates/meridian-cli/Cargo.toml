@@ -18,6 +18,7 @@ meridian-plugin-host = { path = "../meridian-plugin-host" }
 meridian-sdk = { path = "../meridian-sdk" }
 
 [dev-dependencies]
+serde_json = "1"
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
 meridian-target-arm = { path = "../../plugins/arm" }

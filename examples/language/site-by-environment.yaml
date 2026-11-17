@@ -1,0 +1,104 @@
+# Variables, named conditions and interpolation on a configured machine.
+#
+# Everything between ${{ and }} is decided by Meridian before Ansible is
+# handed anything, from the values given with --data and --set. Ansible sees
+# plain values: the playbook holds no expression and no condition. Change
+# `target` to puppet, chef or salt and the same values are placed and the same
+# resources are kept, because the target takes no part in any of it.
+#
+#   meridian compile examples/language/site-by-environment.yaml \
+#     --data examples/language/site-by-environment.data.yaml
+#
+# Then try `--set env=dev` and compile again: the names, the ports and the
+# kept resources all follow.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: site
+  labels:
+    # A label can be interpolated, and -l selects on the value it comes to.
+    env: ${{ data.env }}
+    tier: web
+spec:
+  target: ansible
+  targetHost:
+    from: inline
+    host: ${{ data.project }}-${{ data.env }}.example.com
+
+  # Named values, worked out once. They may be written in any order, and one
+  # may read another.
+  variables:
+    name: ${{ data.project }}-${{ data.env }}
+    root: /srv/${{ var.name }}
+    # A value that is only an interpolation keeps its type: this is a list.
+    # It is quoted because it holds ": ", which YAML would read as a mapping.
+    ports: "${{ cond.is_prod ? [80, 443] : [8080] }}"
+    workers:
+      value: "${{ cond.is_prod ? data.cpus * 2 : 1 }}"
+      description: two workers per CPU in production, one anywhere else
+
+  # Named conditions, decided once and read as cond.<name>.
+  conditions:
+    is_prod: data.env == 'prod'
+    needs_tls: cond.is_prod || (data.force_tls ?? false)
+
+  resources:
+    - id: web_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: ${{ var.root }}
+        mode: "0755"
+
+    - id: site_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/${{ var.name }}.conf
+        # An interpolation inside longer text is placed as text. A list has
+        # no single text form, so it is joined.
+        content: |
+          # ${{ var.name }}, owned by ${{ upper(data.team) }}
+          worker_processes ${{ var.workers }};
+          root ${{ var.root }};
+          listen ${{ join(var.ports, ' ') }};
+      dependsOn:
+        - resource: web_pkg
+        - resource: site_root
+        # A condition on the edge itself: the order only matters where there
+        # is a certificate to wait for.
+        - resource: site_cert
+          when: cond.needs_tls
+      notifies:
+        - resource: web_svc
+          action: reload
+
+    - id: site_cert
+      type: file
+      when: cond.needs_tls
+      params:
+        path: /etc/ssl/${{ var.name }}.pem
+        mode: "0600"
+        content: ""
+
+    - id: debug_page
+      type: file
+      when: "!cond.is_prod"
+      params:
+        path: ${{ var.root }}/debug.html
+        content: "<h1>${{ var.name }}</h1>\n"
+      dependsOn:
+        - resource: site_root
+
+    - id: web_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: web_pkg

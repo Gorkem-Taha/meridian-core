@@ -1,0 +1,61 @@
+# A condition on a whole document.
+#
+# Two documents in one file. The second has a `spec.when`: where monitoring
+# is switched off it is not part of the run at all, and the command says so:
+#
+#   monitoring (Infrastructure, target kubernetes)
+#     skipped: its when (data.monitoring.enabled ?? false) is false
+#
+#   meridian compile examples/language/optional-monitoring.yaml \
+#     --data examples/language/optional-monitoring.data.yaml
+#
+# Then try `--set monitoring.enabled=false`.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: shop
+  labels:
+    part: app
+spec:
+  target: kubernetes
+  variables:
+    namespace: shop-${{ data.env }}
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: ${{ data.env }}
+        namespace: ${{ var.namespace }}
+
+    - id: shop_config
+      type: v1/ConfigMap
+      params:
+        data:
+          LOG_LEVEL: "${{ data.env == 'prod' ? 'info' : 'debug' }}"
+          # Kubernetes wants text here, so the number is turned into text.
+          REPLICAS: ${{ toString(data.replicas) }}
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: monitoring
+  labels:
+    part: monitoring
+spec:
+  target: kubernetes
+  when: data.monitoring.enabled ?? false
+  variables:
+    interval: ${{ data.monitoring.interval ?? '30s' }}
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: ${{ data.env }}
+        namespace: monitoring
+
+    - id: scrape_config
+      type: v1/ConfigMap
+      params:
+        data:
+          SCRAPE_INTERVAL: ${{ var.interval }}
+          TARGET_NAMESPACE: shop-${{ data.env }}
