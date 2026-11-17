@@ -23,7 +23,7 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep`, `pulumi`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
+| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep`, `arm`, `pulumi`, `podman` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`, systemd's `Requires=` and `After=`). Salt also runs states in file order, so its states are written in order as well |
 | its own rules | `docker` | `depends_on` between services, waiting for the other to be healthy when it declares a healthcheck; everything else Compose already creates first |
 | the stages of a build | `packer` | the order of the provisioners, and post-processors chained into a sequence; a dependency against the fixed shape of a build is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
@@ -32,7 +32,9 @@ about order:
 
 Where a reference already implies the order, as `${web_vm.id}` does in
 Terraform or `Volume: ${data}:/srv` does in a Podman unit, the plugin does not
-write it a second time.
+write it a second time. An ARM template is the exception: Resource Manager
+infers no order from a resource id, so the `arm` target writes a `dependsOn`
+for every reference as well.
 
 ## `notifies`: reaction
 
@@ -88,7 +90,7 @@ service through the state that keeps it running, so either action aimed at a
 service whose state is `stopped` is refused. Kubernetes and Helm can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. systemd can propagate a restart between Podman units and nothing
-else, so only `restart` is accepted there. CloudFormation, Bicep and Pulumi have no way to react to a change at all,
+else, so only `restart` is accepted there. CloudFormation, Bicep, ARM templates and Pulumi have no way to react to a change at all,
 and refuse every notify ([pulumi](../targets/pulumi.md#notifications) says what
 to write instead). So does Packer: a build runs each step once, on a
 machine it then discards.

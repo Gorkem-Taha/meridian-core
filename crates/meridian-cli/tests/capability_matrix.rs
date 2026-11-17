@@ -65,6 +65,10 @@ fn matrix() -> String {
             &meridian_target_ansible::AnsibleRunner::from_env(),
         ),
         row(
+            &meridian_target_arm::Arm,
+            &meridian_target_arm::ArmRunner::from_env(),
+        ),
+        row(
             &meridian_target_bicep::Bicep,
             &meridian_target_bicep::BicepRunner::from_env(),
         ),

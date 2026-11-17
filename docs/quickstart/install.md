@@ -60,6 +60,7 @@ hand:
 | `opentofu` | `tofu`, version 1.8 or later |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
+| `arm` | the `az` command line |
 | `packer` | `packer` 1.7 or later |
 | `pulumi` | `pulumi` |
 | `docker` | `docker` with the Compose plugin |

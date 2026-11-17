@@ -70,6 +70,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `opentofu` | the OpenTofu type | `aws_instance` |
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
+| `arm` | the Azure type; the API version is the `apiVersion` param | `Microsoft.Network/publicIPAddresses` |
 | `packer` | the part of a build, then Packer's own type | `source.amazon-ebs`, `provisioner.shell` |
 | `pulumi` | the Pulumi type token | `aws:ec2:Instance` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
@@ -87,7 +88,8 @@ Most passthrough targets also take one **settings resource** that is not part of
 the tool's file: where to deploy, which cluster, which daemon. It has a fixed
 type name (`stack`, `deployment`, `cluster`, `project`, `runner`) and is
 described on the target's page. The `helm` target has four: `values`, `chart`,
-`release` and `kustomization`. `packer` has none: one document is one build,
+`release` and `kustomization`. The `arm` target has one more type of its own,
+`parameter`, which declares a parameter of the template. `packer` has none: one document is one build,
 and everything a build needs is a resource of it. The `terraform` and `opentofu`
 targets have no settings resource of that kind either; their `provider` and
 `backend` resources, and `opentofu`'s `encryption`, `variable` and `local`,

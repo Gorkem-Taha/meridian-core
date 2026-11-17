@@ -20,6 +20,7 @@ meridian-sdk = { path = "../meridian-sdk" }
 [dev-dependencies]
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
+meridian-target-arm = { path = "../../plugins/arm" }
 meridian-target-bicep = { path = "../../plugins/bicep" }
 meridian-target-chef = { path = "../../plugins/chef" }
 meridian-target-cloud-init = { path = "../../plugins/cloud-init" }

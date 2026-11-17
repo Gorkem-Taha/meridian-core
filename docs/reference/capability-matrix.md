@@ -20,6 +20,7 @@ compiled, with the reason. Each target's own page says how it does what it can.
 | Target | Category | Resource types | notifies | runtimeWhen | plan | apply | outputs |
 |---|---|---|---|---|---|---|---|
 | [ansible](../targets/ansible.md) | configuration-management | `exec`, `file`, `group`, `package`, `service`, `user` | native | yes | yes | yes | no |
+| [arm](../targets/arm.md) | infrastructure-as-code | `‹Namespace›/‹type›`, `deployment`, `parameter` | no | no | yes | yes | yes |
 | [bicep](../targets/bicep.md) | infrastructure-as-code | `‹Namespace›/‹type›@‹api-version›`, `deployment` | no | no | yes | yes | yes |
 | [chef](../targets/chef.md) | configuration-management | `exec`, `file`, `group`, `package`, `service`, `user` | native | yes | yes | yes | no |
 | [cloud-init](../targets/cloud-init.md) | configuration-management | `exec`, `file`, `group`, `package`, `service`, `user` | synthetic | no | yes | yes | yes |

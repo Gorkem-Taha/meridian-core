@@ -1,0 +1,85 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Compiled by Meridian from the document orders-db. Do not edit."
+  },
+  "outputs": {
+    "connection_string": {
+      "type": "string",
+      "value": "[format('Server=tcp:{0},1433;Database={1};', reference(resourceId('Microsoft.Sql/servers', format('orders-{0}-sql', parameters('environment'))), '2023-05-01-preview').fullyQualifiedDomainName, format('{0}/orders', format('orders-{0}-sql', parameters('environment'))))]"
+    },
+    "lock_id": {
+      "type": "string",
+      "value": "[extensionResourceId(resourceId('Microsoft.Sql/servers/databases', split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[0], split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[1]), 'Microsoft.Authorization/locks', 'keep-orders')]"
+    },
+    "server_fqdn": {
+      "type": "string",
+      "value": "[string(reference(resourceId('Microsoft.Sql/servers', format('orders-{0}-sql', parameters('environment'))), '2023-05-01-preview').fullyQualifiedDomainName)]"
+    }
+  },
+  "parameters": {
+    "environment": {
+      "allowedValues": [
+        "dev",
+        "test",
+        "prod"
+      ],
+      "defaultValue": "dev",
+      "type": "string"
+    },
+    "sql_admin_password": {
+      "type": "securestring"
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "2023-05-01-preview",
+      "location": "[resourceGroup().location]",
+      "name": "[format('orders-{0}-sql', parameters('environment'))]",
+      "properties": {
+        "administratorLogin": "orders_admin",
+        "administratorLoginPassword": "[parameters('sql_admin_password')]",
+        "minimalTlsVersion": "1.2"
+      },
+      "type": "Microsoft.Sql/servers"
+    },
+    {
+      "apiVersion": "2023-05-01-preview",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', format('orders-{0}-sql', parameters('environment')))]"
+      ],
+      "location": "[resourceGroup().location]",
+      "name": "[format('{0}/orders', format('orders-{0}-sql', parameters('environment')))]",
+      "sku": {
+        "name": "[if(equals(parameters('environment'), 'prod'), 'S3', 'Basic')]"
+      },
+      "type": "Microsoft.Sql/servers/databases"
+    },
+    {
+      "apiVersion": "2023-05-01-preview",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', format('orders-{0}-sql', parameters('environment')))]"
+      ],
+      "name": "[format('{0}/office', format('orders-{0}-sql', parameters('environment')))]",
+      "properties": {
+        "endIpAddress": "203.0.113.10",
+        "startIpAddress": "203.0.113.10"
+      },
+      "type": "Microsoft.Sql/servers/firewallRules"
+    },
+    {
+      "apiVersion": "2020-05-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers/databases', split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[0], split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[1])]"
+      ],
+      "name": "keep-orders",
+      "properties": {
+        "level": "CanNotDelete",
+        "notes": "The orders database is not to be deleted by hand."
+      },
+      "scope": "[resourceId('Microsoft.Sql/servers/databases', split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[0], split(format('{0}/orders', format('orders-{0}-sql', parameters('environment'))), '/')[1])]",
+      "type": "Microsoft.Authorization/locks"
+    }
+  ]
+}

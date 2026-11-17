@@ -10,6 +10,7 @@ project's own: one DSL for everything.
 | OpenTofu | <img src="logos/meridian-opentofu.svg" width="48" alt="Meridian OpenTofu plugin logo"> | Infrastructure as code |
 | Bicep | <img src="logos/meridian-bicep.svg" width="48" alt="Meridian Bicep plugin logo"> | Infrastructure as code |
 | CloudFormation | <img src="logos/meridian-cloudformation.svg" width="48" alt="Meridian CloudFormation plugin logo"> | Infrastructure as code |
+| ARM templates | <img src="logos/meridian-arm.svg" width="48" alt="Meridian ARM plugin logo"> | Infrastructure as code |
 | Packer | <img src="logos/meridian-packer.svg" width="48" alt="Meridian Packer plugin logo"> | Infrastructure as code |
 | Pulumi | <img src="logos/meridian-pulumi.svg" width="48" alt="Meridian Pulumi plugin logo"> | Infrastructure as code |
 | DSC | <img src="logos/meridian-dsc.svg" width="48" alt="Meridian DSC plugin logo"> | Configuration management |
