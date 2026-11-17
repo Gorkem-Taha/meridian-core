@@ -1,0 +1,6 @@
+# Written by Meridian from the document "edge-proxy". The next apply overwrites any change made here.
+
+[Volume]
+Device=/srv/proxy/config
+Options=bind
+Type=none
