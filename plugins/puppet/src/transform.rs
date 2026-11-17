@@ -253,6 +253,18 @@ fn declaration_for(r: &Resource) -> Result<Declaration, CompileError> {
         ));
     }
 
+    // Puppet would take the manifest and fail on the node: a directory has
+    // no content to manage.
+    if r.r#type == "file" && r.state == "directory" && r.params.contains_key("content") {
+        return Err(refuse(
+            r,
+            "param-conflicts-with-state",
+            "param \"content\" cannot be used with state \"directory\": a directory has no \
+             content; remove the param or the state"
+                .to_owned(),
+        ));
+    }
+
     let mut attrs = BTreeMap::new();
     for (name, value) in &r.params {
         let Some(native) = lookup(m.params, name) else {

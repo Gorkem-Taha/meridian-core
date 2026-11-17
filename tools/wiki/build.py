@@ -69,10 +69,10 @@ SECTION_TITLES = {
 }
 # Pages whose order matters more than their file name.
 PAGE_ORDER = {
-    "quickstart": ["install", "first-resourceset", "first-two-stage"],
+    "quickstart": ["install", "first-resourceset", "first-two-stage", "workflows"],
     "concepts": ["ir-overview", "dependencies", "capability-model", "two-stage-architecture"],
     "tooling": ["language-server", "vscode", "other-editors", "formatter", "linter", "json-schema"],
-    "reference": ["cli", "resource-types", "capability-matrix", "lint"],
+    "reference": ["cli", "resource-types", "capability-matrix", "conformance-matrix", "lint"],
     "plans": ["design-plan", "testing-plan", "documentation-plan"],
 }
 INDEX_NAMES = ("index.md", "README.md")

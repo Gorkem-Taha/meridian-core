@@ -1,0 +1,225 @@
+# One workflow for every environment, decided by data.
+#
+# Every `when` here is decided by Meridian before anything is compiled, from
+# the values given with --data. No tool sees a condition: a resource is either
+# in the compiled files or it is not. That is why the same condition means the
+# same thing in a Terraform document, an Ansible one and a Kubernetes one.
+#
+#   meridian compile environments.yaml --data environments.data.yaml
+#   meridian compile environments.yaml --data environments.data.yaml \
+#                                      --data environments.prod.data.yaml
+#
+# environments.data.yaml holds the values every environment shares, for a
+# development environment. environments.prod.data.yaml replaces the keys that
+# differ in production. With no --data the workflow is refused, because a
+# condition that reads a key nobody set has no answer.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: machines
+  labels:
+    stage: provision
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: eu-west-1
+
+    - id: web_sg
+      type: aws_security_group
+      params:
+        name: web
+        ingress:
+          - from_port: 443
+            to_port: 443
+            protocol: tcp
+            cidr_blocks: ["0.0.0.0/0"]
+
+    - id: web_vm
+      type: aws_instance
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.small
+        vpc_security_group_ids: ["${web_sg.id}"]
+
+    # A fixed address only where there is something public to keep.
+    - id: web_ip
+      type: aws_eip
+      when: "data.env == 'prod'"
+      params:
+        instance: ${web_vm.id}
+
+    # A bastion everywhere but production, where access goes another way.
+    - id: bastion
+      type: aws_instance
+      when: "data.env != 'prod'"
+      params:
+        ami: ami-0abcdef1234567890
+        instance_type: t3.nano
+
+    # Present when its key is, whatever the environment.
+    - id: audit_bucket
+      type: aws_s3_bucket
+      when: "defined(data.audit) && data.audit.enabled"
+      params:
+        bucket: shop-audit-logs
+
+    - id: ready
+      type: terraform_data
+      params:
+        input: ready
+      dependsOn:
+        - resource: web_vm
+        # Wait for the bastion where there is one, and carry on where there
+        # is not. Without ifMissing: skip, production would be refused.
+        - resource: bastion
+          ifMissing: skip
+
+  outputs:
+    - name: address
+      value: ${web_vm.public_ip}
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: site
+  labels:
+    stage: configure
+spec:
+  target: ansible
+  targetHost:
+    from: infrastructure
+    ref: machines
+    output: address
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: site_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/site.conf
+        content: "server { listen 80; root /srv/www; }\n"
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: reload
+
+    # TLS is a feature flag, and only makes sense with a certificate to use.
+    - id: tls_conf
+      type: file
+      when: "data.features.tls && defined(data.certificate)"
+      params:
+        path: /etc/nginx/conf.d/tls.conf
+        content: "ssl_protocols TLSv1.3;\n"
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: reload
+
+    # The same condition as the bastion above, and the same answer.
+    - id: debug_log
+      type: file
+      when: "data.env != 'prod'"
+      params:
+        path: /etc/nginx/conf.d/debug.conf
+        content: "error_log /var/log/nginx/debug.log debug;\n"
+      dependsOn:
+        - resource: nginx_pkg
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: site_conf
+        - resource: tls_conf
+          ifMissing: skip
+
+    # This one is not decided by Meridian. It is Ansible's own condition,
+    # checked on the machine while the playbook runs.
+    - id: apt_cache
+      type: exec
+      runtimeWhen: "ansible_facts['os_family'] == 'Debian'"
+      params:
+        command: apt-get update
+---
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: jobs
+  labels:
+    stage: deploy
+spec:
+  target: kubernetes
+  resources:
+    - id: target
+      type: cluster
+      params:
+        context: shop
+        namespace: shop
+
+    - id: settings
+      type: v1/ConfigMap
+      params:
+        data:
+          LOG_LEVEL: info
+
+    - id: report
+      type: batch/v1/CronJob
+      params:
+        spec:
+          schedule: "0 6 * * *"
+          jobTemplate:
+            spec:
+              template:
+                spec:
+                  restartPolicy: OnFailure
+                  containers:
+                    - name: report
+                      image: ghcr.io/example/report:1.2.0
+                      envFrom:
+                        - configMapRef:
+                            name: ${settings}
+      dependsOn:
+        - resource: settings
+
+    # Three or more replicas is the point at which a disruption budget is
+    # worth having. The data says whether that point is reached; a condition
+    # compares and does not count.
+    - id: budget
+      type: policy/v1/PodDisruptionBudget
+      when: "data.replicas == 3 || data.high_availability"
+      params:
+        spec:
+          minAvailable: 2
+          selector:
+            matchLabels:
+              app: shop
+
+    # Load generation, never in production, and only when asked for.
+    - id: load_test
+      type: batch/v1/Job
+      when: "data.env != 'prod' && (data.load_test == true)"
+      params:
+        spec:
+          template:
+            spec:
+              restartPolicy: Never
+              containers:
+                - name: load
+                  image: ghcr.io/example/load:0.4.0
+      dependsOn:
+        - resource: settings

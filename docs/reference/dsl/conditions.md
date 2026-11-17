@@ -234,3 +234,12 @@ Also:
 | which environment or kind of machine the document is for, as far as you can say it in a data file | `when`, on any target |
 | which documents of a workflow to run at all | not a condition: [labels and a selector](index.md#labels-and-selectors) |
 | whether another resource changed | not a condition: [`notifies`](notifies.md) |
+
+## A worked example
+
+[`examples/workflow/environments.yaml`](../../../examples/workflow/environments.yaml)
+is one workflow for development and production: a Terraform document, an
+Ansible one and a Kubernetes one, with the same conditions in each, two data
+files, `ifMissing: skip`, a guarded optional key and one `runtimeWhen`.
+[Worked workflows](../../quickstart/workflows.md#environments) goes through it,
+with what each condition keeps in each environment.

@@ -10,6 +10,7 @@ repository.workspace = true
 meridian-sdk = { path = "../../crates/meridian-sdk" }
 
 [dev-dependencies]
+meridian-plugin-host = { path = "../../crates/meridian-plugin-host" }
 meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
 
 [lints]
