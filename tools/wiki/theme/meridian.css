@@ -1,0 +1,59 @@
+/* Meridian's colours on top of mdBook's stock themes. See docs/branding/README.md. */
+
+:root {
+    --meridian-navy: #22357a;
+    --meridian-ink: #0a112b;
+    --meridian-iac: #6f9bff;
+    --meridian-cm: #ff8a4c;
+    --meridian-containers: #35d0c2;
+    --meridian-orchestration: #b48cff;
+}
+
+/* The core mark beside the title in the top bar. */
+.menu-title::before {
+    content: "";
+    display: inline-block;
+    width: 1.5em;
+    height: 1.5em;
+    margin-right: 0.45em;
+    vertical-align: -0.35em;
+    background: url("../branding/logos/meridian-core.svg") center / contain no-repeat;
+}
+
+.light, html:not(.js) {
+    --links: #2a49b8;
+    --sidebar-active: #2a49b8;
+}
+
+.navy, .coal, .ayu {
+    --links: #8fb0ff;
+    --sidebar-active: #ffa26e;
+}
+
+/* Section headings in the sidebar. */
+.chapter li.part-title {
+    color: var(--sidebar-active);
+    font-size: 0.8em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+/* Wide tables (the capability matrix) scroll inside the page, not the page itself. */
+.content .table-wrapper {
+    overflow-x: auto;
+}
+
+.content table {
+    font-size: 0.92em;
+}
+
+/* Generated graphics and diagrams. */
+.content img {
+    max-width: 100%;
+    height: auto;
+}
+
+.content pre.mermaid {
+    background: none;
+    text-align: center;
+}

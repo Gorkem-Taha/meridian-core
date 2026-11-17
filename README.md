@@ -14,6 +14,11 @@ quietly does less.
 Early, and moving quickly. The accepted specifications are in [`docs/`](docs/index.md);
 start with the [design plan](docs/plans/design-plan.md).
 
+The documentation is published from `docs/` on every merge, as a
+[site](https://zanattamichael.github.io/meridian-core/) and as this repository's
+[wiki](https://github.com/ZanattaMichael/meridian-core/wiki);
+[how the wiki is published](docs/contributing/documentation-site.md) says how.
+
 | Plugin | Category | Compiles to | Runs with |
 |---|---|---|---|
 | [`ansible`](docs/targets/ansible.md) | configuration management | a playbook and inventory | `ansible-playbook` |
