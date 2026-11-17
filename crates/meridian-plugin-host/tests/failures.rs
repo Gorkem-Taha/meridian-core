@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use meridian_plugin_host::{Client, Error, Registry, StartOptions};
+use meridian_sdk::PROTOCOL_VERSION;
 
 /// Writes an executable script and returns its path.
 fn script(name: &str, body: &str) -> PathBuf {
@@ -94,13 +95,13 @@ fn a_silent_plugin_is_given_up_on_and_killed() {
 fn a_plugin_from_another_protocol_version_is_refused_before_any_call() {
     let path = script(
         "from-the-future",
-        "echo 'MERIDIAN-PLUGIN|2|9.9.9|unix|/tmp/never-dialled'\ncat >/dev/null",
+        "echo 'MERIDIAN-PLUGIN|99|9.9.9|unix|/tmp/never-dialled'\ncat >/dev/null",
     );
     let err = start_err(&path, &quick());
     assert_eq!(err.msg, "protocol mismatch");
     assert_eq!(
         err.cause,
-        "the plugin speaks protocol version 2 and this host implements 1; \
+        "the plugin speaks protocol version 99 and this host implements 2; \
          rebuild the plugin against a matching SDK"
     );
 }
@@ -109,7 +110,9 @@ fn a_plugin_from_another_protocol_version_is_refused_before_any_call() {
 fn a_plugin_that_announces_an_address_nobody_serves_is_reported() {
     let path = script(
         "nobody-home",
-        "echo 'MERIDIAN-PLUGIN|1|0.1.0|unix|/nonexistent/meridian.sock'\ncat >/dev/null",
+        &format!(
+            "echo 'MERIDIAN-PLUGIN|{PROTOCOL_VERSION}|0.1.0|unix|/nonexistent/meridian.sock'\ncat >/dev/null"
+        ),
     );
     let began = Instant::now();
     let err = start_err(&path, &quick());
@@ -142,7 +145,7 @@ fn a_plugin_that_accepts_but_never_answers_is_given_up_on() {
     let path = script(
         "mute",
         &format!(
-            "echo 'MERIDIAN-PLUGIN|1|0.1.0|unix|{}'\ncat >/dev/null",
+            "echo 'MERIDIAN-PLUGIN|{PROTOCOL_VERSION}|0.1.0|unix|{}'\ncat >/dev/null",
             socket.display()
         ),
     );

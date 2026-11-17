@@ -16,6 +16,9 @@ func (e *Emitter) Name() string { return Name }
 // SupportedResourceTypes lists every IR resource type this target maps.
 func (e *Emitter) SupportedResourceTypes() []string { return SupportedResourceTypes() }
 
+// Category declares what kind of tool this target drives.
+func (e *Emitter) Category() sdk.Category { return sdk.CategoryConfigurationManagement }
+
 // Capabilities declares what Puppet can express natively.
 //
 // NativeNotify: the notify metaparameter is Puppet's own mechanism, so nothing

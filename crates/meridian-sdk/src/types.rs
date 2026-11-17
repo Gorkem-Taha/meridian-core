@@ -3,6 +3,8 @@ use std::fmt::{self, Write as _};
 
 use meridian_value::{canonical_map, Value};
 
+use crate::run::Category;
+
 /// A point inside a source document. `line` and `column` are 1-based; a zero
 /// `line` means the position is unknown. It travels with every resource so a
 /// failure raised inside a plugin still points at the line the author wrote.
@@ -281,6 +283,12 @@ pub trait Emitter {
     fn supported_resource_types(&self) -> Vec<String>;
     /// What this target can express natively.
     fn capabilities(&self) -> Capabilities;
+    /// The kind of tool this target drives. The default exists so an emitter
+    /// written before categories does not stop compiling; every real target
+    /// should say.
+    fn category(&self) -> Category {
+        Category::Unspecified
+    }
     /// Compiles the tree, or refuses it.
     fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, CompileError>;
 }

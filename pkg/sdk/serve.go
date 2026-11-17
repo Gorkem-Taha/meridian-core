@@ -104,7 +104,13 @@ type server struct {
 }
 
 func (s *server) Describe(_ context.Context, _ *pb.DescribeRequest) (*pb.DescribeResponse, error) {
+	category := CategoryUnspecified
+	if c, ok := s.emitter.(Categorized); ok {
+		category = c.Category()
+	}
 	return &pb.DescribeResponse{
+		Category:        pb.Category(category),
+		Operations:      &pb.Operations{},
 		ProtocolVersion: ProtocolVersion,
 		SdkVersion:      Version,
 		Name:            s.emitter.Name(),

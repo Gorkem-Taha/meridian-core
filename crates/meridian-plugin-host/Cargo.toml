@@ -17,3 +17,11 @@ meridian-ir = { path = "../meridian-ir" }
 
 [lints]
 workspace = true
+
+# A plugin written against the SDK, used only by this crate's tests: it is the
+# other end of the boundary for everything the Go plugins do not exercise.
+[[bin]]
+name = "meridian-target-fake"
+path = "fake-plugin/main.rs"
+test = false
+doc = false

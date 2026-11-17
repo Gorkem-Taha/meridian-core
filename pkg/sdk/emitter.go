@@ -19,3 +19,29 @@ type Emitter interface {
 	// *CompileError so the host can report it against the author's own source.
 	Emit(g *ResourceGraph, data Data) (Artifact, []Warning, error)
 }
+
+// Category is the kind of tool a plugin drives. The core routes on it; it is a
+// declared fact, never a reason for the core to special-case a product.
+type Category int
+
+const (
+	CategoryUnspecified Category = iota
+	// CategoryInfrastructureAsCode provisions infrastructure.
+	CategoryInfrastructureAsCode
+	// CategoryConfigurationManagement configures a node that already exists.
+	CategoryConfigurationManagement
+	// CategoryContainerization builds and runs containers on one host.
+	CategoryContainerization
+	// CategoryContainerOrchestration schedules containers across a cluster.
+	CategoryContainerOrchestration
+)
+
+// Categorized is implemented by an Emitter that declares its category. It is a
+// separate interface so a plugin written before categories existed still
+// compiles; such a plugin reports CategoryUnspecified.
+//
+// A Go plugin compiles only: this SDK does not serve the Runner half of the
+// protocol, so it never declares an operation beyond compiling.
+type Categorized interface {
+	Category() Category
+}

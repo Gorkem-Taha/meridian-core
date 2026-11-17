@@ -25,7 +25,9 @@ use meridian_ir::{Bundle, Document};
 use meridian_plugin_host::{
     binary_name, to_sdk, Client, EmitError, Registry, StartOptions, BINARY_PREFIX,
 };
-use meridian_sdk::{Capabilities, CompileError, Data, Position, PROTOCOL_VERSION, VERSION};
+use meridian_sdk::{
+    Capabilities, Category, CompileError, Data, Operations, Position, PROTOCOL_VERSION, VERSION,
+};
 
 struct Target {
     name: &'static str,
@@ -256,6 +258,9 @@ fn a_plugin_describes_itself() {
             target.name
         );
         assert_eq!(info.capabilities, target.capabilities, "{}", target.name);
+        // The Go SDK serves the compiling half of the protocol only.
+        assert_eq!(info.category, Category::ConfigurationManagement);
+        assert_eq!(info.operations, Operations::COMPILE_ONLY);
         assert_eq!(info.protocol_version, PROTOCOL_VERSION);
         assert_eq!(info.sdk_version, VERSION);
         assert!(info.path.ends_with(&binary_name(target.name)));

@@ -25,7 +25,10 @@ package sdk
 // It is a separate number from the SDK's release version on purpose: the SDK
 // gains helpers far more often than the wire format changes, and a plugin built
 // against an older SDK stays loadable for as long as the protocol number holds.
-const ProtocolVersion uint32 = 1
+//
+// Version 2 added the plugin's category and operations to Describe, and the
+// Runner service.
+const ProtocolVersion uint32 = 2
 
 // Version is the SDK release a plugin was compiled against. It is reported over
 // the handshake rather than inferred by the host, per the release policy, so a

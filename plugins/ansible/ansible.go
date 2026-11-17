@@ -16,6 +16,9 @@ func (e *Emitter) Name() string { return Name }
 // SupportedResourceTypes lists every IR resource type this target maps.
 func (e *Emitter) SupportedResourceTypes() []string { return SupportedResourceTypes() }
 
+// Category declares what kind of tool this target drives.
+func (e *Emitter) Category() sdk.Category { return sdk.CategoryConfigurationManagement }
+
 // Capabilities declares what Ansible can express natively.
 //
 // NativeNotify: notify/handlers is Ansible's own mechanism, so nothing is

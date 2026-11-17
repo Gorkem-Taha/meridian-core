@@ -16,14 +16,33 @@
 //! deterministic apply order, and the target host is a literal. A plugin's job
 //! is mapping and serialisation, never evaluation.
 //!
-//! This crate does not yet contain the server half, the function a Rust
-//! plugin's `main` calls to serve an emitter. The host half is what the first
-//! Rust core needs; the server half arrives with the first Rust plugin.
+//! A plugin's `main` is one call to [`serve`]:
+//!
+//! ```no_run
+//! # use meridian_sdk::*;
+//! # struct MyTarget;
+//! # impl Emitter for MyTarget {
+//! #     fn name(&self) -> &str { "mine" }
+//! #     fn supported_resource_types(&self) -> Vec<String> { Vec::new() }
+//! #     fn capabilities(&self) -> Capabilities { Capabilities::default() }
+//! #     fn emit(&self, _: &ResourceGraph, _: &Data) -> Result<Emitted, CompileError> {
+//! #         Ok(Emitted::default())
+//! #     }
+//! # }
+//! fn main() -> Result<(), ServeError> {
+//!     serve(Plugin::new(MyTarget))
+//! }
+//! ```
+//!
+//! A plugin that also drives the real tool implements [`Runner`] and adds it
+//! with [`Plugin::with_runner`].
 
 // A refusal carries its position, resource and hint by value. Emit runs once
 // per target, so the size of the error path is not worth boxing the contract.
 #![allow(clippy::result_large_err)]
 
+mod run;
+mod serve;
 mod types;
 pub mod wire;
 
@@ -35,7 +54,12 @@ pub mod pb {
     tonic::include_proto!("meridian.plugin.v1");
 }
 
-pub use meridian_value::{canonical_map, Value};
+pub use meridian_value::{canonical_map, decode_map, decode_value, Value};
+pub use run::{
+    Applied, Category, Change, ChangeAction, Log, LogLine, LogStream, NoLog, Operations, Output,
+    Plan, RunContext, RunError, Runner,
+};
+pub use serve::{serve, Plugin, ServeError};
 pub use types::{
     Artifact, Capabilities, CompileError, Data, Edge, EdgeKind, Emitted, Emitter, Position,
     Resource, ResourceGraph, Warning,
@@ -47,7 +71,10 @@ pub use types::{
 /// It is a separate number from the SDK's release version on purpose: the SDK
 /// gains helpers far more often than the wire format changes, and a plugin
 /// built against an older SDK stays loadable for as long as this number holds.
-pub const PROTOCOL_VERSION: u32 = 1;
+///
+/// Version 2 added the plugin's category and operations to `Describe`, and
+/// the `Runner` service.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The SDK release a plugin was compiled against. It is reported over the
 /// handshake, not inferred by the host, so a version mismatch is a fact the

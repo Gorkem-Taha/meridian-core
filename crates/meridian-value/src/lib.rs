@@ -99,6 +99,16 @@ impl Value {
     }
 }
 
+/// Reads one JSON value, keeping integers as integers. Empty input is null.
+pub fn decode_value(json: &[u8]) -> Result<Value, String> {
+    if json.is_empty() {
+        return Ok(Value::Null);
+    }
+    serde_json::from_slice::<serde_json::Value>(json)
+        .map(Value::from)
+        .map_err(|e| format!("decoding a value: {e}"))
+}
+
 /// Decodes the JSON object a params or data map crosses the wire as. Empty
 /// input is an empty map, so the receiving side never has to tell "absent"
 /// from "empty".
