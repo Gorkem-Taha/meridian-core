@@ -611,8 +611,6 @@ fn everything_under(dir: &Path) -> Vec<(PathBuf, String)> {
 /// a password manager.
 #[test]
 fn secrets_decide_an_example_and_are_written_nowhere() {
-    use std::os::unix::fs::PermissionsExt;
-
     let example = repo_root().join(DECIDED_BY_A_SECRET[0]);
     let source = fs::read_to_string(&example).unwrap();
     let data = &data_sets(&example)[0];
@@ -641,7 +639,12 @@ fn secrets_decide_an_example_and_are_written_nowhere() {
         if let Some(license) = machine.license {
             let path = dir.join("license.key");
             fs::write(&path, format!("{license}\n")).unwrap();
-            fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            // Only Unix has a mode to keep the file private with.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+            }
         }
 
         let meridian = |command: &str| {
