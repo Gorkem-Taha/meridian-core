@@ -46,7 +46,15 @@ impl ImportFormat {
 
     /// Whether a file's base name matches one of the format's patterns.
     pub fn matches(&self, file_name: &str) -> bool {
-        self.patterns.iter().any(|p| glob(p, file_name))
+        self.matching(file_name).next().is_some()
+    }
+
+    /// The patterns of the format that a file's base name matches.
+    pub fn matching<'a>(&'a self, file_name: &'a str) -> impl Iterator<Item = &'a str> {
+        self.patterns
+            .iter()
+            .map(String::as_str)
+            .filter(move |p| glob(p, file_name))
     }
 }
 

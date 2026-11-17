@@ -600,6 +600,7 @@ name = "meridian-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "meridian-import",
  "meridian-ir",
  "meridian-orchestrator",
  "meridian-plugin-host",
