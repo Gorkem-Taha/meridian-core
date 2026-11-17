@@ -40,9 +40,15 @@ impl Listening {
             );
             // The name only has to be unused. Creating the first instance
             // fails if a pipe of that name already exists, so a guessed name
-            // cannot be used to stand between the plugin and its host, and
-            // the pipe's default access lets only this user (and the system)
-            // open it for writing.
+            // cannot be used to stand between the plugin and its host.
+            //
+            // The pipe has Windows' default access: this user, administrators
+            // and the system may write to it, and every local account may
+            // open it for reading. A request needs writing, so another
+            // account cannot ask the plugin for anything; what it can do is
+            // open the pipe and hold a connection that says nothing.
+            // Narrowing that to this user alone takes an explicit security
+            // descriptor, which needs `unsafe` code this workspace forbids.
             match first_instance(&name) {
                 Ok(server) => {
                     let (connections, incoming) = mpsc::channel(16);
