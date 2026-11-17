@@ -79,6 +79,7 @@ The core is a Cargo workspace under `crates/`:
 - `meridian-resolve` — hierarchical data resolution
 - `meridian-module` — modules: the `meridian.yaml` manifest, path, git and OCI registry sources, version
   resolution, `meridian.lock` and the content hash every pinned module is checked against
+- `meridian-rules` — [compile rules](docs/concepts/compile-rules.md): policies checked over the layers of a hierarchy before anything is compiled, such as "a more specific layer may not change a variable or a secret a less specific layer set"
 - `meridian-graph` — dependency graph and topological sort
 - `meridian-ast` — the target-agnostic resource tree every plugin consumes
 - `meridian-value` — the dynamic value type and its canonical JSON form, shared by the core and the SDK
@@ -122,6 +123,9 @@ compare the output byte for byte with the golden files in `plugins/<name>/testda
 Refusals are golden files too, because the wording an operator reads is output like any
 other. Set `UPDATE_GOLDEN=1` to record them after a deliberate change. The runners are
 tested against stand-ins for the tools, so the suite needs nothing installed but Rust.
+Seventeen of the eighteen targets are also tested against the tool itself, each in a
+workflow of its own: [Real-tool tests](docs/contributing/real-tool-tests.md) lists what
+each one runs and what it cannot prove.
 
 ## Contributing
 

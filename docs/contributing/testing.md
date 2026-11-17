@@ -24,7 +24,7 @@ flowchart TD
 | Conformance tests | `crates/meridian-cli/tests/conformance.rs` | `cargo test -p meridian-cli --test conformance` |
 | Robustness tests | `crates/meridian-cli/tests/robustness.rs` | `cargo test -p meridian-cli --test robustness` |
 | Examples | `crates/meridian-cli/tests/examples.rs` | `cargo test -p meridian-cli --test examples` |
-| Real tools | a workflow per tool under `.github/workflows/` | in CI; each target's page says how |
+| Real tools | a workflow per tool under `.github/workflows/` | in CI; [Real-tool tests](real-tool-tests.md) lists what each one runs and how to run it yourself |
 
 Everything except the real-tool workflows runs with `cargo test --workspace`,
 needs no tool installed, and takes a few minutes.
@@ -41,6 +41,25 @@ as closely as the output is.
 `tests/run.rs` tests the runner against a stand-in: a shell script that takes
 the tool's place, sees its real arguments and working directory, and answers as
 the tool would. [Writing a plugin](writing-a-plugin.md) has both in detail.
+
+### A table for every validation rule
+
+Some of a plugin's validation rules cannot be reached from a document: the
+earlier stages never produce a model that breaks them, and the rule is there
+for a tree assembled some other way. A test in `tests/compile.rs` cannot break
+those, so each plugin's `src/validate.rs` ends with a test module that builds
+the stage's own model and has two tables.
+
+| Test | What it holds |
+|---|---|
+| `each_rule_refuses_the_one_mistake_it_is_for` | one row for each way to break each rule: the rule's name, the resource the refusal must name, and one change to a model the stage accepts. The refusal must also carry the target and the resource's line |
+| `what_looks_alike_but_is_allowed_is_accepted` | models a reader might expect to be refused and are not: one provider twice under two aliases, a user and a group of one name, one object name in two namespaces |
+
+A rule about names has a table of its own, of names accepted and names
+refused, with the longest allowed and the first too long. A rule that warns
+and does not refuse is tested for the warning and for the cases that stay
+quiet. When you add a rule, add its rows; a rule with no row is a rule nothing
+holds in place.
 
 ## Property tests
 

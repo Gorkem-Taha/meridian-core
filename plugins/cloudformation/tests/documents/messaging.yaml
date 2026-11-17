@@ -1,0 +1,45 @@
+# A queue, a topic and a parameter that records the queue: cheap resources
+# that an AWS emulator such as LocalStack creates for real.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: messaging
+spec:
+  target: cloudformation
+  resources:
+    - id: deployment
+      type: stack
+      params:
+        name: meridian-real
+        region: us-east-1
+
+    - id: jobs
+      type: AWS::SQS::Queue
+      params:
+        QueueName: meridian-real-jobs
+        VisibilityTimeout: 30
+
+    - id: alerts
+      type: AWS::SNS::Topic
+      params:
+        TopicName: meridian-real-alerts
+      # Nothing in the properties says so, so this becomes DependsOn.
+      dependsOn:
+        - resource: jobs
+
+    - id: jobs_queue_name
+      type: AWS::SSM::Parameter
+      params:
+        Name: /meridian-real/jobs-queue
+        Type: String
+        Value: ${jobs.QueueName}
+
+  outputs:
+    - name: queue_arn
+      value: ${jobs.Arn}
+    - name: queue_name
+      value: ${jobs.QueueName}
+    - name: recorded_in
+      value: ${jobs_queue_name}
+    - name: topic
+      value: topic ${alerts.TopicName} in ${AWS::Region}

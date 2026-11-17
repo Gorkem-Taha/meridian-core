@@ -206,3 +206,25 @@ fn outputs_need_an_earlier_apply() {
     let outputs = aws.outputs(&context(&dir)).unwrap();
     assert_eq!(outputs[0].name, "web_vm_ip");
 }
+
+#[test]
+fn a_refused_change_set_takes_the_stack_it_left_in_review_with_it() {
+    let dir = scratch(TMP, "refused");
+    // As LocalStack answers: the request is refused, and the stack exists
+    // afterwards all the same, in review.
+    let cases = format!(
+        "describe-stacks) if [ -f \"{dir}/refused\" ]; then echo '{{\"Stacks\":[{{\"StackStatus\":\"REVIEW_IN_PROGRESS\"}}]}}'; else echo 'Stack with id web-vm does not exist' >&2; exit 254; fi ;;\n\
+         create-change-set) touch \"{dir}/refused\"; echo 'An error occurred (ValidationError) when calling the CreateChangeSet operation: Template format error: Unresolved resource dependencies [Nowhere] in the Resources block of the template' >&2; exit 254 ;;",
+        dir = dir.display()
+    );
+    let err = runner(&dir, &cases)
+        .plan(&context(&dir), &compiled(), &KeptLog::default())
+        .unwrap_err();
+    assert_eq!(err.msg, "aws could not create a change set");
+    assert!(err.output.contains("[Nowhere]"), "{}", err.output);
+    let calls = calls(&dir);
+    assert_eq!(
+        calls[calls.len() - 2..],
+        ["describe-stacks --output json", "delete-stack"]
+    );
+}

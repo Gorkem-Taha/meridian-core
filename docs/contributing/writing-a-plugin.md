@@ -250,6 +250,10 @@ would reject, two resources claiming one thing, a required pairing. The aim is
 that a document the tool would refuse is refused here instead, before anything
 runs, with the author's line number.
 
+Each rule has a row in the table at the end of the file, which breaks it once
+and checks the refusal; see
+[a table for every validation rule](testing.md#a-table-for-every-validation-rule).
+
 ### emit.rs
 
 Serialises the model to files, and does nothing else. It cannot fail, because
@@ -354,9 +358,11 @@ about what the tool says.
 
 **Real-tool tests** are welcome but not required for a first pull request. If
 you add one, gate it behind an environment variable and give it its own
-workflow file, as [`cloud-init.yml`](../../.github/workflows/cloud-init.yml)
-and [`podman.yml`](../../.github/workflows/podman.yml) do. A plugin that has
-only been tested against a stand-in must say so on its documentation page.
+workflow file, as [`terraform.yml`](../../.github/workflows/terraform.yml)
+and [`kubernetes.yml`](../../.github/workflows/kubernetes.yml) do.
+[Real-tool tests](real-tool-tests.md) gives the shape one should have and lists
+the existing ones. A plugin that has only been tested against a stand-in must
+say so on its documentation page.
 
 ## Step 7: documentation
 
