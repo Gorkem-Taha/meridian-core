@@ -1,4 +1,4 @@
-# The Salt plugin
+# Target: `salt`
 
 <img src="../branding/logos/meridian-salt.svg" width="72" alt="Meridian Salt plugin logo">
 
@@ -16,7 +16,7 @@ on it.
 | Operations | plan, apply |
 | Notifications | native: Salt's `watch` and `onchanges` requisites |
 | Runtime conditions | yes: a Jinja test the minion evaluates when it renders the file |
-| Resource types | `exec`, `file`, `group`, `package`, `service`, `user` |
+| Resource types | `exec`, `file`, `group`, `package`, `service`, `user` ([reference](../reference/resource-types.md)) |
 
 Contents: [Quick start](#quick-start) ·
 [A worked example](#a-worked-example) ·
@@ -67,11 +67,11 @@ nothing installed on the host but Python.
 
 ## A worked example
 
-[`examples/salt-web.yaml`](examples/salt-web.yaml) describes a small web server:
+[`examples/salt/web-server.yaml`](../../examples/salt/web-server.yaml) describes a small web server:
 
 ```yaml
 # A web server, described once. The Salt plugin compiles it to a state file
-# and a top file; the guide in ../salt.md walks through the result.
+# and a top file; the guide in docs/targets/salt.md walks through the result.
 apiVersion: meridian/v1
 kind: ResourceSet
 metadata:

@@ -49,7 +49,7 @@ byte. The reasons, the layout and the order of work are in
 
 | Targets | |
 |---|---|
-| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md) |
+| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md), [salt](targets/salt.md) |
 | Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
 | Containers | [docker](targets/docker.md), [kubernetes](targets/kubernetes.md) |
 

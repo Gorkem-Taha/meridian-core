@@ -112,7 +112,7 @@ fn salt_accepts_what_every_fixture_compiles_to() {
     let Some(runner) = privileged(&dir) else {
         return;
     };
-    let example = "docs/plugins/examples/salt-web.yaml";
+    let example = "examples/salt/web-server.yaml";
     for name in [
         "accounts",
         "restart_chain",

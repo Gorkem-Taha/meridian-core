@@ -12,7 +12,8 @@ on:
       - plugins/salt/**
       - crates/**
       - fixtures/**
-      - docs/plugins/**
+      - docs/targets/salt.md
+      - examples/salt/**
       - Cargo.toml
       - Cargo.lock
       - .github/workflows/salt.yml

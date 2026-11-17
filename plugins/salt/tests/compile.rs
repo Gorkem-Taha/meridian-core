@@ -25,7 +25,7 @@ const FIXTURES: &[&str] = &[
 ];
 
 const SLS: &str = "states/web.sls";
-const EXAMPLE: &str = "docs/plugins/examples/salt-web.yaml";
+const EXAMPLE: &str = "examples/salt/web-server.yaml";
 
 fn emit(graph: &ResourceGraph) -> Result<Emitted, CompileError> {
     Salt.emit(graph, &Data::new())
@@ -83,11 +83,11 @@ fn the_guides_example_compiles_to_what_the_guide_shows() {
     assert!(emitted.warnings.is_empty(), "{:?}", emitted.warnings);
     assert_golden(&golden, "example", &emitted);
 
-    let guide = std::fs::read_to_string(repo_root().join("docs/plugins/salt.md")).unwrap();
+    let guide = std::fs::read_to_string(repo_root().join("docs/targets/salt.md")).unwrap();
     for text in emitted.artifact.files.values() {
         assert!(
             guide.contains(text.as_str()),
-            "docs/plugins/salt.md does not show the compiled example:\n{text}"
+            "docs/targets/salt.md does not show the compiled example:\n{text}"
         );
     }
 }

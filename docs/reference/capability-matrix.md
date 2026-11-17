@@ -27,4 +27,5 @@ compiled, with the reason. Each target's own page says how it does what it can.
 | [dsc](../targets/dsc.md) | configuration-management | `‹Module›/‹Resource›`, `runner` | native | yes | yes | yes | no |
 | [kubernetes](../targets/kubernetes.md) | container-orchestration | `‹apiVersion›/‹Kind›`, `cluster` | synthetic | no | yes | yes | yes |
 | [puppet](../targets/puppet.md) | configuration-management | `exec`, `file`, `group`, `package`, `service`, `user` | native | no | yes | yes | no |
+| [salt](../targets/salt.md) | configuration-management | `exec`, `file`, `group`, `package`, `service`, `user` | native | yes | yes | yes | no |
 | [terraform](../targets/terraform.md) | infrastructure-as-code | `‹provider›_‹type›`, `backend`, `data.‹type›`, `module`, `provider` | synthetic | no | yes | yes | yes |

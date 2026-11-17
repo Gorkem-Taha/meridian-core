@@ -1,5 +1,5 @@
 # A web server, described once. The Salt plugin compiles it to a state file
-# and a top file; the guide in ../salt.md walks through the result.
+# and a top file; the guide in docs/targets/salt.md walks through the result.
 apiVersion: meridian/v1
 kind: ResourceSet
 metadata:

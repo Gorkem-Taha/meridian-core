@@ -614,6 +614,7 @@ dependencies = [
  "meridian-target-fake",
  "meridian-target-kubernetes",
  "meridian-target-puppet",
+ "meridian-target-salt",
  "meridian-target-terraform",
 ]
 
