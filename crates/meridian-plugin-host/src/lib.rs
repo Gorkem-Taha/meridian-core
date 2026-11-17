@@ -62,6 +62,9 @@ pub struct Info {
     /// The versions of its tool the target compiles for; empty when it does
     /// not say.
     pub target_versions: Vec<String>,
+    /// What each resource type takes, as the target describes it for
+    /// editors; empty when it does not say.
+    pub resource_schemas: Vec<meridian_sdk::ResourceSchema>,
     /// The kinds of existing configuration the target can turn into Meridian
     /// documents; empty when it does not import.
     pub import_formats: Vec<ImportFormat>,

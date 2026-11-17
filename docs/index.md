@@ -55,9 +55,20 @@ byte. The reasons, the layout and the order of work are in
 | [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
 | [How a secret is held in memory](concepts/secrets-in-memory.md) | locked, wiped memory, the hardened process, how a secret reaches a tool, and what is not promised |
 
+| Editor and authoring tools | |
+|---|---|
+| [Overview](tooling/index.md) | what the tools are, and why they never disagree with the compiler |
+| [The language server](tooling/language-server.md) | completion, hover documentation, errors as you type, navigation |
+| [Visual Studio Code](tooling/vscode.md) | the extension: install, settings, commands |
+| [Other editors](tooling/other-editors.md) | Neovim, Helix, Emacs, and pre-commit |
+| [The formatter](tooling/formatter.md) | `meridian fmt`: one layout, and the guarantee that it changes nothing else |
+| [The linter](tooling/linter.md) | `meridian lint`: every error in a project, plus probable mistakes |
+| [The JSON Schema](tooling/json-schema.md) | `meridian schema`: validation for editors that only know YAML |
+
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [Lint rules](reference/lint.md) | every rule of `meridian lint`, with an example and what to do |
 | [Plugin signatures](reference/plugin-signatures.md) | how `meridian` decides a plugin may be started, trusting a plugin from elsewhere, and signing your own |
 | [Policy checks](reference/policy.md) | asking a policy before a change is made: the options, the input a policy sees, Rego with Open Policy Agent, and how to write an engine |
 | [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |

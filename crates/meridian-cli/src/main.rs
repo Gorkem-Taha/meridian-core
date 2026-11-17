@@ -5,6 +5,8 @@
 //! own output and errors, and the exit status says whether everything asked
 //! for was done.
 
+mod tools;
+
 use std::collections::BTreeMap;
 mod import;
 
@@ -188,6 +190,14 @@ enum Command {
     /// Show every version this build carries: core, language, SDK and
     /// plugin protocol
     Version,
+    /// Rewrite documents in the one standard layout, changing no value
+    Fmt(tools::FmtArgs),
+    /// Report errors, and things that compile but are probably mistakes
+    Lint(tools::LintArgs),
+    /// Print a JSON Schema of the document language, for YAML editors
+    Schema(tools::SchemaArgs),
+    /// Run the language server, for editors, on standard input and output
+    Lsp(tools::LspArgs),
     /// Make signing keys, sign plugin binaries and check their signatures
     Signing {
         #[command(subcommand)]
@@ -367,7 +377,7 @@ impl TrustedKeys {
 const PATH_LIST_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
 
 #[derive(Args)]
-struct PluginDirs {
+pub(crate) struct PluginDirs {
     /// A directory to look for plugins in; may be given more than once.
     /// Defaults to the directory the meridian binary is in
     #[arg(
@@ -376,7 +386,7 @@ struct PluginDirs {
         env = "MERIDIAN_PLUGIN_DIR",
         value_delimiter = PATH_LIST_SEPARATOR
     )]
-    dirs: Vec<PathBuf>,
+    pub(crate) dirs: Vec<PathBuf>,
     /// What to do about plugin signatures: off (do not look), warn (start an
     /// unsigned or wrongly signed plugin, and say so) or require (start only
     /// plugins signed by a trusted key). Defaults to require in a released
@@ -592,6 +602,10 @@ fn main() -> ExitCode {
             print!("{}", versions());
             Ok(())
         }
+        Command::Fmt(args) => tools::format(&args),
+        Command::Lint(args) => tools::lint(&args),
+        Command::Schema(args) => tools::schema(&args),
+        Command::Lsp(args) => tools::lsp(&args),
         Command::Signing { command } => signing(command),
     };
     match outcome {
@@ -605,7 +619,7 @@ fn main() -> ExitCode {
     }
 }
 
-enum Failure {
+pub(crate) enum Failure {
     /// Something to print.
     Message(String),
     /// Already printed, stage by stage.
@@ -614,7 +628,7 @@ enum Failure {
     Drifted,
 }
 
-fn count(n: usize, noun: &str) -> String {
+pub(crate) fn count(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("1 {noun}")
     } else {
@@ -947,7 +961,7 @@ fn push_module(
 
 /// Reads the `--data` files into one map. Each file is a mapping; a key in a
 /// later file replaces the same key from an earlier one, whole.
-fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
+pub(crate) fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
     let mut data = Data::new();
     for file in &in_modules(files, state_dir)? {
         let name = file.to_string_lossy();
@@ -1055,7 +1069,7 @@ fn check_rules(
 /// Applies the `--set key=value` options to the data, in the order given.
 /// A dotted key sets a value inside a mapping, creating the mappings on the
 /// way; the other keys of those mappings are kept.
-fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
+pub(crate) fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
     use meridian_ir::Value;
     for set in sets {
         let refuse = |why: &str| Failure::Message(format!("--set {set}: {why}"));
@@ -1130,7 +1144,7 @@ fn backend(state: &State) -> Result<Arc<dyn Backend>, Failure> {
         .map_err(Failure::Message)
 }
 
-fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
+pub(crate) fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = plugin_dirs(plugins);
     let options = StartOptions {
         verification: plugins.verification()?,
