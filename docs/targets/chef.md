@@ -87,6 +87,10 @@ Chosen by the document's host:
 Changes are read from chef-client's report. `chef-run` does not say which
 resources it changed, so an apply through it reports success without a list.
 
-This plugin's runner has been tested against stand-ins for the Chef tools, and
-its recipes pass a Ruby syntax check. It has not yet been run against a real
-Chef installation.
+The runner is tested against a real Chef client (Cinc Client 18, the community
+build of Chef Infra Client) in local mode on every pull request that touches
+it: a why-run plan, a converge checked on disk, a second plan that is in sync,
+a notification, a `runtimeWhen` guard, a failing command, and, as root, a
+package, a group, a user and a service. Running against a Chef server, and
+`knife` and `chef-run` reaching another machine, have only met stand-ins. See
+[Real-tool tests](../contributing/real-tool-tests.md).

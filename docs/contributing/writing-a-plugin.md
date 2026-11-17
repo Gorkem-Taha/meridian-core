@@ -354,9 +354,11 @@ about what the tool says.
 
 **Real-tool tests** are welcome but not required for a first pull request. If
 you add one, gate it behind an environment variable and give it its own
-workflow file, as [`cloud-init.yml`](../../.github/workflows/cloud-init.yml)
-and [`podman.yml`](../../.github/workflows/podman.yml) do. A plugin that has
-only been tested against a stand-in must say so on its documentation page.
+workflow file, as [`terraform.yml`](../../.github/workflows/terraform.yml)
+and [`kubernetes.yml`](../../.github/workflows/kubernetes.yml) do.
+[Real-tool tests](real-tool-tests.md) gives the shape one should have and lists
+the existing ones. A plugin that has only been tested against a stand-in must
+say so on its documentation page.
 
 ## Step 7: documentation
 

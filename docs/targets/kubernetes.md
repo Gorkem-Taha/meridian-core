@@ -127,5 +127,9 @@ One limit of the plan: nothing is stored in a dry run, so objects that go in a
 namespace the same document creates cannot be previewed until the namespace
 exists. Meridian reports that plan as unknown instead of failing it.
 
-The runner has been tested against a stand-in for `kubectl`. It has not yet been
-run against a real cluster.
+The runner is tested against a real `kubectl` and a [kind](https://kind.sigs.k8s.io)
+cluster on every pull request that touches it: a plan against an empty cluster,
+an apply checked with `kubectl get`, a second plan that is in sync, a changed
+ConfigMap that restarts the Deployment it notifies, and a manifest the API
+server refuses. A managed cluster and admission webhooks have not been run this
+way. See [Real-tool tests](../contributing/real-tool-tests.md).

@@ -38,7 +38,7 @@ Two rules keep a green job honest:
 | `cloud-init` | `cloud-init.yml` | `cloud-init schema` | `MERIDIAN_TEST_REAL_CLOUD_INIT=1` |
 | `cloudformation` | `cloudformation.yml` | the `aws` command against [LocalStack](#cloudformation) | `MERIDIAN_TEST_REAL_CLOUDFORMATION=1` |
 | `docker` | `docker.yml` | the Docker daemon and Compose | `MERIDIAN_REAL_DOCKER=1` |
-| `dsc` | `dsc.yml` | PowerShell, DscPipelineRunner, DSC v2 and DSC v3, [on Linux and on Windows](#dsc) | `MERIDIAN_TEST_REAL_DSC=1` |
+| `dsc` | `dsc.yml` | PowerShell, DscPipelineRunner and DSC v3 on Linux; DSC v2 and DSC v3 [on Windows](#dsc) | `MERIDIAN_TEST_REAL_DSC=1` |
 | `helm` | `helm.yml` | `helm`, `kustomize` and a kind cluster | `-- --ignored` |
 | `kubernetes` | `kubernetes.yml` | `kubectl` and a kind cluster | `MERIDIAN_TEST_REAL_KUBECTL=1` |
 | `opentofu` | `opentofu.yml` | `tofu` | `MERIDIAN_TEST_TOFU=tofu` |
@@ -148,7 +148,10 @@ The `dsc` workflow has two halves.
 
 **On Linux**, `plugins/dsc/tests/real.rs` runs the plugin's own runner against a real
 PowerShell, the DscPipelineRunner module as published on the PowerShell Gallery, and
-both engines: `Invoke-DscResource` for DSC v2 and the `dsc` command for DSC v3. The
+the `dsc` command for DSC v3. DSC v2 (`Invoke-DscResource`) does not work on Linux, where
+PowerShell has no `libmi`, so it is tested on Windows only; set
+`MERIDIAN_TEST_REAL_DSC_V3=1` or `MERIDIAN_TEST_REAL_DSC_V2=1` beside the switch to say
+which engines the machine has. The
 resource is `MeridianTestDsc/MarkerFile`, a small class-based DSC resource kept beside the
 tests (`plugins/dsc/tests/modules`), whose state is a file in the test's scratch
 directory. It records every `Set`, which is how the tests prove that a `refresh` notify
