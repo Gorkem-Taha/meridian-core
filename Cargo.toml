@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "plugins/ansible", "plugins/puppet", "plugins/terraform", "plugins/cloudformation", "plugins/bicep"]
+members = ["crates/*", "plugins/ansible", "plugins/puppet", "plugins/terraform", "plugins/cloudformation", "plugins/bicep", "plugins/kubernetes"]
 
 [workspace.package]
 version = "0.1.0"
