@@ -1,8 +1,8 @@
 # Meridian
 
-Meridian is a unified configuration DSL that compiles to Ansible, Puppet, Chef, DSC,
-Terraform, and ARM — write once, target any configuration management or
-infrastructure-as-code backend.
+Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
+Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
+you chose to plan and apply it.
 
 ## Honest scope statement
 
@@ -26,11 +26,36 @@ byte. The reasons, the layout and the order of work are in
 [design plan §11](plans/design-plan.md#11-system-architecture-rust) and
 [§12.1](plans/design-plan.md#121-rust-migration-sequencing).
 
-## Plugins
+## User documentation
 
-| Plugin | Category | Guide |
-|---|---|---|
-| Podman | containerization | [Podman plugin](plugins/podman.md) |
+| Start here | |
+|---|---|
+| [Install](quickstart/install.md) | build Meridian, and what each target needs |
+| [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
+| [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
+
+| Concepts | |
+|---|---|
+| [Documents, resources and targets](concepts/ir-overview.md) | the two kinds of document, and the two families of resource types |
+| [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
+| [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
+| [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+
+| Reference | |
+|---|---|
+| [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec` |
+| [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
+
+| Targets | |
+|---|---|
+| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md) |
+| Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
+| Containers | [docker](targets/docker.md), [podman](targets/podman.md), [kubernetes](targets/kubernetes.md) |
+
+Every target page opens with what the target does and does not support. Every example the
+pages show is a file under [`examples/`](../examples) that a test compiles with the real
+plugins.
 
 ## Planning documents
 

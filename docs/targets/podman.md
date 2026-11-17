@@ -1,15 +1,24 @@
-# Podman plugin
+# Target: `podman`
 
 <img src="../branding/logos/meridian-podman.svg" width="72" alt="Meridian Podman plugin logo">
 
+Compiles a document into Podman
+[Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) unit files
+and has systemd run them, on this machine or on another over `ssh`.
+
+## What it does and does not support
+
 | | |
 |---|---|
-| Target name | `podman` |
-| Category | containerization |
-| Compiles to | [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) unit files, one per resource |
-| Runs with | `systemctl` and `podman`, on this machine or over `ssh` |
-| Operations | plan, apply, outputs |
-| Needs on the host | Linux with systemd, and Podman 4.4 or later (5.0 for pods, 5.2 for builds) |
+| Resource types | the kinds of Quadlet unit: `container`, `pod`, `kube`, `volume`, `network`, `image`, `build` |
+| `dependsOn` | `Requires=` and `After=`, left out where a reference already orders the units |
+| `notifies` | The action `restart`, native: systemd's `PartOf=`. See [Wiring resources together](#wiring-resources-together) |
+| `runtimeWhen` | No. Refused; use a `Condition*=` setting under `unit` |
+| `state: absent` | No. Remove the resource from the document; the next apply stops and removes its unit |
+| Plan | Yes: an exact comparison of unit files, plus a check by the host's own Quadlet |
+| Outputs | Yes: names known at compile time, or a path into `podman inspect` |
+| Documents | Infrastructure (this machine) and ResourceSet (its `targetHost`, over `ssh`) |
+| Needs on the host | Linux with systemd, and Podman 4.4 or later (4.8 for image units, 5.0 for pods, 5.2 for builds) |
 
 Podman has no daemon and no `apply` command. Its declarative form is Quadlet: you write a
 small unit file for a container, and systemd turns it into a service that runs `podman`.

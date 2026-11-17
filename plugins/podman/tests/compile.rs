@@ -538,7 +538,7 @@ fn guide_block(guide: &str, language: &str) -> String {
 #[test]
 fn the_guides_first_document_compiles_to_the_unit_the_guide_shows() {
     let guide = std::fs::read_to_string(
-        meridian_plugin_testkit::repo_root().join("docs/plugins/podman.md"),
+        meridian_plugin_testkit::repo_root().join("docs/targets/podman.md"),
     )
     .unwrap();
     let emitted = emit(&graph_from_text(

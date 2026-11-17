@@ -16,9 +16,21 @@ start with the [design plan](docs/plans/design-plan.md).
 
 | Plugin | Category | Compiles to | Runs with |
 |---|---|---|---|
-| `ansible` | configuration management | `playbook.yml`, `inventory.ini` | `ansible-playbook` |
-| `puppet` | configuration management | `manifests/init.pp`, `site.pp` | `puppet apply`, or `bolt apply` for another host |
-| [`podman`](docs/plugins/podman.md) | containerization | Quadlet units: `<id>.container`, `.pod`, `.volume`, `.network`, `.image`, `.build`, `.kube` | `systemctl` and `podman`, over `ssh` for another host |
+| [`ansible`](docs/targets/ansible.md) | configuration management | a playbook and inventory | `ansible-playbook` |
+| [`puppet`](docs/targets/puppet.md) | configuration management | a class and node statement | `puppet apply`, or `bolt apply` for another host |
+| [`chef`](docs/targets/chef.md) | configuration management | a cookbook | `chef-client`, or `chef-run` for another host |
+| [`dsc`](docs/targets/dsc.md) | configuration management | a DscPipelineRunner configuration | `Invoke-DscRunner` (DSC v2 and v3) |
+| [`terraform`](docs/targets/terraform.md) | infrastructure as code | `main.tf.json` | `terraform`, or `tofu` |
+| [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
+| [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
+| [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
+| [`podman`](docs/targets/podman.md) | containerization | Quadlet units | `systemctl` and `podman`, over `ssh` for another host |
+| [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
+
+What each can and cannot express is in the generated
+[capability matrix](docs/reference/capability-matrix.md). To get started, read the
+[quickstart](docs/quickstart/install.md); there is a worked example for every plugin under
+[`examples/`](examples).
 
 ## The `meridian` command
 
