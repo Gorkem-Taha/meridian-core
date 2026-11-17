@@ -16,8 +16,8 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use meridian_ir::Bundle;
 use meridian_orchestrator::{
     lock, record, run_selected, selected, Backend, Drift, Event, ExecBackend, LocalBackend, Mode,
-    Observer, OnFailure, Options, Outcome, Resume, RollbackOutcome, RollbackReport, RunRecord,
-    Selector, StageId, StageReport, MASK,
+    Observer, OnFailure, Options, Outcome, Policy, Resume, RollbackOutcome, RollbackReport,
+    RunRecord, Selector, StageId, StageReport, MASK, REASON_POLICY_DENIED,
 };
 use meridian_plugin_host::{Registry, StartOptions};
 use meridian_report::sink::{self, Dispatcher};
@@ -251,6 +251,16 @@ struct Workflow {
     /// replace an earlier file's
     #[arg(long, value_name = "FILE")]
     data: Vec<PathBuf>,
+    /// A policy file or directory that plan and apply check every stage
+    /// against before anything is applied; may be given more than once. A
+    /// change the policy denies, or a policy that cannot be asked, fails
+    /// the run
+    #[arg(long, value_name = "PATH")]
+    policy: Vec<PathBuf>,
+    /// The engine that reads the policies: the program
+    /// meridian-policy-<NAME> in a plugin directory
+    #[arg(long, value_name = "NAME", env = "MERIDIAN_POLICY_ENGINE", default_value = meridian_orchestrator::policy::DEFAULT_ENGINE)]
+    policy_engine: String,
 }
 
 fn main() -> ExitCode {
@@ -537,6 +547,27 @@ fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Fai
     if how.rollback_on_failure {
         command.push("--on-failure rollback".to_owned());
     }
+    for path in &workflow.policy {
+        command.push(format!("--policy {}", path.display()));
+    }
+    let policy = if workflow.policy.is_empty() {
+        None
+    } else if !matches!(mode, Mode::Plan | Mode::Apply) {
+        // Saying nothing would read as "checked".
+        return Err(Failure::Message(format!(
+            "--policy is checked by plan and apply, and {} asks no policy; remove it",
+            mode.as_str()
+        )));
+    } else {
+        Some(
+            Policy::find(
+                &workflow.policy_engine,
+                &plugin_dirs(&workflow.state.plugins),
+                workflow.policy.clone(),
+            )
+            .map_err(Failure::Message)?,
+        )
+    };
     let options = Options {
         data,
         // Compiling keeps no record, so it needs no backend to be there.
@@ -562,6 +593,7 @@ fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Fai
             None => Resume::Last,
             Some(id) => Resume::Run(id.to_owned()),
         },
+        policy,
         ..Options::new(&workflow.state.state_dir)
     };
     let registry = registry(&workflow.state.plugins)?;
@@ -627,7 +659,22 @@ fn orchestrate(workflow: &Workflow, mode: Mode, how: &How<'_>) -> Result<(), Fai
         }
     }
     if !report.succeeded() {
-        if mode == Mode::Apply && report.rollbacks.is_empty() {
+        let failed: Vec<&StageReport> = report
+            .stages
+            .iter()
+            .filter(|s| matches!(s.outcome, Outcome::Failed(_)))
+            .collect();
+        let denied = !failed.is_empty() && failed.iter().all(|s| s.reason == REASON_POLICY_DENIED);
+        let applied = report
+            .stages
+            .iter()
+            .any(|s| matches!(s.outcome, Outcome::Applied { .. }));
+        if denied && mode == Mode::Apply && !applied {
+            eprintln!(
+                "run {} was stopped by its policy before anything was applied",
+                report.run_id
+            );
+        } else if mode == Mode::Apply && report.rollbacks.is_empty() {
             eprintln!(
                 "run {} failed. Once the cause is fixed, `meridian apply --resume` with the \
                  same documents continues from the stage that failed",
@@ -993,6 +1040,14 @@ impl Printer<'_> {
         )?;
         for warning in &report.warnings {
             writeln!(out, "  warning: {warning}")?;
+        }
+        if let Some(policy) = &report.policy {
+            for warning in &policy.warn {
+                writeln!(out, "  policy warning: {warning}")?;
+            }
+            if policy.allowed() {
+                writeln!(out, "  policy: allowed")?;
+            }
         }
 
         match &report.outcome {

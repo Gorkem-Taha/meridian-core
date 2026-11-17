@@ -167,6 +167,7 @@ A step's `reason`, when it failed:
 | `plugin-failed` | the plugin itself failed: its process died, or the call did |
 | `tool-failed` | the tool said no: it exited non-zero, or could not reach the machine |
 | `state-failed` | the step's working directory could not be prepared |
+| `policy-denied` | the run's [policy](policy.md) does not allow the change, or could not be asked |
 
 ## Events
 
@@ -201,6 +202,8 @@ not change when workflows, fan-out and retries arrive.
 | `resource.planned` | one line of a plan, or of a drift check | `kind`, `resource`, `action` |
 | `resource.changed` | one thing an apply or a rollback changed, including what a failed apply had done before it failed | `kind`, `resource`, `action` |
 | `output.produced` | an apply produced an output | `kind`, `name`, `sensitive`. Never the value |
+| `policy.passed` | the run's [policy](policy.md) allowed the step | `kind`, `denials` (0), `warnings`, `asked`. Counts, never the messages |
+| `policy.denied` | the policy denied the step, or could not be asked | `kind`, `denials`, `warnings`, `asked`: `false` when the engine could not be asked |
 | `step.succeeded` | the step did what was asked | `kind`, `artifact`, `changes`; a plan also has `unknown` |
 | `step.failed` | the step failed | `kind`, `reason`, `artifact`, `changes` |
 | `step.skipped` | the step was not run | `kind`, `reason`: `already-applied` (with `artifact`, `appliedIn`) or `earlier-step-failed` (with `becauseOf`) |

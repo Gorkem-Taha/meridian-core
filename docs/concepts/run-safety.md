@@ -2,14 +2,17 @@
 
 A run that reaches a tool changes real things, takes real time, and can fail
 half way. This page says what Meridian does so that a run can be repeated,
-shared between people, picked up where it stopped, or put back, and how to
-find out whether what was applied is still what is there.
+shared between people, picked up where it stopped, or put back, how to find
+out whether what was applied is still what is there, and how a policy is
+asked whether a change may be made before it is.
 
 ```mermaid
 flowchart TB
     CMD["meridian plan / apply"] --> LOCK{"take the state lock"}
     LOCK -->|"another run holds it"| REFUSED["refused, and told who holds it<br/>nothing is run"]
-    LOCK -->|"taken"| STAGES["run the stages in order"]
+    LOCK -->|"taken"| POLICY{"--policy:<br/>is every change allowed?"}
+    POLICY -->|"no"| DENIED["the run fails<br/>nothing was applied"]
+    POLICY -->|"yes, or no policy"| STAGES["run the stages in order"]
     STAGES -->|"every change of state"| EVENTS["events"]
     EVENTS --> RECORD["the run's record<br/>runs/&lt;id&gt;/run.json<br/>runs/&lt;id&gt;/events.jsonl"]
     STAGES -->|"each apply"| STATE["the run-state<br/>state.json"]
@@ -287,8 +290,71 @@ dry run of the play. A tool with no real preview reports `unknown`. The
 [capability matrix](../reference/capability-matrix.md) says which targets can
 plan.
 
+## Asking a policy first
+
+Everything above is about a change that has been made. A policy is asked
+before: may this change be made at all?
+
+```sh
+meridian plan  site.yaml --policy policies/
+meridian apply site.yaml --policy policies/
+```
+
+```mermaid
+flowchart LR
+    DOC["a stage's document"] --> COMPILE["compile"]
+    COMPILE --> PREVIEW["the tool's preview"]
+    COMPILE --> INPUT
+    PREVIEW --> INPUT["the input:<br/>stage, resources,<br/>compiled files, plan"]
+    INPUT -->|"standard input"| ENGINE["policy engine<br/>meridian-policy-opa"]
+    RULES["your policies<br/>--policy"] --> ENGINE
+    ENGINE --> ANSWER{"deny?"}
+    ANSWER -->|"no"| GO["the stage may be applied<br/>warnings are shown"]
+    ANSWER -->|"yes, or the engine<br/>could not be asked"| NO["the run fails"]
+```
+
+An apply asks about every stage it can before it applies the first one, so a
+change that is not allowed stops the run while there is still nothing to
+undo. A policy is given the stage, its resources, the files it compiled to
+and the tool's own preview of what would change, and answers with reasons to
+deny and things to warn about:
+
+```rego
+package meridian
+
+import rego.v1
+
+deny contains msg if {
+	input.stage.labels.env == "prod"
+	some change in input.plan.changes
+	change.action == "replace"
+	msg := sprintf("%s would be destroyed and recreated in prod", [change.resource])
+}
+```
+
+Three things make it safe to rely on:
+
+- **It fails closed.** A policy engine that is missing, crashes, or answers
+  with something unreadable is a denial. A policy that could not be asked has
+  not said yes.
+- **It is asked about what will run.** The input is the compiled artifact and
+  the tool's preview, not the document's text, so a rule about what Terraform
+  would destroy is a rule about what Terraform says it would destroy.
+- **It leaves no secret behind.** The input goes to the engine on standard
+  input and is never written down. The record keeps that a policy was asked
+  and how it answered, and never the messages, which can quote the input.
+
+A stage that waits on an output of a stage this run has yet to apply cannot
+be asked about up front; it is asked about at its turn. `meridian plan
+--policy` shows every denial and exits `1`, which is how a pipeline refuses a
+merge. The [policy reference](../reference/policy.md) has the input field by
+field, the Rego conventions, and how to write an engine for another policy
+language.
+
 ## What this does not do yet
 
-Policy checks before an apply are designed in
-[the run safety plan](../plans/run-safety.md) and arrive in the pull request
-that follows this one.
+A value still flows only from an Infrastructure document to the ResourceSet
+that names it as its host. Handing a value to any stage, such as cloud-init
+user-data to the document that creates the machine, is designed in
+[the run safety plan](../plans/run-safety.md#9-imports-handing-a-value-to-any-stage)
+and arrives in the pull request that follows this one.

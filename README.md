@@ -69,7 +69,9 @@ A `plan` or `apply` holds a lock on that state, so two runs cannot collide, and 
 recorded: `meridian status` shows the last one step by step, and `meridian apply --resume`
 continues an apply that failed from the stage that failed. `--on-failure rollback` and
 `meridian rollback` put back what an apply changed, and `meridian drift` says whether what was
-applied is still what is there. The record can be kept in a shared place with `--backend`. See
+applied is still what is there. With `--policy`, a `plan` or `apply` first asks a policy, written
+in Rego for Open Policy Agent, whether each change may be made, and an apply that is denied
+applies nothing ([policy checks](docs/reference/policy.md)). The record can be kept in a shared place with `--backend`. See
 [running safely](docs/concepts/run-safety.md).
 
 Every run can also leave a report and tell other systems what it did: `--report junit=FILE`
@@ -99,6 +101,8 @@ The core is a Cargo workspace under `crates/`:
 - `meridian-orchestrator` — runs a workflow: compiles each document, drives its tool through a
   plugin, hands outputs from one stage to the next, and stops on the first failure
 - `meridian-cli` — the `meridian` command
+- `meridian-policy-opa` — the policy engine for Open Policy Agent, which `--policy` asks whether
+  a change may be made
 - `meridian-target-fake` — a small, complete plugin whose tool is a directory, used by the tests
   and readable as a worked example of the SDK
 - `meridian-plugin-testkit` — what the first-party plugins' tests share

@@ -1,0 +1,19 @@
+[package]
+name = "meridian-policy-opa"
+description = "The Meridian policy engine for Open Policy Agent: asks Rego policies whether a change may be made"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-value = { path = "../meridian-value" }
+
+[dev-dependencies]
+meridian-ir = { path = "../meridian-ir" }
+meridian-orchestrator = { path = "../meridian-orchestrator" }
+meridian-plugin-host = { path = "../meridian-plugin-host" }
+meridian-target-fake = { path = "../meridian-target-fake" }
+
+[lints]
+workspace = true

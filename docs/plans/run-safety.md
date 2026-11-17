@@ -89,7 +89,7 @@ The envelope is the language expansion's: `run`, `seq` (strictly increasing),
 | `resource.planned`, `resource.changed` | one line of a plan or an apply | `resource`, `action` |
 | `output.produced` | an output exists | `name`, `sensitive`; never the value |
 | `drift.detected`, `drift.none`, `drift.unknown` | `meridian drift` compared a stage; `unknown` when it could not call it either way | `changes`; for `unknown` a `reason` (`never-applied`, `no-preview`, `document-changed`, `last-apply-failed`) |
-| `policy.passed`, `policy.warned`, `policy.denied` | a policy engine answered for a stage | `engine`, `messages` |
+| `policy.passed`, `policy.denied` | a policy engine answered for a stage, or could not be asked | `denials`, `warnings` (counts), `asked` |
 | `rollback.started`, `rollback.succeeded`, `rollback.failed`, `rollback.unavailable` | a stage is put back | `to` (artifact hash), `reason` |
 | `lock.acquired`, `lock.released` | the lock changes hands | `id` |
 
@@ -289,8 +289,10 @@ A policy answers "may this change be made?" before it is made.
 ```rego
 package meridian
 
-deny[msg] {
-    change := input.plan.changes[_]
+import rego.v1
+
+deny contains msg if {
+    some change in input.plan.changes
     change.action == "replace"
     input.stage.labels.env == "prod"
     msg := sprintf("%s would be destroyed and recreated in prod", [change.resource])
@@ -299,9 +301,13 @@ deny[msg] {
 
 **When it runs.** Before the first apply, every stage that can be compiled is
 compiled, planned and checked. Any `deny` fails the run with nothing applied.
-A stage that cannot be compiled yet, because it waits on an output, is checked
-at its turn, just before its own apply. Under `plan` the decisions are shown
-and a `deny` makes the command fail, so CI can gate a merge.
+A stage that cannot be compiled yet, because it waits on an output, or that
+its tool cannot preview yet, is checked at its turn, just before its own
+apply. Under `plan` the decisions are shown and a `deny` makes the command
+fail, so CI can gate a merge; a plan goes on past a denial so that it shows
+every one. `drift` and `rollback` ask no policy: a rollback puts back what
+was applied before, and a newer policy must not hold a failed change in
+place.
 
 **Failing closed.** An engine that is missing, exits non-zero or answers with
 something unreadable is a denial. A policy that could not be asked has not
@@ -309,8 +315,11 @@ said yes.
 
 **Secrets.** The input holds params and artifact files, which hold whatever
 the document holds. It is handed to the engine on standard input, never
-written to disk and never recorded; only the decision messages are, and they
-are masked.
+written to disk and never recorded. The decision messages are shown on the
+terminal, masked, and are not recorded either, because a message can quote
+the input: the record keeps how many denials and warnings there were. (As
+first written this note recorded the masked messages; building it showed
+that masking only covers values a tool marked sensitive.)
 
 ## 9. Imports: handing a value to any stage
 

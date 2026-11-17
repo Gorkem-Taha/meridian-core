@@ -29,6 +29,8 @@
 //! - an apply that failed can instead put back what it changed
 //!   ([`OnFailure::Rollback`]), and [`Mode::Rollback`] does the same for the
 //!   last apply on request;
+//! - a [policy](policy) is asked whether each change may be made, before
+//!   the first one is;
 //! - [`Mode::Drift`] asks whether the world still matches what was applied.
 //!
 //! None of it holds a secret value: see `docs/reference/state.md`.
@@ -37,6 +39,7 @@ pub mod backend;
 pub mod event;
 pub mod history;
 pub mod lock;
+pub mod policy;
 pub mod record;
 mod rollback;
 mod select;
@@ -59,6 +62,7 @@ use meridian_sdk::{
 pub use backend::{Backend, ExecBackend, LocalBackend, MemoryBackend};
 pub use event::Event;
 pub use lock::{LockError, LockInfo};
+pub use policy::{Decisions, Policy};
 pub use record::{RunRecord, RunStatus, StepRecord, StepStatus};
 pub use rollback::{RollbackOutcome, RollbackReport};
 pub use select::Selector;
@@ -205,6 +209,9 @@ pub struct StageReport {
     /// stage's last successful apply before this run, which is what a
     /// rollback goes back to. Empty when there was none.
     pub previous_good: String,
+    /// What the run's policy said about the stage; `None` when no policy
+    /// was asked about it.
+    pub policy: Option<Decisions>,
 }
 
 /// No plugin provides the document's target.
@@ -219,6 +226,8 @@ pub const REASON_PLUGIN_FAILED: &str = "plugin-failed";
 pub const REASON_TOOL_FAILED: &str = "tool-failed";
 /// The stage's working directory could not be prepared.
 pub const REASON_STATE_FAILED: &str = "state-failed";
+/// The run's policy does not allow the change, or could not be asked.
+pub const REASON_POLICY_DENIED: &str = "policy-denied";
 
 /// Why a run did not start.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -329,6 +338,9 @@ pub struct Options {
     pub on_failure: OnFailure,
     /// Which apply [`Mode::Rollback`] puts back.
     pub rollback_of: Resume,
+    /// The policy every stage of a plan or an apply is checked against
+    /// before it is applied. `None` checks nothing.
+    pub policy: Option<Policy>,
 }
 
 /// What an apply does when a stage fails.
@@ -359,6 +371,7 @@ impl Options {
             keep_runs: DEFAULT_KEEP_RUNS,
             on_failure: OnFailure::Stop,
             rollback_of: Resume::Last,
+            policy: None,
         }
     }
 
@@ -537,6 +550,8 @@ pub fn run_selected(
         resume,
         warnings: Vec::new(),
         touched: Vec::new(),
+        checked: BTreeMap::new(),
+        preflight: false,
     };
     let mut failed: Option<StageId> = None;
 
@@ -546,6 +561,48 @@ pub fn run_selected(
     } else {
         stages(bundle, selector)
     };
+
+    // With a policy, an apply asks about every stage it can before it
+    // applies the first: a change that is not allowed stops the run while
+    // there is still nothing to undo.
+    let mut to_run = to_run;
+    if mode == Mode::Apply && options.policy.is_some() {
+        run.preflight = true;
+        let checks: Vec<StageReport> = to_run
+            .iter()
+            .map(|stage| run.stage(*stage, observer))
+            .collect();
+        run.preflight = false;
+        let first = checks
+            .iter()
+            .find(|check| matches!(check.outcome, Outcome::Failed(_)))
+            .map(|check| check.id.clone());
+        if let Some(first) = first {
+            for check in checks {
+                let stopped = if matches!(check.outcome, Outcome::Failed(_)) {
+                    observer.stage_started(&check.id, &check.target);
+                    journal.started(observer, &check.id, &check.target);
+                    check
+                } else {
+                    StageReport {
+                        host: String::new(),
+                        artifact: None,
+                        warnings: Vec::new(),
+                        outcome: Outcome::NotRun {
+                            because_of: first.clone(),
+                        },
+                        policy: None,
+                        ..check
+                    }
+                };
+                journal.finished(observer, &stopped);
+                observer.stage_finished(&stopped);
+                report.stages.push(stopped);
+            }
+            failed = Some(first);
+            to_run = Vec::new();
+        }
+    }
     for stage in to_run {
         let id = stage.id();
         let target = stage.target().to_owned();
@@ -562,6 +619,7 @@ pub fn run_selected(
                 reason: String::new(),
                 done_before_failing: Vec::new(),
                 previous_good: String::new(),
+                policy: None,
             };
             journal.finished(observer, &skipped);
             observer.stage_finished(&skipped);
@@ -571,7 +629,10 @@ pub fn run_selected(
         observer.stage_started(&id, &target);
         journal.started(observer, &id, &target);
         let stage_report = run.stage(stage, observer);
-        if matches!(stage_report.outcome, Outcome::Failed(_)) {
+        // A plan goes on past a stage its policy denied, so that one plan
+        // shows every denial there is.
+        let denied_plan = mode == Mode::Plan && stage_report.reason == REASON_POLICY_DENIED;
+        if matches!(stage_report.outcome, Outcome::Failed(_)) && !denied_plan {
             failed = Some(stage_report.id.clone());
         }
         journal.finished(observer, &stage_report);
@@ -826,6 +887,24 @@ impl Journal {
             ]
         };
         let hash = ("artifact", Value::from(artifact.as_str()));
+        if let Some(policy) = &report.policy {
+            // How many, and never what they said: a message can quote the
+            // document it is about.
+            self.emit(
+                observer,
+                if policy.allowed() {
+                    event::POLICY_PASSED
+                } else {
+                    event::POLICY_DENIED
+                },
+                at,
+                vec![
+                    ("denials", Value::Int(policy.deny.len() as i64)),
+                    ("warnings", Value::Int(policy.warn.len() as i64)),
+                    ("asked", Value::Bool(policy.asked)),
+                ],
+            );
+        }
         match &report.outcome {
             Outcome::Compiled => {
                 self.emit(observer, event::STEP_SUCCEEDED, at, vec![hash]);
@@ -1004,6 +1083,13 @@ impl Stage<'_> {
             Stage::ResourceSet(d) => &d.spec.target_version,
         }
     }
+
+    fn labels(&self) -> &BTreeMap<String, String> {
+        match self {
+            Stage::Infrastructure(d) => &d.metadata.labels,
+            Stage::ResourceSet(d) => &d.metadata.labels,
+        }
+    }
 }
 
 /// How many documents of `bundle` a selector picks. A run that picks none
@@ -1108,6 +1194,12 @@ struct Run<'a> {
     /// Every stage this run has handed to a tool to apply, in order, with
     /// what is needed to put it back.
     touched: Vec<rollback::Touched>,
+    /// What the policy said about each stage the preflight asked about, and
+    /// the artifact it was asked about.
+    checked: BTreeMap<StageId, (String, Decisions)>,
+    /// Whether this is an apply's first pass, which asks the policy about
+    /// every stage it can and applies nothing.
+    preflight: bool,
 }
 
 /// Why a stage stopped before reaching the tool.
@@ -1129,6 +1221,7 @@ impl Run<'_> {
             reason: String::new(),
             done_before_failing: Vec::new(),
             previous_good: String::new(),
+            policy: None,
         };
         let fail = |mut report: StageReport, reason: &str, why: String| {
             report.outcome = Outcome::Failed(why);
@@ -1223,7 +1316,8 @@ impl Run<'_> {
             }
         };
 
-        let emitted = match target.emit(&to_sdk(&graph), &self.options.data) {
+        let graph = to_sdk(&graph);
+        let emitted = match target.emit(&graph, &self.options.data) {
             Ok(emitted) => emitted,
             Err(EmitError::Refused(e)) => {
                 return fail(report, REASON_COMPILE_REFUSED, e.to_string())
@@ -1237,9 +1331,22 @@ impl Run<'_> {
         }
 
         let operations = target.info().operations;
+        let options = self.options;
+        let asked = options
+            .policy
+            .as_ref()
+            .filter(|_| matches!(self.mode, Mode::Plan | Mode::Apply));
         if self.mode == Mode::Plan && !operations.plan {
             // Compiling is still a result worth having; the target just
-            // cannot say what applying it would change.
+            // cannot say what applying it would change. A policy is still
+            // asked, about what the document compiled to.
+            if let Some(policy) = asked {
+                let decisions = self.decide(policy, &stage, &report, info.category, &graph, None);
+                report.policy = Some(decisions.clone());
+                if !decisions.allowed() {
+                    return fail(report, REASON_POLICY_DENIED, denial(&decisions));
+                }
+            }
             return report;
         }
         let hash = artifact_hash(&emitted.artifact);
@@ -1284,8 +1391,58 @@ impl Run<'_> {
             observer.log(&id, &line);
         };
 
+        // Ask the policy, unless the first pass already asked about this
+        // very artifact.
+        let mut planned: Option<Plan> = None;
+        if let Some(policy) = asked {
+            let known = self
+                .checked
+                .get(&id)
+                .filter(|(checked, _)| *checked == hash)
+                .map(|(_, decisions)| decisions.clone());
+            let decisions = match known {
+                Some(decisions) => decisions,
+                None => {
+                    if operations.plan {
+                        match target.plan(&context, &emitted.artifact, &mut log) {
+                            Ok(plan) => planned = Some(plan),
+                            // What cannot be previewed yet, because an
+                            // earlier stage has to be applied first, is
+                            // asked about at its turn.
+                            Err(_) if self.preflight => return report,
+                            Err(e) => return fail(report, reason_of(&e), self.describe(e)),
+                        }
+                    }
+                    self.decide(
+                        policy,
+                        &stage,
+                        &report,
+                        info.category,
+                        &graph,
+                        planned.as_ref(),
+                    )
+                }
+            };
+            report.policy = Some(decisions.clone());
+            if !decisions.allowed() {
+                return fail(report, REASON_POLICY_DENIED, denial(&decisions));
+            }
+            if self.preflight {
+                self.checked.insert(id.clone(), (hash.clone(), decisions));
+            }
+        }
+        if self.preflight {
+            return report;
+        }
+
+        let plan_now = match planned.take() {
+            Some(plan) if self.mode == Mode::Plan => Some(Ok(plan)),
+            _ => None,
+        };
         match self.mode {
-            Mode::Plan => match target.plan(&context, &emitted.artifact, &mut log) {
+            Mode::Plan => match plan_now
+                .unwrap_or_else(|| target.plan(&context, &emitted.artifact, &mut log))
+            {
                 Ok(plan) => report.outcome = Outcome::Planned(plan),
                 Err(e) => return fail(report, reason_of(&e), self.describe(e)),
             },
@@ -1340,6 +1497,37 @@ impl Run<'_> {
             Mode::Compile | Mode::Rollback => {}
         }
         report
+    }
+
+    /// Asks the run's policy about a stage that has compiled.
+    fn decide(
+        &self,
+        policy: &Policy,
+        stage: &Stage<'_>,
+        report: &StageReport,
+        category: Category,
+        graph: &meridian_sdk::ResourceGraph,
+        plan: Option<&Plan>,
+    ) -> Decisions {
+        let empty = Artifact::default();
+        let input = policy::input(&policy::Subject {
+            mode: self.mode.as_str(),
+            run: &self.run_id,
+            kind: report.id.kind.as_str(),
+            name: &report.id.name,
+            target: &report.target,
+            category: category.as_str(),
+            host: &report.host,
+            labels: stage.labels(),
+            graph,
+            artifact: report.artifact.as_ref().unwrap_or(&empty),
+            plan,
+        });
+        let mut decisions = policy.check(&input);
+        for message in decisions.deny.iter_mut().chain(decisions.warn.iter_mut()) {
+            *message = mask(message, &self.secrets);
+        }
+        decisions
     }
 
     /// Keeps the artifact a stage was just applied from, and lets go of the
@@ -1533,6 +1721,17 @@ impl Run<'_> {
     fn describe(&self, failure: RunFailure) -> String {
         mask(&failure.to_string(), &self.secrets)
     }
+}
+
+/// What a denied stage says.
+fn denial(decisions: &Decisions) -> String {
+    if !decisions.asked {
+        return decisions.deny.join("; ");
+    }
+    format!(
+        "the policy does not allow this change:\n  - {}",
+        decisions.deny.join("\n  - ")
+    )
 }
 
 /// The fixed word for why a run of a tool produced no result.

@@ -77,6 +77,11 @@ instead of empty.
 A plan runs each tool, so it takes the [state lock](../concepts/run-safety.md#one-run-at-a-time)
 and is recorded like an apply.
 
+With `--policy`, every stage is put to the [policy](policy.md), and its
+warnings and its decision are shown above the plan. A stage the policy denies
+is reported as failed and the command exits `1`; the stages after it are
+still planned, so one plan shows every denial.
+
 ### `apply`
 
 Compiles and applies each document in order, stopping at the first failure. A
@@ -103,6 +108,18 @@ run 2026-11-17T09-14-03Z-0cc7 failed. Once the cause is fixed, `meridian apply -
 that still compile to the same artifact, are left alone; the rest are applied.
 [Picking up where a run stopped](../concepts/run-safety.md#picking-up-where-a-run-stopped)
 has the rules.
+
+With `--policy`, the [policy](policy.md) is asked about every stage before
+the first one is applied. If it denies any of them, nothing is applied:
+
+```
+network (Infrastructure, target terraform)
+  FAILED: the policy does not allow this change:
+      - network: aws_db_instance.main would be a replace in prod
+web (ResourceSet, target ansible)
+  not run, because Infrastructure "network" failed
+run 2026-11-17T09-14-03Z-0cc7 was stopped by its policy before anything was applied
+```
 
 With `--on-failure rollback`, a failed apply instead
 [puts back](../concepts/run-safety.md#putting-a-run-back) every stage it
@@ -231,6 +248,8 @@ versions decide which `targetVersion` a document may ask it for.
 | `--resume [RUN]` | | | `apply` only: continue the last apply, or the run named |
 | `--on-failure ACTION` | | `stop` | `apply` only: `stop` leaves what was applied in place; `rollback` puts back every stage the run changed |
 | `--run RUN` | | the last apply | `rollback` only: the apply to put back |
+| `--policy PATH` | | no policy | `plan`, `apply`: a [policy](policy.md) file or directory every stage is checked against before anything is applied; may be repeated |
+| `--policy-engine NAME` | `MERIDIAN_POLICY_ENGINE` | `opa` | `plan`, `apply`: the program `meridian-policy-<NAME>` that reads the policies |
 | `--events json` | | | `compile`, `plan`, `apply`, `drift`, `rollback`: write every [event](state.md#events) to standard output as it happens, one JSON object per line. The report for people moves to standard error |
 | `--report FORMAT=FILE` | | | `compile`, `plan`, `apply`, `drift`, `rollback`: write a [report](reporting.md#--report) of the run when it ends, as `json`, `junit`, `markdown` or `html`; may be repeated |
 | `--sink NAME` | `MERIDIAN_SINKS` (separated by `,`) | | the same commands: send every event, as it happens, to a [sink](reporting.md#sinks); may be repeated |
@@ -264,7 +283,8 @@ an error; nothing is guessed.
 ## Exit status
 
 `0` when everything asked for succeeded. `1` when a document was invalid, did
-not compile, a tool failed, a stage could not be rolled back, or the run was
+not compile, a tool failed, a policy denied a change or could not be asked, a
+stage could not be rolled back, or the run was
 refused because the state is locked or there was nothing to resume or roll
 back, or a [sink](reporting.md#sinks) marked `required` failed. `2` for a mistake in the command line itself, and from `drift` when a
 stage has drifted.
