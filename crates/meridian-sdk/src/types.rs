@@ -3,6 +3,8 @@ use std::fmt::{self, Write as _};
 
 use meridian_value::{canonical_map, Value};
 
+use crate::run::Category;
+
 /// A point inside a source document. `line` and `column` are 1-based; a zero
 /// `line` means the position is unknown. It travels with every resource so a
 /// failure raised inside a plugin still points at the line the author wrote.
@@ -106,6 +108,22 @@ pub struct ResourceGraph {
     pub target: String,
     pub resources: Vec<Resource>,
     pub edges: Vec<Edge>,
+    /// What the document promises to later stages. Only a document that
+    /// provisions infrastructure declares any.
+    pub outputs: Vec<OutputDeclaration>,
+}
+
+/// A value a document promises to later stages, such as the address of a
+/// machine it provisions. A plugin compiles it into the tool's own output
+/// mechanism and reports its value under the same name when it applies.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OutputDeclaration {
+    pub name: String,
+    /// The expression the author wrote, for example `${web_vm.public_ip}`: a
+    /// reference to an attribute of a resource in this document, which only
+    /// the tool can resolve.
+    pub value: String,
+    pub pos: Position,
 }
 
 impl ResourceGraph {
@@ -281,6 +299,12 @@ pub trait Emitter {
     fn supported_resource_types(&self) -> Vec<String>;
     /// What this target can express natively.
     fn capabilities(&self) -> Capabilities;
+    /// The kind of tool this target drives. The default exists so an emitter
+    /// written before categories does not stop compiling; every real target
+    /// should say.
+    fn category(&self) -> Category {
+        Category::Unspecified
+    }
     /// Compiles the tree, or refuses it.
     fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, CompileError>;
 }

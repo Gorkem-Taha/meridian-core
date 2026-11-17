@@ -1,0 +1,68 @@
+# A virtual machine on AWS with a fixed public address, provisioned by Terraform.
+#
+# Every resource's type is the Terraform type and its params are that type's
+# arguments. ${id.attribute} refers to another resource of this document.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: terraform
+  resources:
+    - id: aws
+      type: provider
+      params:
+        source: hashicorp/aws
+        version: "~> 5.0"
+        region: us-east-1
+
+    - id: ubuntu
+      type: data.aws_ami
+      params:
+        most_recent: true
+        owners: ["099720109477"]
+        filter:
+          - name: name
+            values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+
+    - id: web_sg
+      type: aws_security_group
+      params:
+        name: web
+        ingress:
+          - from_port: 80
+            to_port: 80
+            protocol: tcp
+            cidr_blocks: ["0.0.0.0/0"]
+
+    - id: web_vm
+      type: aws_instance
+      params:
+        ami: ${ubuntu.id}
+        instance_type: t3.small
+        vpc_security_group_ids: ["${web_sg.id}"]
+        tags:
+          Name: web-${ubuntu.architecture}
+
+    - id: web_ip
+      type: aws_eip
+      params:
+        instance: ${web_vm.id}
+      # The reference above already orders this after the machine, so no
+      # depends_on is written for it.
+      dependsOn:
+        - resource: web_vm
+
+    - id: dns_ready
+      type: terraform_data
+      params:
+        input: ready
+      # Nothing in the params says so, so this one becomes depends_on.
+      dependsOn:
+        - resource: web_ip
+
+  outputs:
+    - name: web_vm_ip
+      value: ${web_ip.public_ip}
+    - name: web_url
+      value: http://${web_ip.public_dns}/

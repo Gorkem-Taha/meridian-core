@@ -11,8 +11,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Write as _};
 
 use meridian_graph::Graph;
+pub use meridian_ir::Output;
 pub use meridian_ir::Position;
-use meridian_ir::{canonical_map, Bundle, ResourceSet, Value};
+use meridian_ir::{canonical_map, Bundle, Infrastructure, ResourceSet, Value};
 
 /// The graph crate's distinction between a hard ordering constraint and a
 /// deferred trigger, redeclared here so an emitter can depend on the tree
@@ -117,6 +118,10 @@ pub struct ResourceGraph {
     /// The target name the document declared.
     pub target: String,
 
+    /// What the document promises to later stages, in declaration order.
+    /// Only an Infrastructure document declares any.
+    pub outputs: Vec<Output>,
+
     resources: Vec<Resource>,
     by_id: HashMap<String, usize>,
     edges: Vec<Edge>,
@@ -136,10 +141,33 @@ impl ResourceGraph {
                 pos: rs.pos.clone(),
             });
         }
+        ResourceGraph::from_resources(&rs.metadata.name, host, &rs.spec.target, &rs.spec.resources)
+    }
+
+    /// Turns a validated Infrastructure document into a tree. It has no host:
+    /// it provisions the things later documents are applied to, and hands
+    /// them over through its declared outputs.
+    pub fn build_infrastructure(doc: &Infrastructure) -> Result<ResourceGraph, Error> {
+        let mut graph = ResourceGraph::from_resources(
+            &doc.metadata.name,
+            "",
+            &doc.spec.target,
+            &doc.spec.resources,
+        )?;
+        graph.outputs = doc.spec.outputs.clone();
+        Ok(graph)
+    }
+
+    fn from_resources(
+        name: &str,
+        host: &str,
+        target: &str,
+        resources: &[meridian_ir::Resource],
+    ) -> Result<ResourceGraph, Error> {
         // A surviving `when` means the condition stage has not run. Emitting it
         // would either leak a conditional into supposedly static output or drop
         // it silently; both are worse than refusing.
-        if let Some(r) = rs.spec.resources.iter().find(|r| !r.when.is_empty()) {
+        if let Some(r) = resources.iter().find(|r| !r.when.is_empty()) {
             return Err(Error {
                 msg: format!(
                     "resource {:?} still carries an unevaluated `when` expression; \
@@ -155,7 +183,7 @@ impl ResourceGraph {
             msg: e.to_string(),
             pos: Position::default(),
         };
-        let graph = Graph::build(&rs.spec.resources).map_err(wrap)?;
+        let graph = Graph::build(resources).map_err(wrap)?;
         let nodes = graph.topo_sort_nodes().map_err(wrap)?;
 
         let resources = nodes
@@ -181,13 +209,7 @@ impl ResourceGraph {
                 pos: e.pos.clone(),
             })
             .collect();
-        Ok(ResourceGraph::new(
-            &rs.metadata.name,
-            host,
-            &rs.spec.target,
-            resources,
-            edges,
-        ))
+        Ok(ResourceGraph::new(name, host, target, resources, edges))
     }
 
     /// Assembles a tree from parts that are already decided.
@@ -223,6 +245,7 @@ impl ResourceGraph {
             name: name.to_owned(),
             host: host.to_owned(),
             target: target.to_owned(),
+            outputs: Vec::new(),
             resources: kept,
             by_id,
             edges,

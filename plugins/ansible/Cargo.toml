@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-ansible"
+description = "The Meridian plugin for Ansible: compiles a resource set to a playbook and runs it with ansible-playbook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

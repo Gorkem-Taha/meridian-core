@@ -1,0 +1,20 @@
+[package]
+name = "meridian-orchestrator"
+description = "Runs a Meridian workflow: compiles each document, drives its tool through a plugin, and hands outputs from one stage to the next"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-ast = { path = "../meridian-ast" }
+meridian-ir = { path = "../meridian-ir" }
+meridian-plugin-host = { path = "../meridian-plugin-host" }
+meridian-sdk = { path = "../meridian-sdk" }
+sha2 = "0.10"
+
+[dev-dependencies]
+meridian-target-fake = { path = "../meridian-target-fake" }
+
+[lints]
+workspace = true

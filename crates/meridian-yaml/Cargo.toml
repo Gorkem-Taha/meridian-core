@@ -1,0 +1,15 @@
+[package]
+name = "meridian-yaml"
+description = "YAML as Meridian reads and writes it: scalar typing rules, and a block-style writer with stable output"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

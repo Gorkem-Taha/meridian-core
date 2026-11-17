@@ -1,0 +1,17 @@
+{
+  "capabilities": [
+    "CAPABILITY_NAMED_IAM"
+  ],
+  "name": "web-vm-prod",
+  "outputs": {
+    "WebUrl": "web_url",
+    "WebVmIp": "web_vm_ip"
+  },
+  "region": "us-east-1",
+  "resources": {
+    "WebIp": "web_ip",
+    "WebRole": "web_role",
+    "WebSg": "web_sg",
+    "WebVm": "web_vm"
+  }
+}

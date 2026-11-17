@@ -1,0 +1,16 @@
+[package]
+name = "meridian-target-puppet"
+description = "The Meridian plugin for Puppet: compiles a resource set to a manifest and applies it with puppet or bolt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

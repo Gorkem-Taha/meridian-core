@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-cloudformation"
+description = "The Meridian plugin for AWS CloudFormation: compiles an infrastructure document to a template and deploys it with the aws CLI"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

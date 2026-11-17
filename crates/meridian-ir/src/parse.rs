@@ -3,9 +3,9 @@ use std::path::Path;
 
 use crate::error::{Error, ErrorList, Position};
 use crate::node::{self, Node, NodeKind};
-use crate::scalar::Scalar;
 use crate::types::*;
 use meridian_value::Value;
+use meridian_yaml::scalar::Scalar;
 
 /// Reads `path` and parses every document it contains. The file extension is
 /// not trusted: the content decides between JSON and YAML.

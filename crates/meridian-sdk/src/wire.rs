@@ -4,9 +4,10 @@
 //! one place to break, and neither an emitter nor a host ever handles a
 //! generated type.
 
-use meridian_value::{canonical_map, decode_map};
+use meridian_value::{canonical_map, decode_map, decode_value};
 
 use crate::pb;
+use crate::run::*;
 use crate::types::*;
 
 fn to_i32(n: usize) -> i32 {
@@ -69,6 +70,15 @@ pub fn graph_to_wire(g: &ResourceGraph) -> pb::ResourceGraph {
                 pos: Some(position_to_wire(&e.pos)),
             })
             .collect(),
+        outputs: g
+            .outputs
+            .iter()
+            .map(|o| pb::OutputDeclaration {
+                name: o.name.clone(),
+                value: o.value.clone(),
+                pos: Some(position_to_wire(&o.pos)),
+            })
+            .collect(),
     }
 }
 
@@ -82,6 +92,15 @@ pub fn graph_from_wire(g: pb::ResourceGraph) -> Result<ResourceGraph, String> {
         name: g.name,
         host: g.host,
         target: g.target,
+        outputs: g
+            .outputs
+            .into_iter()
+            .map(|o| OutputDeclaration {
+                name: o.name,
+                value: o.value,
+                pos: position_from_wire(o.pos),
+            })
+            .collect(),
         ..ResourceGraph::default()
     };
     for r in g.resources {
@@ -215,4 +234,262 @@ pub fn emit_response_from_wire(
             })
             .collect(),
     })
+}
+
+pub fn category_to_wire(c: Category) -> pb::Category {
+    match c {
+        Category::Unspecified => pb::Category::Unspecified,
+        Category::InfrastructureAsCode => pb::Category::InfrastructureAsCode,
+        Category::ConfigurationManagement => pb::Category::ConfigurationManagement,
+        Category::Containerization => pb::Category::Containerization,
+        Category::ContainerOrchestration => pb::Category::ContainerOrchestration,
+    }
+}
+
+/// A category this protocol version does not define reads as unspecified: a
+/// newer plugin stays loadable, and the core simply cannot route on it.
+pub fn category_from_wire(c: i32) -> Category {
+    match pb::Category::try_from(c) {
+        Ok(pb::Category::InfrastructureAsCode) => Category::InfrastructureAsCode,
+        Ok(pb::Category::ConfigurationManagement) => Category::ConfigurationManagement,
+        Ok(pb::Category::Containerization) => Category::Containerization,
+        Ok(pb::Category::ContainerOrchestration) => Category::ContainerOrchestration,
+        _ => Category::Unspecified,
+    }
+}
+
+pub fn operations_to_wire(o: Operations) -> pb::Operations {
+    pb::Operations {
+        plan: o.plan,
+        apply: o.apply,
+        outputs: o.outputs,
+    }
+}
+
+pub fn operations_from_wire(o: Option<pb::Operations>) -> Operations {
+    o.map(|o| Operations {
+        plan: o.plan,
+        apply: o.apply,
+        outputs: o.outputs,
+    })
+    .unwrap_or_default()
+}
+
+pub fn artifact_to_wire(a: &Artifact) -> pb::Artifact {
+    pb::Artifact {
+        files: a.files.clone().into_iter().collect(),
+    }
+}
+
+pub fn artifact_from_wire(a: Option<pb::Artifact>) -> Artifact {
+    Artifact {
+        files: a.map(|a| a.files.into_iter().collect()).unwrap_or_default(),
+    }
+}
+
+pub fn context_to_wire(c: &RunContext) -> pb::RunContext {
+    pb::RunContext {
+        document: c.document.clone(),
+        host: c.host.clone(),
+        work_dir: c.work_dir.to_string_lossy().into_owned(),
+        inputs_json: canonical_map(&c.inputs).into_bytes(),
+    }
+}
+
+pub fn context_from_wire(c: Option<pb::RunContext>) -> Result<RunContext, String> {
+    let c = c.ok_or("received no run context")?;
+    Ok(RunContext {
+        document: c.document,
+        host: c.host,
+        work_dir: c.work_dir.into(),
+        inputs: decode_map(&c.inputs_json).map_err(|e| format!("reading the inputs: {e}"))?,
+    })
+}
+
+fn change_to_wire(c: Change) -> pb::Change {
+    let action = match c.action {
+        ChangeAction::Create => pb::ChangeAction::Create,
+        ChangeAction::Update => pb::ChangeAction::Update,
+        ChangeAction::Delete => pb::ChangeAction::Delete,
+        ChangeAction::Replace => pb::ChangeAction::Replace,
+    };
+    pb::Change {
+        resource: c.resource,
+        action: action as i32,
+        summary: c.summary,
+    }
+}
+
+fn changes_from_wire(changes: Vec<pb::Change>) -> Result<Vec<Change>, String> {
+    changes
+        .into_iter()
+        .map(|c| {
+            let action = match pb::ChangeAction::try_from(c.action) {
+                Ok(pb::ChangeAction::Create) => ChangeAction::Create,
+                Ok(pb::ChangeAction::Update) => ChangeAction::Update,
+                Ok(pb::ChangeAction::Delete) => ChangeAction::Delete,
+                Ok(pb::ChangeAction::Replace) => ChangeAction::Replace,
+                // Guessing here could turn a delete into something milder.
+                _ => {
+                    return Err(format!(
+                        "change to {:?}: action {} is not one this protocol version defines",
+                        c.resource, c.action
+                    ))
+                }
+            };
+            Ok(Change {
+                resource: c.resource,
+                action,
+                summary: c.summary,
+            })
+        })
+        .collect()
+}
+
+fn outputs_to_wire(outputs: Vec<Output>) -> Vec<pb::Output> {
+    outputs
+        .into_iter()
+        .map(|o| pb::Output {
+            name: o.name,
+            value_json: o.value.canonical().into_bytes(),
+            sensitive: o.sensitive,
+        })
+        .collect()
+}
+
+fn outputs_from_wire(outputs: Vec<pb::Output>) -> Result<Vec<Output>, String> {
+    outputs
+        .into_iter()
+        .map(|o| {
+            let value = decode_value(&o.value_json)
+                // The value is left out of the message: it may be a secret.
+                .map_err(|_| format!("output {:?} is not valid JSON", o.name))?;
+            Ok(Output {
+                name: o.name,
+                value,
+                sensitive: o.sensitive,
+            })
+        })
+        .collect()
+}
+
+fn run_error_to_wire(e: RunError) -> pb::RunError {
+    pb::RunError {
+        msg: e.msg,
+        command: e.command,
+        exit_code: e.exit_code.unwrap_or_default(),
+        exited: e.exit_code.is_some(),
+        output: e.output,
+    }
+}
+
+fn run_error_from_wire(e: pb::RunError, changes: Vec<Change>) -> RunError {
+    RunError {
+        msg: e.msg,
+        command: e.command,
+        exit_code: e.exited.then_some(e.exit_code),
+        output: e.output,
+        changes,
+    }
+}
+
+pub fn log_to_wire(line: LogLine) -> pb::LogLine {
+    let stream = match line.stream {
+        LogStream::Stdout => pb::log_line::Stream::Stdout,
+        LogStream::Stderr => pb::log_line::Stream::Stderr,
+    };
+    pb::LogLine {
+        stream: stream as i32,
+        text: line.text,
+    }
+}
+
+pub fn log_from_wire(line: pb::LogLine) -> LogLine {
+    let stream = match pb::log_line::Stream::try_from(line.stream) {
+        Ok(pb::log_line::Stream::Stderr) => LogStream::Stderr,
+        _ => LogStream::Stdout,
+    };
+    LogLine {
+        stream,
+        text: line.text,
+    }
+}
+
+pub fn plan_result(outcome: Result<Plan, RunError>) -> pb::PlanResult {
+    match outcome {
+        Ok(plan) => pb::PlanResult {
+            changes: plan.changes.into_iter().map(change_to_wire).collect(),
+            unknown: plan.unknown,
+            error: None,
+        },
+        Err(e) => pb::PlanResult {
+            changes: Vec::new(),
+            unknown: false,
+            error: Some(run_error_to_wire(e)),
+        },
+    }
+}
+
+/// The outer error is a malformed message; the inner one is the tool failing.
+pub fn plan_result_from_wire(r: pb::PlanResult) -> Result<Result<Plan, RunError>, String> {
+    if let Some(e) = r.error {
+        return Ok(Err(run_error_from_wire(e, Vec::new())));
+    }
+    Ok(Ok(Plan {
+        changes: changes_from_wire(r.changes)?,
+        unknown: r.unknown,
+    }))
+}
+
+pub fn apply_result(outcome: Result<Applied, RunError>) -> pb::ApplyResult {
+    match outcome {
+        Ok(applied) => pb::ApplyResult {
+            changes: applied.changes.into_iter().map(change_to_wire).collect(),
+            outputs: outputs_to_wire(applied.outputs),
+            error: None,
+        },
+        Err(mut e) => pb::ApplyResult {
+            changes: std::mem::take(&mut e.changes)
+                .into_iter()
+                .map(change_to_wire)
+                .collect(),
+            outputs: Vec::new(),
+            error: Some(run_error_to_wire(e)),
+        },
+    }
+}
+
+/// The outer error is a malformed message; the inner one is the tool failing.
+pub fn apply_result_from_wire(r: pb::ApplyResult) -> Result<Result<Applied, RunError>, String> {
+    let changes = changes_from_wire(r.changes)?;
+    if let Some(e) = r.error {
+        return Ok(Err(run_error_from_wire(e, changes)));
+    }
+    Ok(Ok(Applied {
+        changes,
+        outputs: outputs_from_wire(r.outputs)?,
+    }))
+}
+
+pub fn outputs_response(outcome: Result<Vec<Output>, RunError>) -> pb::OutputsResponse {
+    match outcome {
+        Ok(outputs) => pb::OutputsResponse {
+            outputs: outputs_to_wire(outputs),
+            error: None,
+        },
+        Err(e) => pb::OutputsResponse {
+            outputs: Vec::new(),
+            error: Some(run_error_to_wire(e)),
+        },
+    }
+}
+
+/// The outer error is a malformed message; the inner one is the tool failing.
+pub fn outputs_response_from_wire(
+    r: pb::OutputsResponse,
+) -> Result<Result<Vec<Output>, RunError>, String> {
+    if let Some(e) = r.error {
+        return Ok(Err(run_error_from_wire(e, Vec::new())));
+    }
+    Ok(Ok(outputs_from_wire(r.outputs)?))
 }

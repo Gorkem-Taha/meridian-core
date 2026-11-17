@@ -1,0 +1,17 @@
+[package]
+name = "meridian-plugin-testkit"
+description = "What a first-party plugin's tests share: fixtures compiled the way the core compiles them, golden files, and stand-in tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+meridian-ast = { path = "../meridian-ast" }
+meridian-ir = { path = "../meridian-ir" }
+meridian-plugin-host = { path = "../meridian-plugin-host" }
+meridian-sdk = { path = "../meridian-sdk" }
+
+[lints]
+workspace = true

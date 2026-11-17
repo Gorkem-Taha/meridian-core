@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 meridian-value = { path = "../meridian-value" }
+meridian-yaml = { path = "../meridian-yaml" }
 saphyr-parser = "0.3"
 serde_json = { version = "1", features = ["preserve_order"] }
 

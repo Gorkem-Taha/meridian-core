@@ -9,7 +9,6 @@
 mod error;
 mod node;
 mod parse;
-mod scalar;
 mod types;
 mod validate;
 

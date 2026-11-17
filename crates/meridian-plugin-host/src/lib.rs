@@ -22,7 +22,7 @@ mod registry;
 
 use std::fmt;
 
-use meridian_sdk::{Capabilities, CompileError};
+use meridian_sdk::{Capabilities, Category, CompileError, Operations, RunError};
 
 pub use client::{Client, StartOptions, HANDSHAKE_TIMEOUT};
 pub use registry::{binary_name, Registry, Target};
@@ -44,6 +44,10 @@ pub struct Info {
     /// Every IR resource type the target maps.
     pub resource_types: Vec<String>,
     pub capabilities: Capabilities,
+    /// The kind of tool the target drives.
+    pub category: Category,
+    /// What the target can do beyond compiling.
+    pub operations: Operations,
     /// The binary the plugin was loaded from; empty for an in-process emitter.
     pub path: String,
 }
@@ -111,6 +115,28 @@ impl fmt::Display for EmitError {
 
 impl std::error::Error for EmitError {}
 
+/// Why a run produced no result.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RunFailure {
+    /// The tool failed: it exited non-zero, rejected the configuration, or
+    /// could not reach the node. This is an answer about the infrastructure.
+    Tool(RunError),
+    /// The plugin mechanism failed: the target does not offer the operation,
+    /// the process died, or it sent something this host cannot read.
+    Plugin(Error),
+}
+
+impl fmt::Display for RunFailure {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RunFailure::Tool(e) => e.fmt(f),
+            RunFailure::Plugin(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for RunFailure {}
+
 /// Converts the compiler's own tree into the public form a target consumes.
 ///
 /// This is the only seam between the two, and they are separate types on
@@ -155,6 +181,15 @@ pub fn to_sdk(graph: &meridian_ast::ResourceGraph) -> meridian_sdk::ResourceGrap
                 },
                 action: e.action.clone(),
                 pos: position(&e.pos),
+            })
+            .collect(),
+        outputs: graph
+            .outputs
+            .iter()
+            .map(|o| meridian_sdk::OutputDeclaration {
+                name: o.name.clone(),
+                value: o.value.clone(),
+                pos: position(&o.pos),
             })
             .collect(),
     }

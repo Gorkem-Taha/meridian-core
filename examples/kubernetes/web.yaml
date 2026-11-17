@@ -1,0 +1,84 @@
+# A web server on Kubernetes: its configuration, the Deployment that runs it
+# and the Service that exposes it.
+#
+# Every resource's type is the object's API version and kind, and its params
+# are the object's fields, exactly as Kubernetes documents them. ${id} is the
+# name of another object of this document.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web
+spec:
+  target: kubernetes
+  resources:
+    # Not a manifest: which cluster and namespace the manifests go to.
+    - id: target
+      type: cluster
+      params:
+        context: prod
+        namespace: web
+
+    - id: web_config
+      type: v1/ConfigMap
+      params:
+        data:
+          nginx.conf: |
+            server {
+              listen 8080;
+              root /usr/share/nginx/html;
+            }
+      # Kubernetes does not restart pods when a ConfigMap changes. This does:
+      # the Deployment's pod template carries a checksum of the ConfigMap.
+      notifies:
+        - resource: web
+          action: restart
+
+    - id: web
+      type: apps/v1/Deployment
+      params:
+        metadata:
+          labels:
+            app: web
+        spec:
+          replicas: 2
+          selector:
+            matchLabels:
+              app: web
+          template:
+            metadata:
+              labels:
+                app: web
+            spec:
+              containers:
+                - name: nginx
+                  image: nginx:1.27
+                  ports:
+                    - containerPort: 8080
+                  volumeMounts:
+                    - name: config
+                      mountPath: /etc/nginx/conf.d
+              volumes:
+                - name: config
+                  configMap:
+                    name: ${web_config}
+      dependsOn:
+        - resource: web_config
+
+    - id: web_svc
+      type: v1/Service
+      params:
+        metadata:
+          name: web
+        spec:
+          type: LoadBalancer
+          selector:
+            app: web
+          ports:
+            - port: 80
+              targetPort: 8080
+
+  # Read from the cluster after the apply, once the load balancer has an
+  # address.
+  outputs:
+    - name: web_url
+      value: http://${web_svc.status.loadBalancer.ingress[0].ip}

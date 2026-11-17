@@ -1,15 +1,18 @@
 // Meridian's plugin protocol: the wire form of the design plan's §11.4 Emitter
 // interface.
 //
-// The protocol carries a compiled resource tree to a target plugin and carries
-// back the artifact that tree compiles to. It deliberately does not model
-// running anything: Runner is a separate concern kept outside the compile
-// chain, so `meridian plan` stays a pure function over this service alone.
+// The protocol has two services. Emitter carries a compiled resource tree to a
+// plugin and carries back the artifact that tree compiles to; it has no side
+// effects. Runner hands an artifact to the real tool to preview or apply it,
+// and reports what the tool produced. They are separate services on purpose:
+// compiling stays a pure function over Emitter alone, and a plugin that only
+// compiles never has to mention Runner.
+//
+// Version 2 added the plugin's category and operations to Describe, and the
+// Runner service.
 syntax = "proto3";
 
 package meridian.plugin.v1;
-
-option go_package = "github.com/ZanattaMichael/meridian-core/pkg/sdk/pluginpb";
 
 // Position is a point in a source document, carried so a failure raised inside
 // a plugin can still be reported against the line the author wrote.
@@ -69,14 +72,31 @@ message Edge {
   Position pos = 5;
 }
 
+// OutputDeclaration is a value a document promises to later stages, such as
+// the address of a machine it provisions. The plugin compiles it into the
+// tool's own output mechanism and reports its value, under the same name,
+// from Apply and Outputs.
+message OutputDeclaration {
+  string name = 1;
+  // value is the expression the author wrote, for example
+  // "${web_vm.public_ip}": a reference to an attribute of a resource in this
+  // document, which only the tool can resolve.
+  string value = 2;
+  Position pos = 3;
+}
+
 // ResourceGraph is a whole compiled document: its resources in deterministic
 // apply order, the edges between them, and the host they configure.
 message ResourceGraph {
   string name = 1;
+  // host is the node a host-configuration document applies to. It is empty for
+  // a document that provisions infrastructure.
   string host = 2;
   string target = 3;
   repeated Resource resources = 4;
   repeated Edge edges = 5;
+  // outputs is what the document promises to later stages.
+  repeated OutputDeclaration outputs = 6;
 }
 
 // Capabilities is a target's honest declaration of what it can express. It is
@@ -115,6 +135,33 @@ message CompileError {
   Position pos = 4;
 }
 
+// Category is the kind of tool a plugin drives. The core routes on it, to
+// decide which workflows a plugin can join and where in one it sits. It is a
+// declared fact, never a reason for the core to special-case a product.
+enum Category {
+  CATEGORY_UNSPECIFIED = 0;
+  // Provisions infrastructure: Terraform, Bicep, CloudFormation.
+  CATEGORY_INFRASTRUCTURE_AS_CODE = 1;
+  // Configures a node that already exists: Ansible, Puppet, Chef, DSC.
+  CATEGORY_CONFIGURATION_MANAGEMENT = 2;
+  // Builds and runs containers on one host: Docker.
+  CATEGORY_CONTAINERIZATION = 3;
+  // Schedules containers across a cluster: Kubernetes.
+  CATEGORY_CONTAINER_ORCHESTRATION = 4;
+}
+
+// Operations is a plugin's type: what it can do for the core beyond compiling.
+// Every plugin compiles. A plugin that sets any field here also serves Runner,
+// and a host never calls a Runner method whose field is false.
+message Operations {
+  // plan: preview what applying an artifact would change, changing nothing.
+  bool plan = 1;
+  // apply: make the artifact's desired state real.
+  bool apply = 2;
+  // outputs: report named values the tool produced, for later stages to use.
+  bool outputs = 3;
+}
+
 message DescribeRequest {}
 
 message DescribeResponse {
@@ -128,6 +175,8 @@ message DescribeResponse {
   // resource_types lists every IR resource type this target maps, sorted.
   repeated string resource_types = 4;
   Capabilities capabilities = 5;
+  Category category = 6;
+  Operations operations = 7;
 }
 
 message EmitRequest {
@@ -150,4 +199,152 @@ message EmitResponse {
 service Emitter {
   rpc Describe(DescribeRequest) returns (DescribeResponse);
   rpc Emit(EmitRequest) returns (EmitResponse);
+}
+
+// RunContext is what every Runner call needs to know about where it runs.
+message RunContext {
+  // document is the name of the document the artifact was compiled from.
+  string document = 1;
+  // host is the node the artifact configures; empty for a document that
+  // provisions infrastructure instead of configuring a host.
+  string host = 2;
+  // work_dir is a directory the host created for this document and target and
+  // keeps between runs. The plugin writes the artifact there and may keep the
+  // tool's own state in it (a Terraform state file, say). The host never reads
+  // or interprets what a plugin leaves in it.
+  string work_dir = 3;
+  // inputs_json is a JSON object of values handed to this stage from the
+  // outputs of earlier ones, keyed by the name the document gave them.
+  bytes inputs_json = 4;
+}
+
+// ChangeAction is what the tool would do, or did, to one thing it manages.
+enum ChangeAction {
+  CHANGE_ACTION_UNSPECIFIED = 0;
+  CHANGE_ACTION_CREATE = 1;
+  CHANGE_ACTION_UPDATE = 2;
+  CHANGE_ACTION_DELETE = 3;
+  // Destroyed and created again, which is worth telling apart from an update
+  // because it is the one that loses data.
+  CHANGE_ACTION_REPLACE = 4;
+}
+
+// Change is one difference between desired and actual state.
+message Change {
+  // resource is the IR resource id when the tool's report can be traced back
+  // to one, and otherwise the tool's own name for what changes.
+  string resource = 1;
+  ChangeAction action = 2;
+  // summary is one line a person can read, in the tool's own terms.
+  string summary = 3;
+}
+
+// Output is a named value the tool produced.
+message Output {
+  string name = 1;
+  // value_json is the value as JSON, for the same reason params are: to keep
+  // the type the tool reported.
+  bytes value_json = 2;
+  // sensitive marks a value that must be masked wherever it is shown or
+  // logged. It must survive every hop to the stage that consumes it.
+  bool sensitive = 3;
+}
+
+// RunError is the tool failing: a non-zero exit, a rejected configuration, an
+// unreachable node.
+//
+// Like CompileError it travels inside a successful response. A failed apply is
+// an answer about the infrastructure, not a fault in the plugin, and a host
+// must be able to tell "Terraform said no" from "the plugin crashed".
+message RunError {
+  string msg = 1;
+  // command is what the plugin ran, with any secret arguments removed.
+  string command = 2;
+  // exit_code is the tool's exit status; meaningful only when exited is true,
+  // since a tool that could not be started at all has none.
+  int32 exit_code = 3;
+  bool exited = 4;
+  // output is the end of what the tool printed, enough to explain the failure
+  // without the whole log.
+  string output = 5;
+}
+
+// LogLine is one line of the tool's own output, relayed while it runs.
+message LogLine {
+  enum Stream {
+    STREAM_UNSPECIFIED = 0;
+    STREAM_STDOUT = 1;
+    STREAM_STDERR = 2;
+  }
+  Stream stream = 1;
+  string text = 2;
+}
+
+message PlanRequest {
+  RunContext context = 1;
+  Artifact artifact = 2;
+}
+
+// PlanResult is the preview. Either error is set, or changes is the complete
+// list of what an apply would do; an empty list means nothing would change.
+message PlanResult {
+  repeated Change changes = 1;
+  // unknown is true when the tool cannot preview: it says only that something
+  // might change, or cannot say at all. A host must not read an empty changes
+  // list as "in sync" when it is set.
+  bool unknown = 2;
+  RunError error = 3;
+}
+
+message ApplyRequest {
+  RunContext context = 1;
+  Artifact artifact = 2;
+}
+
+// ApplyResult is what an apply did. When error is set, changes lists what was
+// done before the failure, as far as the tool reported it.
+message ApplyResult {
+  repeated Change changes = 1;
+  repeated Output outputs = 2;
+  RunError error = 3;
+}
+
+// PlanEvent and ApplyEvent are what a run streams back: any number of log
+// lines, then exactly one result as the last message. A stream that ends
+// without a result is a plugin failure.
+message PlanEvent {
+  oneof event {
+    LogLine log = 1;
+    PlanResult result = 2;
+  }
+}
+
+message ApplyEvent {
+  oneof event {
+    LogLine log = 1;
+    ApplyResult result = 2;
+  }
+}
+
+message OutputsRequest {
+  RunContext context = 1;
+}
+
+message OutputsResponse {
+  repeated Output outputs = 1;
+  RunError error = 2;
+}
+
+// Runner hands an artifact to the real tool. Unlike Emitter it has side
+// effects, takes as long as the tool takes, and can fail for reasons that have
+// nothing to do with the document. Plan and Apply stream, so an operator sees
+// the tool's output as it happens and not after a twenty-minute silence.
+service Runner {
+  // Plan previews what Apply would change. It changes nothing.
+  rpc Plan(PlanRequest) returns (stream PlanEvent);
+  // Apply makes the artifact's desired state real.
+  rpc Apply(ApplyRequest) returns (stream ApplyEvent);
+  // Outputs reports the values the last apply produced, read from the tool's
+  // own state, without applying anything.
+  rpc Outputs(OutputsRequest) returns (OutputsResponse);
 }

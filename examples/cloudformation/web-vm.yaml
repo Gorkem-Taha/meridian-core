@@ -1,0 +1,67 @@
+# A virtual machine on AWS with a fixed public address, deployed as a
+# CloudFormation stack.
+#
+# Every resource's type is the CloudFormation type and its params are that
+# type's properties. ${id} is a Ref to another resource of this document and
+# ${id.Attribute} reads one of its attributes.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: cloudformation
+  resources:
+    # Not part of the template: how the stack itself is deployed.
+    - id: deployment
+      type: stack
+      params:
+        name: web-vm-prod
+        region: us-east-1
+        capabilities: [CAPABILITY_NAMED_IAM]
+
+    - id: web_role
+      type: AWS::IAM::Role
+      params:
+        RoleName: web-vm
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service: ec2.amazonaws.com
+              Action: sts:AssumeRole
+
+    - id: web_sg
+      type: AWS::EC2::SecurityGroup
+      params:
+        GroupDescription: Web traffic for ${AWS::StackName}
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            CidrIp: 0.0.0.0/0
+
+    - id: web_vm
+      type: AWS::EC2::Instance
+      params:
+        ImageId: ami-0c7217cdde317cfec
+        InstanceType: t3.small
+        SecurityGroupIds: ["${web_sg.GroupId}"]
+        DeletionPolicy: Retain
+      # Nothing in the properties says so, so this becomes DependsOn.
+      dependsOn:
+        - resource: web_role
+
+    - id: web_ip
+      type: AWS::EC2::EIP
+      params:
+        InstanceId: ${web_vm}
+      # The Ref above already orders this after the machine.
+      dependsOn:
+        - resource: web_vm
+
+  outputs:
+    - name: web_vm_ip
+      value: ${web_ip.PublicIp}
+    - name: web_url
+      value: http://${web_vm.PublicDnsName}/

@@ -304,8 +304,8 @@ Each has its own `Capabilities{}` — do not assume DSC v3 inherits DSC classic'
 
 **Decided 2026-11-17 by the project owner, superseding the original choice of Go.** The
 first implementation (milestones 1 to 3 and the Puppet half of milestone 4) was written in
-Go and is still in the repository. It is the reference the Rust core is ported against, and
-it is removed only once the Rust core reproduces its output (§12.1).
+Go. It was the reference the Rust core and plugins were ported against, and it was removed
+once they reproduced its output byte for byte (§12.1).
 
 What the decision keeps, and why the rewrite is affordable:
 
@@ -316,7 +316,7 @@ What the decision keeps, and why the rewrite is affordable:
 - **The specification is the documents, not the code.** The IR schema (§4), data
   resolution (§5), the condition pipeline (§6), the graph rules (§7) and the capability
   model (§8) are stated here independent of language.
-- **The golden files are the acceptance test.** Every fixture in `internal/fixtures` has a
+- **The golden files are the acceptance test.** Every fixture in `fixtures/` has a
   committed expected output per target, including the refusals. A Rust core that feeds the
   same plugins and produces byte-identical artifacts and warnings is correct by the same
   definition the Go core was.
@@ -337,14 +337,14 @@ What it costs, stated up front:
 
 - The working Go core is rewritten rather than extended, so no new target ships until the
   port reaches parity.
-- Two toolchains live in the repository for the length of the migration.
-- The plugin SDK must exist in Rust (`meridian-sdk`) before any first-party plugin can be
-  written in Rust. The Go SDK in `pkg/sdk` stays until the last Go plugin is ported.
+- Two toolchains lived in the repository for the length of the migration.
+- The plugin SDK had to exist in Rust (`meridian-sdk`) before any first-party plugin could
+  be written in Rust. There is no longer a Go SDK; a plugin in another language serves the
+  protocol in `proto/` directly.
 
 ### 11.2 Project layout
 
-The target layout is a Cargo workspace. During the migration the Go tree (`internal/`,
-`pkg/`, `plugins/ansible`, `plugins/puppet`, `go.mod`) sits beside it.
+The layout is a Cargo workspace.
 
 ```
 meridian-core/
@@ -360,6 +360,7 @@ meridian-core/
 │   ├── meridian-plugin-host/   # plugin protocol (gRPC), host-side loader and registry
 │   ├── meridian-orchestrator/  # stage sequencing, run-state tracking
 │   ├── meridian-secrets/       # masking/handling values flowing infra -> resourceset
+│   ├── meridian-target-fake/   # a complete plugin whose tool is a directory: test double and worked example
 │   ├── meridian-value/         # dynamic value type + canonical JSON, shared by core and SDK
 │   └── meridian-sdk/           # public plugin SDK (third parties build against this)
 ├── plugins/                    # built-in plugins, each its own binary
@@ -414,6 +415,7 @@ pub trait Emitter {
     fn name(&self) -> &str;
     fn supported_resource_types(&self) -> Vec<String>;
     fn capabilities(&self) -> Capabilities;
+    fn category(&self) -> Category;
     fn emit(&self, graph: &ResourceGraph, data: &Data) -> Result<Emitted, CompileError>;
 }
 
@@ -439,11 +441,21 @@ pub struct Warning {
 }
 
 pub trait Runner {
-    fn name(&self) -> &str;
-    fn plan(&self, artifact: &Artifact) -> Result<Diff, RunError>;
-    fn apply(&self, artifact: &Artifact) -> Result<Outputs, RunError>;
+    fn operations(&self) -> Operations; // which of the three below it offers
+    fn plan(&self, context: &RunContext, artifact: &Artifact, log: &dyn Log) -> Result<Plan, RunError>;
+    fn apply(&self, context: &RunContext, artifact: &Artifact, log: &dyn Log) -> Result<Applied, RunError>;
+    fn outputs(&self, context: &RunContext) -> Result<Vec<Output>, RunError>;
+}
+
+pub struct RunContext {
+    pub document: String,
+    pub host: String,
+    pub work_dir: PathBuf, // kept by the host between runs; the tool's own state lives here
+    pub inputs: Data,      // outputs of earlier stages, by the name the document gave them
 }
 ```
+
+A plugin's `main` is `serve(Plugin::new(emitter).with_runner(runner))`.
 
 Other plans refer to this declaration as `Capabilities{}`; a claim written there as
 `Capabilities{NativeNotify: true}` is `native_notify: true` here. The field names on the
@@ -459,8 +471,25 @@ Two refinements the first implementation made, both carried over:
   and collapsing it into the error channel would force a target to choose between reporting
   the loss and producing output.
 
-`Runner` is not in the protocol yet. Only `Describe` and `Emit` are. Adding it is part of
-milestone R3 (§12.1).
+`Runner` is its own gRPC service beside `Emitter` (protocol version 2), so a plugin that
+only compiles never mentions it. What shaped it:
+
+- **Plan and apply stream.** Each sends the tool's output line by line and then exactly one
+  result, so an operator watches a twenty-minute apply instead of waiting on it. A stream
+  that ends without a result is a plugin failure.
+- **A failing tool is an answer, not a fault.** `RunError` travels inside a successful
+  response, as `CompileError` does, carrying the command (secrets removed), the exit status,
+  the end of the tool's output, and what an apply had already changed. A host can always
+  tell "Terraform said no" from "the plugin crashed".
+- **A plan can say it does not know.** `Plan.unknown` exists for tools that cannot preview,
+  so an empty change list is never mistaken for "in sync".
+- **Outputs keep their type and their sensitivity.** A value is JSON, as params are, and
+  `sensitive` has to survive every hop to the stage that consumes it. The SDK's `Output`
+  does not print a sensitive value even under `{:?}`.
+- **State belongs to the tool.** The host gives each document and target a `work_dir` it
+  keeps between runs and never looks inside.
+- **The declaration is the contract.** A host never calls an operation the plugin did not
+  declare, and never probes to find out.
 
 ### 11.5 Orchestrator responsibilities
 
@@ -479,7 +508,7 @@ milestone R3 (§12.1).
 
 ### 11.7 Plugin type and category
 
-**Direction decided 2026-11-17; the detailed design is milestone R3 (§12.1).**
+**Decided 2026-11-17 and implemented in protocol version 2.**
 
 Until now every plugin was a "target" and the core told them apart only by the `kind` of
 document they accept. The platform's scope has widened beyond the six tools named in §1 to
@@ -497,9 +526,16 @@ The core uses the pair to decide which workflows a plugin can join and where in 
 it sits. It does not use it to special-case a tool: principle 5 (§2) still holds, and a
 category is a declared fact the core routes on, not a branch in core code per product.
 
-Open at the time of writing: whether container workloads need a third IR `kind` beside
-`Infrastructure` and `ResourceSet`, and whether one plugin may declare more than one
-category. Both are recorded in §13.
+A plugin declares exactly one category. A tool that both provisions and configures is two
+plugins, which keeps "where in a workflow does this sit" a single answer per plugin. A
+plugin built before categories reports none, stays loadable, and cannot be routed on.
+
+The type is three independent flags, `plan`, `apply` and `outputs`, not a ladder of levels:
+a tool with no preview can still apply, and one whose results are read elsewhere can apply
+without reporting outputs.
+
+Still open, and recorded in §13: whether container workloads need a third IR `kind` beside
+`Infrastructure` and `ResourceSet`.
 
 ---
 
@@ -521,22 +557,31 @@ work is resequenced below.
   `graph`, `ast`, and the plugin host last. Each layer is checked against the Go layer's
   own test cases. The pass mark for the whole milestone is the existing golden files: the
   Rust host drives the existing Go Ansible and Puppet plugin binaries and the artifacts,
-  warnings and refusals are byte-identical. The Go core (`internal/`) is deleted only then.
-- **R3. Extend the protocol.** Plugin category and type (§11.7), and the `Runner` side of
-  the protocol (plan, apply, outputs). Ansible and Puppet are labelled configuration
-  management. The protocol version is bumped per
-  [release plan](release-and-versioning.md).
-- **R4. First orchestrated workflow.** The `meridian` CLI and a first orchestrator (§11.5)
+  warnings and refusals are byte-identical. Done.
+- **R3. Extend the protocol.** Done. Plugin category and type (§11.7), and the `Runner`
+  side of the protocol (plan, apply, outputs; §11.4). Ansible and Puppet are labelled
+  configuration management. The protocol version is 2. `meridian-sdk` gained the serving
+  half, so a plugin can be written in Rust.
+- **R4. First orchestrated workflow.** The CLI and orchestrator are done; the first real
+  tool plugin is next. The `meridian` CLI and a first orchestrator (§11.5)
   that compiles a workflow, runs its stages in dependency order through the plugins, hands
   outputs from one stage to the next, and stops cleanly on failure. The first new plugin is
   written in Rust against `meridian-sdk` alongside it, so there is a real two-tool workflow
   to prove it. DSC through DscPipelineRunner is the proposed first, Terraform second as the
   first infrastructure-as-code plugin.
 
-Porting the Go Ansible and Puppet plugins to Rust is deliberately not on this list. They
-keep working across the boundary, and are ported when there is a reason to touch them.
-Milestone 5's targets (DSC classic, DSC v3, Chef) and the newly in-scope tools (Bicep,
-CloudFormation, Docker, Kubernetes) follow R4.
+- **R5. Every plugin, and the user documentation.** Owner direction, 2026-11-17: build all
+  the plugins and start the documentation with examples. After R4's DSC plugin: Terraform,
+  Bicep, CloudFormation, Chef, Docker and Kubernetes, and Rust ports of Ansible and Puppet
+  checked against their existing golden files. Once those two ports land the Go tree
+  (`internal/`, `pkg/`, `plugins/*` in Go, `go.mod`) is removed. User documentation follows
+  the [documentation plan](documentation-plan.md), each plugin arriving with a worked
+  example.
+  **Status: done for the nine plugins named here.** Each has a runner, a worked example
+  under `examples/` and a page under `docs/targets/`. DSC is one plugin, `dsc`, because
+  DscPipelineRunner drives DSC v2 and v3 through one configuration format; the split in
+  §10 is a setting of that plugin (`engine`), not two targets. Every runner except
+  Ansible's is tested against a stand-in for its tool and has not yet met the real one.
 
 Repo/org structure should stay single-repo (`meridian` or `meridian-core`) until 2-3 plugins have been built and the SDK boundary has proven stable — splitting into a multi-repo plugin org (mirroring Terraform's `terraform-provider-*` pattern) is a later step, not a day-one decision.
 
@@ -550,7 +595,6 @@ Repo/org structure should stay single-repo (`meridian` or `meridian-core`) until
 - Should Terraform/ARM's `-target`-equivalent selective-apply gap be surfaced as an IR-level limitation, or excluded from the IR's tag/selective-apply feature entirely?
 - Multi-repo plugin org layout (`meridian-ansible`, `meridian-puppet`, etc.) — timing of the split, once the SDK is proven.
 - Do container workloads (Docker images, Kubernetes objects) need a third IR `kind` beside `Infrastructure` and `ResourceSet`, or do they fit one of the two? (§11.7)
-- May a plugin declare more than one category, for a tool that both provisions and configures? (§11.7)
 - Does the DSC plugin drive DscPipelineRunner as its runner, emit for it, or both, and how does that sit with the DSC classic / DSC v3 split in §10?
 
 ---

@@ -5,12 +5,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use meridian_sdk::pb::emitter_client::EmitterClient;
-use meridian_sdk::pb::DescribeRequest;
-use meridian_sdk::{wire, Data, Emitted, ResourceGraph, HANDSHAKE_MAGIC, PROTOCOL_VERSION};
+use meridian_sdk::pb::runner_client::RunnerClient;
+use meridian_sdk::pb::{self, DescribeRequest};
+use meridian_sdk::{
+    wire, Applied, Artifact, Data, Emitted, LogLine, Output, Plan, ResourceGraph, RunContext,
+    HANDSHAKE_MAGIC, PROTOCOL_VERSION,
+};
 use tokio::runtime::Runtime;
 use tonic::transport::{Channel, Endpoint};
 
-use crate::{EmitError, Error, Info};
+use crate::{EmitError, Error, Info, RunFailure};
 
 /// How long a host waits for a plugin to announce itself. A plugin that has
 /// not printed its handshake line by then is either not a Meridian plugin or is
@@ -56,6 +60,8 @@ pub struct Client {
     /// the connection keeps being serviced whichever thread is calling.
     runtime: Runtime,
     api: Option<EmitterClient<Channel>>,
+    /// The same connection, kept for the runner service.
+    channel: Option<Channel>,
     process: Option<Process>,
 }
 
@@ -115,13 +121,13 @@ impl Client {
                     .connect()
                     .await
                     .map_err(|e| ("could not connect to the plugin", describe(&e)))?;
-                let mut api = EmitterClient::new(channel);
+                let mut api = EmitterClient::new(channel.clone());
                 let reply = api
                     .describe(DescribeRequest {})
                     .await
                     .map_err(|e| ("the plugin did not describe itself", status(&e)))?
                     .into_inner();
-                Ok((api, reply))
+                Ok((api, channel, reply))
             };
             match tokio::time::timeout(remaining, connect_and_describe).await {
                 Ok(result) => result,
@@ -134,7 +140,7 @@ impl Client {
                 )),
             }
         });
-        let (api, reply) = match described {
+        let (api, channel, reply) = match described {
             Ok(pair) => pair,
             Err((msg, cause)) => return Err(process.fail(path, msg, cause)),
         };
@@ -149,12 +155,15 @@ impl Client {
             name: reply.name,
             resource_types: reply.resource_types,
             capabilities: wire::capabilities_from_wire(reply.capabilities),
+            category: wire::category_from_wire(reply.category),
+            operations: wire::operations_from_wire(reply.operations),
             path: path.to_owned(),
         };
         Ok(Client {
             info,
             runtime,
             api: Some(api),
+            channel: Some(channel),
             process: Some(process),
         })
     }
@@ -210,6 +219,146 @@ impl Client {
         }
     }
 
+    /// Previews what applying an artifact would change. `log` receives the
+    /// tool's output line by line while it runs.
+    pub fn plan(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &mut dyn FnMut(LogLine),
+    ) -> Result<Plan, RunFailure> {
+        let mut runner = self.runner("plan", self.info.operations.plan)?;
+        let request = pb::PlanRequest {
+            context: Some(wire::context_to_wire(context)),
+            artifact: Some(wire::artifact_to_wire(artifact)),
+        };
+        let result = self.runtime.block_on(async {
+            let mut events = runner.plan(request).await?.into_inner();
+            let mut result = None;
+            while let Some(event) = events.message().await? {
+                match event.event {
+                    Some(pb::plan_event::Event::Log(line)) => log(wire::log_from_wire(line)),
+                    Some(pb::plan_event::Event::Result(r)) => result = Some(r),
+                    None => {}
+                }
+            }
+            Ok::<_, tonic::Status>(result)
+        });
+        let result = self.finished("planning", result)?;
+        wire::plan_result_from_wire(result)
+            .map_err(|e| self.unreadable("planning", e))?
+            .map_err(RunFailure::Tool)
+    }
+
+    /// Makes an artifact's desired state real. `log` receives the tool's
+    /// output line by line while it runs.
+    pub fn apply(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &mut dyn FnMut(LogLine),
+    ) -> Result<Applied, RunFailure> {
+        let mut runner = self.runner("apply", self.info.operations.apply)?;
+        let request = pb::ApplyRequest {
+            context: Some(wire::context_to_wire(context)),
+            artifact: Some(wire::artifact_to_wire(artifact)),
+        };
+        let result = self.runtime.block_on(async {
+            let mut events = runner.apply(request).await?.into_inner();
+            let mut result = None;
+            while let Some(event) = events.message().await? {
+                match event.event {
+                    Some(pb::apply_event::Event::Log(line)) => log(wire::log_from_wire(line)),
+                    Some(pb::apply_event::Event::Result(r)) => result = Some(r),
+                    None => {}
+                }
+            }
+            Ok::<_, tonic::Status>(result)
+        });
+        let result = self.finished("applying", result)?;
+        wire::apply_result_from_wire(result)
+            .map_err(|e| self.unreadable("applying", e))?
+            .map_err(RunFailure::Tool)
+    }
+
+    /// Reads the values the last apply produced, without applying anything.
+    pub fn outputs(&self, context: &RunContext) -> Result<Vec<Output>, RunFailure> {
+        let mut runner = self.runner("report outputs", self.info.operations.outputs)?;
+        let request = pb::OutputsRequest {
+            context: Some(wire::context_to_wire(context)),
+        };
+        let result = self
+            .runtime
+            .block_on(runner.outputs(request))
+            .map(|r| Some(r.into_inner()));
+        let result = self.finished("reading outputs", result)?;
+        wire::outputs_response_from_wire(result)
+            .map_err(|e| self.unreadable("reading outputs", e))?
+            .map_err(RunFailure::Tool)
+    }
+
+    /// The runner connection, if the plugin declared the operation. A plugin
+    /// is never asked for something it did not offer: the declaration is the
+    /// contract, and probing past it would make it meaningless.
+    fn runner(&self, verb: &str, offered: bool) -> Result<RunnerClient<Channel>, RunFailure> {
+        let fault = |msg: String| {
+            RunFailure::Plugin(Error {
+                plugin: self.info.name.clone(),
+                path: self.info.path.clone(),
+                msg,
+                ..Error::default()
+            })
+        };
+        if !offered {
+            return Err(fault(format!("this target does not {verb}")));
+        }
+        match &self.channel {
+            Some(channel) => Ok(RunnerClient::new(channel.clone())),
+            None => Err(fault("the plugin has been shut down".to_owned())),
+        }
+    }
+
+    /// Turns the end of a run's stream into its result, or into the plugin
+    /// failure that a missing result is.
+    fn finished<T>(
+        &self,
+        doing: &str,
+        outcome: Result<Option<T>, tonic::Status>,
+    ) -> Result<T, RunFailure> {
+        let (cause, wait) = match outcome {
+            Ok(Some(result)) => return Ok(result),
+            Ok(None) => (
+                "the plugin ended the run without reporting a result".to_owned(),
+                Duration::ZERO,
+            ),
+            // A plugin that failed mid-run is usually still exiting, so give
+            // it a moment to finish saying why.
+            Err(e) => (status(&e), Duration::from_secs(1)),
+        };
+        let stderr = self
+            .process
+            .as_ref()
+            .map(|p| p.stderr_after(wait))
+            .unwrap_or_default();
+        Err(RunFailure::Plugin(Error {
+            plugin: self.info.name.clone(),
+            path: self.info.path.clone(),
+            msg: format!("the plugin failed while {doing}"),
+            cause,
+            stderr,
+        }))
+    }
+
+    fn unreadable(&self, doing: &str, cause: String) -> RunFailure {
+        RunFailure::Plugin(Error {
+            plugin: self.info.name.clone(),
+            path: self.info.path.clone(),
+            msg: format!("the plugin sent a result this host cannot read while {doing}"),
+            cause,
+            ..Error::default()
+        })
+    }
+
     /// Shuts the plugin down and waits for it to exit.
     pub fn close(mut self) -> Result<(), Error> {
         self.shutdown()
@@ -217,6 +366,7 @@ impl Client {
 
     fn shutdown(&mut self) -> Result<(), Error> {
         self.api = None;
+        self.channel = None;
         let Some(process) = self.process.take() else {
             return Ok(());
         };
@@ -364,7 +514,7 @@ impl Process {
         if let Some(env) = &options.env {
             command.env_clear().envs(env.iter().map(|(k, v)| (k, v)));
         }
-        let mut child = command.spawn().map_err(|e| Error {
+        let mut child = spawn_when_ready(&mut command).map_err(|e| Error {
             path: path.to_owned(),
             msg: "could not start the plugin".to_owned(),
             cause: e.to_string(),
@@ -494,6 +644,26 @@ const _: fn() = || {
     fn shareable<T: Send + Sync>() {}
     shareable::<Client>();
 };
+
+/// Starts a process, trying again when the program is briefly "busy".
+///
+/// A program that was written a moment ago cannot be run while any process
+/// still holds it open for writing, and a process another thread is in the
+/// middle of starting holds every open file for an instant. The condition
+/// clears by itself, so it is waited out instead of reported.
+fn spawn_when_ready(command: &mut std::process::Command) -> std::io::Result<std::process::Child> {
+    const TEXT_FILE_BUSY: i32 = 26;
+    let mut attempt = 0;
+    loop {
+        match command.spawn() {
+            Err(err) if err.raw_os_error() == Some(TEXT_FILE_BUSY) && attempt < 50 => {
+                attempt += 1;
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            result => return result,
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {

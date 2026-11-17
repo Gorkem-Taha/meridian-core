@@ -1,100 +1,102 @@
 # meridian-core
-A unified configuration DSL that compiles to Ansible, Puppet, Chef, DSC, Terraform, and ARM — write once, target any configuration management or infrastructure-as-code backend.
+
+Meridian is one declarative language for infrastructure and configuration. You describe
+what you want once; Meridian compiles it into the native files of the tool you choose and
+then drives that tool to plan and apply it.
+
+It is a transpiler and an orchestrator, not a replacement engine. Ansible still runs the
+playbook and Puppet still applies the catalog. Where a tool cannot express what a document
+asks for, Meridian refuses at compile time and says why. It never emits output that
+quietly does less.
 
 ## Status
 
-Early implementation. The accepted specifications live in [`docs/`](docs/index.md) —
+Early, and moving quickly. The accepted specifications are in [`docs/`](docs/index.md);
 start with the [design plan](docs/plans/design-plan.md).
 
-Milestones 1 to 3 of the [build sequence](docs/plans/design-plan.md#12-build-sequencing-milestones)
-are in place, along with the first half of milestone 4:
+| Plugin | Category | Compiles to | Runs with |
+|---|---|---|---|
+| [`ansible`](docs/targets/ansible.md) | configuration management | a playbook and inventory | `ansible-playbook` |
+| [`puppet`](docs/targets/puppet.md) | configuration management | a class and node statement | `puppet apply`, or `bolt apply` for another host |
+| [`chef`](docs/targets/chef.md) | configuration management | a cookbook | `chef-client`, or `chef-run` for another host |
+| [`dsc`](docs/targets/dsc.md) | configuration management | a DscPipelineRunner configuration | `Invoke-DscRunner` (DSC v2 and v3) |
+| [`terraform`](docs/targets/terraform.md) | infrastructure as code | `main.tf.json` | `terraform`, or `tofu` |
+| [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
+| [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
+| [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
+| [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
 
-- `internal/ir` — parsing and validation
-- `internal/resolve` — hierarchical data resolution
-- `internal/graph` — dependency graph and topological sort
-- `internal/ast` — the target-agnostic resource tree every emitter consumes
-- `pkg/sdk` — the public contract a target implements, and the server side of the plugin protocol
-- `internal/plugin` — the host side: launching a plugin binary, the handshake, and the target registry
-- `internal/fixtures` — the documents every target's tests compile, shared so their outputs can be read side by side
-- `plugins/ansible` — the first target, built against the SDK alone and shipped as its own binary
-- `plugins/puppet` — the second target, written against the SDK from its first line
+What each can and cannot express is in the generated
+[capability matrix](docs/reference/capability-matrix.md). To get started, read the
+[quickstart](docs/quickstart/install.md); there is a worked example for every plugin under
+[`examples/`](examples).
 
-A target is a separate process. The host launches the binary, reads one handshake line
-saying where it is listening, checks the protocol version, and then talks to it over gRPC
-as though it were a local emitter. Nothing above `internal/plugin` can tell a subprocess
-target from a compiled-in one.
+## The `meridian` command
 
-The two targets exist to prove the tree is target-agnostic. Both compile the same
-documents from `internal/fixtures`, so their golden files differ only where the targets
-themselves do. Ansible has no graph, so its sort stage flattens the tree into one task
-list and warns about the parallelism that cost; Puppet's catalog is a graph, so the same
-edges survive as `require` metaparameters and nothing is warned about. Where a target
-cannot express what a document asks for, it refuses rather than emitting output that does
-less: Puppet has no apply-time conditional and its refresh only restarts, so a document
-carrying `runtimeWhen` or notifying a reload fails to compile with an explanation. Those
-refusals are recorded as golden files too, because the wording an operator reads is
-output like any other.
+```
+cargo build --workspace
+meridian validate site.yaml                 # check documents, load no plugin
+meridian plugins                            # what is installed, and what each can do
+meridian compile site.yaml --out build      # write each target's own files; change nothing
+meridian plan site.yaml                     # ask each tool what applying would change
+meridian apply site.yaml                    # make it so
+```
 
-There is no CLI and no runner yet.
+Plugins are found beside the `meridian` binary, or in the directories named by `--plugin-dir`
+or `MERIDIAN_PLUGIN_DIR`. Each tool's working files and Meridian's own run-state live under
+`--state-dir` (`.meridian` by default).
 
-### Moving to Rust
+A workflow's Infrastructure documents run first, then its ResourceSets. A ResourceSet whose
+`targetHost` comes from an Infrastructure output is compiled for, and applied to, whatever
+that output turns out to be; until that infrastructure has been applied it is reported as
+deferred. Values a tool marks sensitive are masked wherever Meridian prints.
 
-Everything described above is written in Go. The core is being rewritten in Rust; the
-decision and the order of work are in the
-[design plan](docs/plans/design-plan.md#121-rust-migration-sequencing). The plugin protocol
-does not change, so the Go Ansible and Puppet plugins keep working behind a Rust host, and
-the Go core stays in the repository until the Rust core reproduces its golden files.
+## Layout
 
-The Rust core is a Cargo workspace under `crates/`. Ported so far:
+The core is a Cargo workspace under `crates/`:
 
-- `crates/meridian-ir` — parsing and validation, the counterpart of `internal/ir`
-- `crates/meridian-resolve` — hierarchical data resolution, the counterpart of `internal/resolve`
-- `crates/meridian-graph` — dependency graph and topological sort, the counterpart of `internal/graph`
-- `crates/meridian-ast` — the target-agnostic resource tree, the counterpart of `internal/ast`
-- `crates/meridian-value` — the dynamic value type and its canonical JSON form, shared by the core and the SDK
-- `crates/meridian-sdk` — the public plugin types and their wire conversion, the counterpart of `pkg/sdk`
-  (the half a plugin author needs to serve a target arrives with the first Rust plugin)
-- `crates/meridian-plugin-host` — launching, discovering and driving target plugins, the counterpart of `internal/plugin`
+- `meridian-ir` — parsing and validation of the documents
+- `meridian-yaml` — YAML scalar rules and a deterministic writer, shared by the parser and the plugins that emit YAML
+- `meridian-resolve` — hierarchical data resolution
+- `meridian-graph` — dependency graph and topological sort
+- `meridian-ast` — the target-agnostic resource tree every plugin consumes
+- `meridian-value` — the dynamic value type and its canonical JSON form, shared by the core and the SDK
+- `meridian-sdk` — what a plugin author builds against: the `Emitter` and `Runner` traits, `serve`,
+  the wire conversion, and helpers for running a command-line tool
+- `meridian-plugin-host` — launching, discovering and driving plugins
+- `meridian-orchestrator` — runs a workflow: compiles each document, drives its tool through a
+  plugin, hands outputs from one stage to the next, and stops on the first failure
+- `meridian-cli` — the `meridian` command
+- `meridian-target-fake` — a small, complete plugin whose tool is a directory, used by the tests
+  and readable as a worked example of the SDK
+- `meridian-plugin-testkit` — what the first-party plugins' tests share
 
-That is every layer the Go core has. The Rust host drives the Go Ansible and Puppet plugin
-binaries and reproduces every golden file under `plugins/*/testdata` byte for byte; the
-test that proves it (`crates/meridian-plugin-host/tests/contract.rs`) compiles the documents
-in `fixtures/` and needs a Go toolchain to build the plugins.
+The plugins are under `plugins/`, one crate each, built as a binary named
+`meridian-target-<name>`. A plugin's library depends on `meridian-sdk` and nothing else of
+Meridian's, which is the same position a third-party plugin is in.
+
+A plugin is a separate process. The host launches the binary, reads one handshake line
+saying where it is listening, checks the protocol version, and then talks to it over gRPC.
+The protocol is defined in [`proto/`](proto/meridian/plugin/v1/plugin.proto), so a plugin
+can be written in any language that can serve it. A plugin binary is not meant to be run
+by hand: its stdout carries the protocol, and it exits when the host closes its stdin.
+
+Every plugin compiles in four stages, in this order: transform (map each resource to the
+tool's own vocabulary, or refuse it), sort (apply the tool's ordering semantics), validate
+(the tool's own constraints) and emit (pure serialisation). Running the tool is a separate
+half of the plugin, so compiling stays free of side effects.
+
+## Tests
 
 ```
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+cargo fmt --all --check
+python3 tools/check_links.py
 ```
 
-### Building and running the target plugins
-
-```
-go build -o meridian-target-ansible ./plugins/ansible/cmd/meridian-target-ansible
-go build -o meridian-target-puppet  ./plugins/puppet/cmd/meridian-target-puppet
-```
-
-The binary is not meant to be run by hand: its stdout carries the protocol, and it exits
-when the host closes its stdin. Drop it in a directory and a host discovers it by name.
-
-### Regenerating the protocol
-
-The generated protocol code under `pkg/sdk/pluginpb` is committed, so building this
-repository never requires protoc. Regenerate it only when `proto/meridian/plugin/v1/plugin.proto`
-changes, with protoc 29.3 and:
-
-```
-go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
-go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
-protoc --proto_path=proto \
-  --go_out=. --go_opt=module=github.com/ZanattaMichael/meridian-core \
-  --go-grpc_out=. --go-grpc_opt=module=github.com/ZanattaMichael/meridian-core \
-  proto/meridian/plugin/v1/plugin.proto
-```
-
-### Tests
-
-```
-go build ./...
-go test ./...          # includes the contract test, which builds the plugin binaries
-go test -short ./...   # unit tests only
-```
+Each plugin's tests compile the shared documents in `fixtures/` and its own examples, and
+compare the output byte for byte with the golden files in `plugins/<name>/testdata`.
+Refusals are golden files too, because the wording an operator reads is output like any
+other. Set `UPDATE_GOLDEN=1` to record them after a deliberate change. The runners are
+tested against stand-ins for the tools, so the suite needs nothing installed but Rust.

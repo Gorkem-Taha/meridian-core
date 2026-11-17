@@ -1,5 +1,5 @@
-//! Generates the protocol types from `proto/`, the one definition both the Go
-//! and the Rust SDK are built from.
+//! Generates the protocol types from `proto/`, the one definition of the
+//! plugin protocol.
 //!
 //! The .proto is compiled by a pure-Rust compiler, so building this crate
 //! needs no `protoc` on the machine.

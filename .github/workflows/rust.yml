@@ -15,21 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The plugin contract test builds the Go target plugins and drives them
-      # from the Rust host, so this job needs both toolchains.
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Install the stable toolchain
         run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update && rustup default stable
 
       - name: Check formatting
         run: cargo fmt --all --check
 
-      # --locked fails the build if Cargo.lock is out of step with the manifests,
-      # the same guarantee the Go job gets from checking go.mod is tidy.
+      # --locked fails the build if Cargo.lock is out of step with the manifests.
       - name: Clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 

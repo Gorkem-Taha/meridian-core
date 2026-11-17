@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 
-use meridian_sdk::{Data, Emitted, Emitter, ResourceGraph, PROTOCOL_VERSION, VERSION};
+use meridian_sdk::{
+    Applied, Artifact, Data, Emitted, Emitter, LogLine, Operations, Output, Plan, ResourceGraph,
+    RunContext, PROTOCOL_VERSION, VERSION,
+};
 
 use crate::client::{Client, StartOptions};
-use crate::{EmitError, Error, Info, BINARY_PREFIX};
+use crate::{EmitError, Error, Info, RunFailure, BINARY_PREFIX};
 
 /// A registered target: an emitter compiled into this binary, or a plugin
 /// process. Code that compiles a document does not need to tell them apart.
@@ -34,6 +37,43 @@ impl Target {
                 e.target = self.info.name.clone();
                 EmitError::Refused(e)
             }),
+        }
+    }
+
+    /// Previews what applying an artifact would change.
+    pub fn plan(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &mut dyn FnMut(LogLine),
+    ) -> Result<Plan, RunFailure> {
+        self.client("plan")?.plan(context, artifact, log)
+    }
+
+    /// Makes an artifact's desired state real.
+    pub fn apply(
+        &self,
+        context: &RunContext,
+        artifact: &Artifact,
+        log: &mut dyn FnMut(LogLine),
+    ) -> Result<Applied, RunFailure> {
+        self.client("apply")?.apply(context, artifact, log)
+    }
+
+    /// Reads the values the last apply produced.
+    pub fn outputs(&self, context: &RunContext) -> Result<Vec<Output>, RunFailure> {
+        self.client("report outputs")?.outputs(context)
+    }
+
+    /// A compiled-in emitter only compiles; running a tool is a plugin's job.
+    fn client(&self, verb: &str) -> Result<&Client, RunFailure> {
+        match &self.kind {
+            Kind::Plugin(client) => Ok(client),
+            Kind::InProcess(_) => Err(RunFailure::Plugin(Error {
+                plugin: self.info.name.clone(),
+                msg: format!("this target does not {verb}"),
+                ..Error::default()
+            })),
         }
     }
 }
@@ -74,6 +114,8 @@ impl Registry {
             name: name.clone(),
             resource_types: emitter.supported_resource_types(),
             capabilities: emitter.capabilities(),
+            category: emitter.category(),
+            operations: Operations::COMPILE_ONLY,
             path: String::new(),
         };
         self.targets.insert(
@@ -197,9 +239,13 @@ impl Registry {
 
 /// Applies the naming convention, so discovery never executes a binary just to
 /// find out what it is.
+///
+/// A target name holds no dot, so the files a build leaves beside a binary
+/// (`meridian-target-ansible.d`, `.pdb`) are not taken for plugins.
 fn is_plugin_name(name: &str) -> bool {
     let name = name.strip_suffix(".exe").unwrap_or(name);
-    name.len() > BINARY_PREFIX.len() && name.starts_with(BINARY_PREFIX)
+    name.strip_prefix(BINARY_PREFIX)
+        .is_some_and(|target| !target.is_empty() && !target.contains('.'))
 }
 
 /// The file name a plugin for the given target must have.
@@ -216,6 +262,9 @@ mod tests {
         for (name, want) in [
             ("meridian-target-ansible", true),
             ("meridian-target-ansible.exe", true),
+            ("meridian-target-dsc-v3", true),
+            ("meridian-target-ansible.d", false),
+            ("meridian-target-ansible.pdb", false),
             ("meridian-target-", false),
             ("meridian-target-.exe", false),
             ("meridian", false),

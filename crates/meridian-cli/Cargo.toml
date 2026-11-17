@@ -1,0 +1,34 @@
+[package]
+name = "meridian-cli"
+description = "The meridian command: validate, compile, plan and apply Meridian documents"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "meridian"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+meridian-ir = { path = "../meridian-ir" }
+meridian-orchestrator = { path = "../meridian-orchestrator" }
+meridian-plugin-host = { path = "../meridian-plugin-host" }
+meridian-sdk = { path = "../meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
+meridian-target-ansible = { path = "../../plugins/ansible" }
+meridian-target-bicep = { path = "../../plugins/bicep" }
+meridian-target-chef = { path = "../../plugins/chef" }
+meridian-target-cloudformation = { path = "../../plugins/cloudformation" }
+meridian-target-docker = { path = "../../plugins/docker" }
+meridian-target-dsc = { path = "../../plugins/dsc" }
+meridian-target-kubernetes = { path = "../../plugins/kubernetes" }
+meridian-target-puppet = { path = "../../plugins/puppet" }
+meridian-target-terraform = { path = "../../plugins/terraform" }
+meridian-target-fake = { path = "../meridian-target-fake" }
+
+[lints]
+workspace = true
