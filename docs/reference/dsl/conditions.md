@@ -19,9 +19,9 @@ flowchart LR
 |---|---|---|
 | Decided by | Meridian | the tool |
 | Decided when | before anything is compiled | on the machine, at the moment the resource is applied |
-| Written in | Meridian's own condition language | the tool's own language |
+| Written in | Meridian's [expression language](expressions.md) | the tool's own language |
 | Effect when false | the resource is not in the compiled output | the resource is in the output; the tool skips it |
-| Can read | the values given with `--data` | whatever the tool can see on the machine |
+| Can read | the values given with `--data` and `--set` | whatever the tool can see on the machine |
 | Available | on every target | on the targets that can |
 
 ## `runtimeWhen`
@@ -86,44 +86,92 @@ will run. No target ever sees the condition, so it works on every target.
 
 ### The condition language
 
-A condition reads the values given to the command with `--data` and compares
-them. Quote the whole condition in YAML, because `!` and `'` mean something to
-YAML at the start of a value.
+A condition is an [expression](expressions.md) that comes out `true` or
+`false`. It reads the values given to the command with `--data` and `--set`,
+as `data.<key>`. Quote the whole condition in YAML, because `!`, `'`, `[` and
+`>` mean something to YAML.
 
 | You write | Meaning |
 |---|---|
-| `data.env`, `data.region.name` | a value from the data files: a key, then keys inside mappings |
-| `true`, `false`, `null` | themselves |
-| `3`, `-1`, `1.5` | numbers. `3` and `3.0` are equal |
-| `'prod'`, `"prod"` | text. `\'` and `\"` put a quote inside |
-| `a == b`, `a != b` | whether two values are the same |
-| `!a` | not |
-| `a && b`, `a \|\| b` | and, or. `&&` binds tighter than `\|\|`; the right side is only read when the left leaves the answer open |
+| `data.env`, `data.region.name`, `data.ports[0]` | a value from the data: a key, keys inside mappings, an item of a list |
+| `true`, `false`, `null`, `3`, `1.5`, `'prod'`, `[1, 2]`, `{a: 1}` | themselves |
+| `a == b`, `a != b` | whether two values are the same. `3` and `3.0` are; `'3'` and `3` are not |
+| `a < b`, `a <= b`, `a > b`, `a >= b` | order, between two numbers or two texts |
+| `a in b`, `a not in b` | an item of a list, a key of a mapping, or text inside text |
+| `a =~ 'pattern'`, `a !~ 'pattern'` | text matches a regular expression |
+| `a + b`, `a - b`, `a * b`, `a / b`, `a % b` | arithmetic; `+` also joins two texts or two lists |
+| `!a`, `a && b`, `a \|\| b` | not, and, or. `&&` binds tighter than `\|\|`; the right side is only read when the left leaves the answer open |
+| `c ? a : b` | `a` when `c` is true, otherwise `b` |
+| `a ?? b` | `a`, or `b` when `a` is not set or null |
 | `( ... )` | grouping |
 | `defined(data.key)` | whether the data sets that key |
+| `length(x)`, `upper(x)`, `contains(x, y)`, ... | [functions](expressions.md#functions): about eighty, the same wherever an expression is written |
+
+```yaml
+- id: tls_dir
+  type: file
+  state: directory
+  params: {path: /etc/app/tls}
+  when: "data.env in ['staging', 'prod'] && (data.tls.enabled ?? false)"
+
+- id: swap_file
+  type: exec
+  params: {command: fallocate -l 2G /swapfile}
+  when: "data.memory_mb < 4 * 1024"
+
+- id: nat_address
+  type: aws_eip
+  params: {domain: vpc}
+  when: "length(filter(data.subnets, 's', !s.public)) > 1 && data.account != 'sandbox'"
+```
+
+The full language, with every operator, every function and every error, is on
+[expressions and functions](expressions.md).
 
 | Rule | Checked by | Message |
 |---|---|---|
-| The condition must be written in this language | `validate` | `spec.resources[0].when: unexpected ">" (a condition is built from ...)` |
+| The condition must be written in the language | `validate` | `spec.resources[0].when: unexpected "=" (to compare two values in a condition, write ==)` |
+| Every name must be one a condition can read | `validate` | `unknown name "env" (a condition reads data.<key>; text is quoted)` |
+| Every function must exist and be given a number of arguments it takes | `validate` | `unknown function "Length" (did you mean length?)` |
 | `facts.*` is not available: nothing gathers facts from a node yet | `validate` | `facts are not available: ... a condition can only read data.<key>` |
-| A key the condition reads must be set | `compile` | `data.env is not set (give it with --data, or test for it with defined(data.env))` |
+| A key the condition reads must be set | `compile` | `data.env is not set (give it with --data or --set, or test for it with defined(data.env))` |
+| Types must go together; nothing is converted silently | `compile` | `cannot compare a string and a number with >; convert one first, with toString or toNumber` |
 | The condition must come out `true` or `false` | `compile` | `data.env is a string, not true or false; compare it with == or !=` |
 
-There is no `<`, `>`, arithmetic or function other than `defined`. A condition
-that needs more belongs in the data: work the answer out where the data is
-produced, and give it as a boolean. Guard an optional key with
+Guard an optional key with `data.x ?? false`, or with
 `defined(data.x) && data.x == 'y'`.
+
+**The same on every target.** A condition is decided before the document's
+plugin is handed anything, so the target takes no part in it. The resources
+kept are the same whether the document names `ansible`, `terraform` or
+`kubernetes`, and a test asserts that for every target.
 
 ### Giving the data
 
 ```
-meridian apply site.yaml --data common.yaml --data prod.yaml
+meridian apply site.yaml --data common.yaml --data prod.yaml --set replicas=5
 ```
 
 A data file is YAML or JSON holding one mapping. `--data` may be repeated; a
-key in a later file replaces the same key from an earlier file, whole. With no
-`--data` there is no data, and a condition that reads a key is refused, not
-taken as false.
+key in a later file replaces the same key from an earlier file, whole.
+
+`--set KEY=VALUE` gives one value, after every data file, so it wins:
+
+| You write | Sets |
+|---|---|
+| `--set env=prod` | `data.env` to the text `prod` |
+| `--set replicas=5`, `--set tls=true` | a number, a boolean: the value is typed as YAML types it |
+| `--set 'version="1.10"'` | text that would otherwise be read as a number |
+| `--set region.name=eu-west-1` | one key inside the mapping `data.region`, keeping its other keys |
+| `--set 'ports=[80, 443]'` | a list |
+| `--set note=` | null |
+
+A later `--set` of the same key wins. A dotted key whose start is already set
+to something that is not a mapping is refused: `--set env.name=x: env is
+already set to a string, so it cannot hold the key "name"`.
+
+With no `--data` and no `--set` there is no data, and a condition that reads a
+key is refused, not taken as false.
 
 ### `ifMissing`
 
@@ -176,7 +224,7 @@ Also:
 | Command | A document that uses `when` |
 |---|---|
 | `validate` | the condition's syntax is checked |
-| `compile`, `plan`, `apply` | the condition is decided from `--data`, and the resource is kept or removed |
+| `compile`, `plan`, `apply` | the condition is decided from `--data` and `--set`, and the resource is kept or removed |
 
 ## Choosing
 

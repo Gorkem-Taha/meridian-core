@@ -49,6 +49,7 @@ mod run;
 mod serve;
 pub mod tool;
 mod types;
+pub mod version;
 pub mod wire;
 
 /// The protocol's generated message and service types. A host or a plugin
@@ -73,19 +74,28 @@ pub use types::{
     Artifact, Capabilities, CompileError, Data, Edge, EdgeKind, Emitted, Emitter,
     OutputDeclaration, Position, Resource, ResourceGraph, Warning,
 };
+pub use version::PROTOCOLS_ENV;
 
-/// The wire protocol this SDK speaks. A host refuses a plugin reporting a
-/// version it does not implement, instead of guessing at the difference.
+/// The newest wire protocol this SDK speaks. A host and a plugin agree on a
+/// version before the first call ([`version`]): the highest both speak. A host
+/// refuses a plugin announcing a version outside the host's range, instead of
+/// guessing at the difference.
 ///
 /// It is a separate number from the SDK's release version on purpose: the SDK
 /// gains helpers far more often than the wire format changes, and a plugin
-/// built against an older SDK stays loadable for as long as this number holds.
+/// built against an older SDK stays loadable for as long as its protocol is
+/// in the host's range.
 ///
 /// Version 2 added the plugin's category and operations to `Describe`, and
 /// the `Runner` service. The optional `Importer` service was added without a
 /// new version: a plugin built before it lists no import formats and is never
 /// asked to import.
 pub const PROTOCOL_VERSION: u32 = 2;
+
+/// The oldest wire protocol this SDK still speaks. It trails
+/// [`PROTOCOL_VERSION`] by at most one, and rises only through the
+/// deprecation policy.
+pub const MIN_PROTOCOL_VERSION: u32 = 2;
 
 /// The SDK release a plugin was compiled against. It is reported over the
 /// handshake, not inferred by the host, so a version mismatch is a fact the

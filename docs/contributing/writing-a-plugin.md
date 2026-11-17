@@ -576,6 +576,31 @@ done it. Good ones to read:
 | references between resources and to outputs | [`plugins/terraform`](../../plugins/terraform/src/lib.rs) |
 | a runner that works over SSH, with a real-tool workflow | [`plugins/podman`](../../plugins/podman/src/lib.rs) |
 
+## Versions: the SDK and the protocol
+
+You do not write any version handling. `meridian_sdk::serve` does it:
+
+- **The protocol version** is agreed when your plugin starts. `meridian` sets
+  `MERIDIAN_PLUGIN_PROTOCOLS` to the versions it speaks, the SDK picks the
+  highest one it also speaks, and announces it in the handshake line. Your
+  plugin therefore keeps loading on newer releases of `meridian` for as long
+  as they still speak a protocol version your SDK does.
+- **The SDK version** your plugin was built against is announced in the same
+  line. `meridian` loads a plugin built against the same SDK line as its own,
+  and not a newer one.
+
+When either check fails, `meridian` does not load the plugin and says which
+side is behind. The fix is always one of two: rebuild the plugin against a
+current `meridian-sdk`, or upgrade `meridian`.
+[Compatibility](../reference/compatibility.md) has the tables.
+
+Changing `PROTOCOL_VERSION` or `MIN_PROTOCOL_VERSION` in `meridian-sdk` is a
+protocol change: it needs two reviewers, a row in the protocol table that
+[`crates/meridian-cli/tests/compatibility.rs`](../../crates/meridian-cli/tests/compatibility.rs)
+generates, and the old version kept until the
+[deprecation policy](../plans/release-and-versioning.md#6-deprecation-policy)
+lets it go.
+
 ## A plugin in another language, or outside this repository
 
 A plugin is a separate process that speaks gRPC, and the protocol is defined
@@ -586,3 +611,11 @@ repository: build a binary named `meridian-target-<name>`, put it beside
 The Rust SDK is the supported path today, and the only one with a test kit.
 If you write one in another language, please open an issue and tell us what
 was hard; that is how the protocol gets better.
+
+A plugin that does not use the Rust SDK has to do the handshake itself: read
+`MERIDIAN_PLUGIN_PROTOCOLS` (a comma-separated list such as `2,3`; when it is
+not set, use your newest version), pick the highest version you also speak,
+and print `MERIDIAN-PLUGIN|<protocol>|<sdk version>|unix|<socket path>` as the
+first line on stdout once you are listening. Report the same protocol version
+from `Describe`. For `<sdk version>`, give the release of the Rust SDK whose
+behaviour you implement.

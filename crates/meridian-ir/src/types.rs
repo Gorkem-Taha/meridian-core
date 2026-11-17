@@ -4,8 +4,9 @@ use std::fmt;
 use crate::error::Position;
 use meridian_value::Value;
 
-/// The only `apiVersion` this build understands. Any other value is an
-/// explicit error, never a silent partial parse.
+/// The first language version. Which versions a build reads, and in what
+/// state, is decided by [`crate::VersionTable`]; any value it does not hold is
+/// an explicit error, never a silent partial parse.
 pub const API_VERSION_V1: &str = "meridian/v1";
 
 /// `targetHost.from` value that resolves against another document's outputs.

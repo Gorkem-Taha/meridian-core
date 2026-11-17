@@ -46,6 +46,7 @@ flowchart TD
 | [`dependsOn`](dependson.md) | order: how the sort works, cycles, what each tool makes of it |
 | [`notifies`](notifies.md) | reactions: native, synthetic, refused; the actions each target takes |
 | [Conditions](conditions.md) | `runtimeWhen` and `when` |
+| [Expressions and functions](expressions.md) | the language a `when` is written in: values, operators, every function, every error |
 | [References](references.md) | `${...}`: syntax, how each target rewrites it, what can be read where |
 | [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs` and `targetHost`: the one tie between documents |
 | The four flavour pages above | how all of it is written for each segment |
@@ -114,10 +115,42 @@ spec:
 
 | Field | Required | Value |
 |---|---|---|
-| `apiVersion` | yes | `meridian/v1`. Anything else is refused before the rest of the document is read |
+| `apiVersion` | yes | The version of the language the document is written in: `meridian/v1`. Anything else is refused before the rest of the document is read. See [`apiVersion`](#apiversion) |
 | `kind` | yes | `Infrastructure` or `ResourceSet` |
 | `metadata` | yes | see [`metadata`](#metadata) |
 | `spec` | yes | depends on the kind |
+
+### `apiVersion`
+
+`apiVersion` says which version of the Meridian language a document is written
+in. It is `meridian/v` and a whole number, and `meridian/v1` is the only
+version so far.
+
+The number changes only when a document that compiles today would stop
+compiling or would mean something else. New fields, new kinds of document and
+new resource types are added inside the current version, so a document never
+needs its `apiVersion` touched to keep working, and you never need to raise it
+to use something new.
+
+A build reads each version it knows in one of three ways:
+
+| State | What happens |
+|---|---|
+| supported | the document compiles |
+| deprecated | the document compiles, and the run prints one warning naming the version to move to |
+| removed | the document is refused, and the message names the release that removed the version |
+
+A value the build does not know is refused, and the message says why:
+
+```
+site.yaml:1:1: apiVersion: unsupported apiVersion "meridian/v2": it is newer than this build, which understands meridian/v1; upgrade meridian
+site.yaml:1:1: apiVersion: unsupported apiVersion "meridian/v1.0": versions are whole numbers, as in "meridian/v1"
+site.yaml:1:1: apiVersion: unsupported apiVersion "apps/v1": expected "meridian/v1"
+```
+
+[`meridian migrate`](../cli.md#migrate) moves documents to a newer version,
+[`meridian version`](../cli.md#version) lists the versions a build reads, and
+[compatibility](../compatibility.md) has the full rules.
 
 The two kinds answer different questions. An **Infrastructure** document says
 what should exist, and can promise [outputs](#outputs). A **ResourceSet** says
@@ -437,21 +470,22 @@ condition. It works on every target.
 
 ### What a `when` can say
 
-A condition reads the values given to the command with `--data` and compares
-them. Quote the whole condition in YAML, because `!` and `'` mean something to
-YAML at the start of a value.
+A condition is an [expression](expressions.md) over the values given to the
+command with `--data` and `--set`. Quote the whole condition in YAML, because
+`!`, `'`, `[` and `>` mean something to YAML.
 
 | You write | Meaning |
 |---|---|
-| `data.env`, `data.region.name` | a value from the data files: a key, then keys inside mappings |
-| `true`, `false`, `null` | themselves |
-| `3`, `-1`, `1.5` | numbers. `3` and `3.0` are equal |
-| `'prod'`, `"prod"` | text. `\'` and `\"` put a quote inside |
-| `a == b`, `a != b` | whether two values are the same |
-| `!a` | not |
-| `a && b`, `a \|\| b` | and, or. `&&` binds tighter than `\|\|`; the right side is only read when the left leaves the answer open |
+| `data.env`, `data.region.name`, `data.ports[0]` | a value from the data |
+| `true`, `false`, `null`, `3`, `1.5`, `'prod'`, `[1, 2]`, `{a: 1}` | themselves. `3` and `3.0` are equal; `'3'` and `3` are not |
+| `==`, `!=`, `<`, `<=`, `>`, `>=` | comparison. Order is for two numbers or two texts |
+| `a in b`, `a not in b` | an item of a list, a key of a mapping, or text inside text |
+| `a =~ 'pattern'`, `a !~ 'pattern'` | text matches a regular expression |
+| `+`, `-`, `*`, `/`, `%` | arithmetic; `+` also joins two texts or two lists |
+| `!a`, `a && b`, `a \|\| b` | not, and, or. `&&` binds tighter than `\|\|`; the right side is only read when the left leaves the answer open |
+| `c ? a : b`, `a ?? b` | a choice; a fallback for a value that is not set or null |
 | `( ... )` | grouping |
-| `defined(data.key)` | whether the data sets that key |
+| `defined(data.key)` and about eighty other [functions](expressions.md#functions) | whether the data sets that key; text, numbers, lists, networks, versions |
 
 Rules:
 
@@ -459,27 +493,31 @@ Rules:
   not a yes or a no: `data.env is a string, not true or false; compare it with
   == or !=`.
 - A key the data does not set is an error, not a "no": `data.env is not set
-  (give it with --data, or test for it with defined(data.env))`. Guard an
-  optional key with `defined(data.x) && data.x == 'y'`.
-- There is no `<`, `>`, arithmetic or function other than `defined`. A condition
-  that needs more than this belongs in the data: compute the answer where the
-  data is produced and give it as a boolean.
+  (give it with --data or --set, or test for it with defined(data.env))`. Guard
+  an optional key with `data.x ?? false`.
+- Nothing is converted silently. Comparing or adding text and a number is an
+  error that names both types.
 - `facts.*` is refused: Meridian does not gather facts from a node yet, so a
   condition cannot depend on the node. To decide on the node while applying,
   use `runtimeWhen` on a target that supports it.
-- The condition's syntax is checked by `meridian validate`. Its answer needs the
-  data, so it is decided by `compile`, `plan` and `apply`.
+- The condition's syntax, its names and its functions are checked by
+  `meridian validate`. Its answer needs the data, so it is decided by
+  `compile`, `plan` and `apply`.
+- A condition is decided before the target's plugin is involved, so it means
+  the same on every target.
 
 ### Giving the data
 
 ```
-meridian apply site.yaml --data common.yaml --data prod.yaml
+meridian apply site.yaml --data common.yaml --data prod.yaml --set replicas=5
 ```
 
 A data file is YAML or JSON holding one mapping of names to values. `--data` may
 be given more than once; a key in a later file replaces the same key from an
-earlier file, whole (mappings are not merged). The same data is also handed to
-every plugin when it compiles.
+earlier file, whole (mappings are not merged). `--set KEY=VALUE` gives one
+value after every file, typed as YAML types it, and a dotted key sets one key
+inside a mapping. The same data is also handed to every plugin when it
+compiles. In depth: [giving the data](conditions.md#giving-the-data).
 
 ### What removing a resource does
 
@@ -622,13 +660,13 @@ and [`examples/workflow/`](../../../examples/workflow) holds its files.
 | Document names are unique within a kind; output names are unique | yes | yes |
 | The dependencies form no cycle | yes | yes |
 | A notify's `on` is `changed`; an `ifMissing` is `error` or `skip` | yes | yes |
-| A `when` is written in the condition language | yes | yes |
+| A `when` is written in the expression language, with names it can read and functions that exist | yes | yes |
 | `targetHost` is complete, and names a real document and output | yes | yes |
 | A plugin for `target` is installed | no | yes |
 | A ResourceSet has a `targetHost` | no | yes |
 | The document's kind is one the target's segment takes | no | yes |
 | The target compiles for the `targetVersion` | no | yes |
-| Every `when` has an answer, from the `--data` files | no | yes |
+| Every `when` has an answer, from the `--data` files and `--set` | no | yes |
 | An entry naming a resource its `when` removed says `ifMissing: skip` | no | yes |
 | The selector, if one is given, selects at least one document | no | yes |
 | The target takes the `type`, the `state`, every param, the notify's action, `runtimeWhen` | no | yes |
