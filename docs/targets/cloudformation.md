@@ -1,5 +1,7 @@
 # Target: `cloudformation`
 
+<img src="../branding/logos/meridian-cloudformation.svg" width="72" alt="Meridian CloudFormation plugin logo">
+
 Compiles an Infrastructure document into an AWS CloudFormation template and
 deploys it as a stack with the `aws` command line.
 

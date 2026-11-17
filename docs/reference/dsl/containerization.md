@@ -15,6 +15,25 @@ host. This page is how the [Meridian language](index.md) is written for them.
 | Target | `type` is | Settings resource | Page |
 |---|---|---|---|
 | `docker` | an element of a Compose file: `service`, `network`, `volume`, `config`, `secret` | `project` (optional) | [docker](../../targets/docker.md) |
+| `podman` | a kind of Quadlet unit: `container`, `pod`, `kube`, `volume`, `network`, `image`, `build` | none; the runner is set through the environment | [podman](../../targets/podman.md) |
+
+## Two tools, one shape
+
+The two targets differ in what runs the containers, and the flavour is the same
+for both: a resource is one element, its `params` are that element's own fields
+in the tool's own spelling, and elements find each other by `id`.
+
+| | `docker` | `podman` |
+|---|---|---|
+| Compiles to | one Compose file | one Quadlet unit file per resource |
+| Run by | `docker compose`, talking to a daemon | systemd, with no daemon |
+| Params are spelt | as the Compose specification has them: `image`, `ports` | as Quadlet has them: `Image`, `PublishPort` |
+| `dependsOn` | `depends_on` between services | `Requires=` and `After=` |
+| `notifies` | `restart`, native or synthetic | `restart`, native: systemd's `PartOf=` |
+| Another machine | the `project` resource names a daemon | a ResourceSet's `targetHost`, over `ssh` |
+
+The rest of this page uses Docker for its examples. Podman's own page has the
+same sections for Quadlet.
 
 ## A document is a project
 

@@ -1,5 +1,7 @@
 # The Meridian language
 
+<img src="../../branding/logos/meridian-core.svg" width="72" alt="Meridian logo">
+
 This is the reference for everything a Meridian document can say: every field,
 what it must hold, and what happens when it does not. It describes what the
 `meridian` command accepts today. Every field on this page does something: a
@@ -19,6 +21,34 @@ that depends on which segment the target belongs to:
 
 A target's page under [`targets/`](../../targets/ansible.md) then says what that
 one tool makes of the flavour.
+
+```mermaid
+flowchart TD
+    CORE["The core language<br/>document, metadata, resources, id,<br/>dependsOn, notifies, references, outputs, targetHost"]
+    CORE --> CM["Configuration management<br/>kind: ResourceSet"]
+    CORE --> IAC["Infrastructure as code<br/>kind: Infrastructure"]
+    CORE --> CON["Containerization<br/>kind: Infrastructure"]
+    CORE --> ORC["Container orchestration<br/>kind: Infrastructure"]
+    CM --> CM1["shared dialect: six types<br/>ansible, puppet, chef, cloud-init"]
+    CM --> CM2["native dialect<br/>dsc"]
+    IAC --> IAC1["the tool's own types<br/>terraform, cloudformation, bicep"]
+    CON --> CON1["elements of a project<br/>docker, podman"]
+    ORC --> ORC1["API objects<br/>kubernetes"]
+```
+
+## The pages of this reference
+
+| Page | Covers |
+|---|---|
+| This page | every field in one place, with its rules |
+| [How it fits together](how-it-fits-together.md) | a document's path from file to running tool, step by step, with a worked example |
+| [Resources](resources.md) | `id`, `type`, `state`, `params` in depth |
+| [`dependsOn`](dependson.md) | order: how the sort works, cycles, what each tool makes of it |
+| [`notifies`](notifies.md) | reactions: native, synthetic, refused; the actions each target takes |
+| [Conditions](conditions.md) | `runtimeWhen` and `when` |
+| [References](references.md) | `${...}`: syntax, how each target rewrites it, what can be read where |
+| [Outputs and hand-offs](outputs-and-hand-offs.md) | `outputs` and `targetHost`: the one tie between documents |
+| The four flavour pages above | how all of it is written for each segment |
 
 ## Contents
 
@@ -301,6 +331,8 @@ compiled: `document "web" declares no targetHost`.
 | `when` | no | text: a condition Meridian decides before compiling. A resource whose condition is false is left out. See [`when` and `runtimeWhen`](#when-and-runtimewhen) |
 | `runtimeWhen` | no | text, in the tool's own language. Only on targets that can check a condition while applying |
 
+In depth: [resources](resources.md).
+
 Many tools use the `id` as a name in their own files, so they limit what it may
 hold. Letters, digits and underscores, starting with a letter, work on every
 target. A target that needs a different spelling in its own file (a
@@ -318,7 +350,7 @@ dependsOn:
 ```
 
 "Do not touch this resource until that one is done." It is about order and
-nothing else.
+nothing else. In depth, with the sort worked through: [`dependsOn`](dependson.md).
 
 | Field | Required | Value |
 |---|---|---|
@@ -353,7 +385,8 @@ notifies:
 ```
 
 "When this resource really changes, do that to the other one." On a run where
-nothing changed, nothing happens. A notify also orders the notifier first.
+nothing changed, nothing happens. A notify is a reaction and not an order: it takes no part in
+the sort that `dependsOn` drives. In depth: [`notifies`](notifies.md).
 
 | Field | Required | Value |
 |---|---|---|
@@ -382,7 +415,7 @@ all.
 
 ## `when` and `runtimeWhen`
 
-They are two different times.
+They are two different times. In depth: [conditions](conditions.md).
 
 **`runtimeWhen`** is a condition the tool checks on the machine while it
 applies, so it is written in the tool's own language and Meridian passes it
@@ -527,6 +560,9 @@ set, or a resource the document does not declare is refused with the rule
 `invalid-reference`. `$${` comes out as a literal `${`. The details are in
 [the resource types reference](../resource-types.md#references).
 
+In depth, with what each target rewrites a reference into:
+[references](references.md).
+
 ## `outputs`
 
 Only in an Infrastructure document.
@@ -541,6 +577,8 @@ outputs:
 |---|---|---|
 | `name` | yes | unique among the document's outputs |
 | `value` | no, but give one | text holding one or more references. The core does not check that it is there; an output without a value has nothing to report |
+
+In depth, with the life of a hand-off: [outputs and hand-offs](outputs-and-hand-offs.md).
 
 An output is a value the tool reports after the document is applied. It is
 shown, kept in the state directory, and handed to the stage that asked for it. A
@@ -570,7 +608,9 @@ meridian apply machine.yaml web.yaml
 - A ResourceSet waiting for an output is deferred until that output exists.
 - When a stage fails, the stages after it do not run. Nothing is rolled back.
 
-A worked example is [a two-stage workflow](../../quickstart/first-two-stage.md),
+Every step from file to running tool is in
+[how it fits together](how-it-fits-together.md). A worked example is
+[a two-stage workflow](../../quickstart/first-two-stage.md),
 and [`examples/workflow/`](../../../examples/workflow) holds its files.
 
 ## Which check happens when

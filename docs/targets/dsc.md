@@ -1,5 +1,7 @@
 # Target: `dsc`
 
+<img src="../branding/logos/meridian-dsc.svg" width="72" alt="Meridian DSC plugin logo">
+
 Compiles a ResourceSet into a DscPipelineRunner configuration and runs it with
 `Invoke-DscRunner`.
 
