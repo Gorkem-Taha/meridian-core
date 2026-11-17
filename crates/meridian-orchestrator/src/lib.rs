@@ -36,6 +36,7 @@ use meridian_plugin_host::{to_sdk, EmitError, Registry, RunFailure};
 use meridian_sdk::{
     Artifact, Category, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning,
 };
+use meridian_secret::Masker;
 
 pub use select::Selector;
 pub use state::{artifact_hash, RunState, StageRecord};
@@ -205,6 +206,7 @@ pub fn run_selected(
         options,
         outputs: BTreeMap::new(),
         secrets: Vec::new(),
+        masker: Masker::new(),
         state: None,
     };
     let mut report = RunReport::default();
@@ -259,7 +261,8 @@ pub fn run_selected(
         observer.stage_started(&id, &target);
         let stage_report = run.stage(id, target, resolution, &secrets, observer);
         // The stage is over: its secrets are wiped now, not at the end of
-        // the run.
+        // the run, and so is the filter that held their forms.
+        run.masker = Masker::new();
         drop(secrets);
         if matches!(stage_report.outcome, Outcome::Failed(_)) {
             failed = Some(stage_report.id.clone());
@@ -404,6 +407,9 @@ struct Run<'a> {
     outputs: BTreeMap<String, Vec<Output>>,
     /// Sensitive values seen so far, masked out of everything shown.
     secrets: Vec<String>,
+    /// The filter for the secrets the stage now running fetched, for what is
+    /// said about a failure. Empty between stages.
+    masker: Masker,
     state: Option<RunState>,
 }
 
@@ -570,9 +576,14 @@ impl Run<'_> {
             Ok(context) => context,
             Err(why) => return fail(report, why),
         };
-        let secrets = self.secrets.clone();
+        // What the tool prints is searched for every sensitive output of
+        // earlier stages and for every secret this stage fetched, however
+        // the tool came to print it.
+        let sensitive = self.secrets.clone();
+        let masker = secrets.masker();
+        self.masker = secrets.masker();
         let mut log = |mut line: LogLine| {
-            line.text = mask(&line.text, &secrets);
+            line.text = masker.mask(&mask(&line.text, &sensitive));
             observer.log(&id, &line);
         };
 
@@ -733,7 +744,7 @@ impl Run<'_> {
     }
 
     fn describe(&self, failure: RunFailure) -> String {
-        mask(&failure.to_string(), &self.secrets)
+        self.masker.mask(&mask(&failure.to_string(), &self.secrets))
     }
 }
 

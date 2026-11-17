@@ -386,3 +386,69 @@ fn a_document_left_out_by_its_own_when_fetches_nothing() {
     assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
     assert!(stdout(&out).contains("skipped"), "{}", stdout(&out));
 }
+
+/// Two stages. The first exposes a value as a plain output; the second is
+/// handed it as an input, which the fake tool echoes when it applies, and
+/// declares a secret that happens to hold the same value.
+const ECHOED: &str = r#"apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: network
+spec:
+  target: fake
+  resources:
+    - id: vm
+      type: file
+      params:
+        content: 10.0.0.5
+    - id: shared
+      type: file
+      params:
+        content: kq7Zp2-not-a-real-password-9fXw
+  outputs:
+    - name: address
+      value: "${vm.content}"
+    - name: shared
+      value: "${shared.content}"
+---
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: fake
+  targetHost:
+    from: infrastructure
+    ref: network
+    output: address
+  secrets:
+    - name: db_password
+      from: env
+      key: SITE_DB_PASSWORD
+  resources:
+    - id: motd
+      type: file
+      when: secret.db_password != ''
+      params:
+        content: "welcome\n"
+"#;
+
+#[test]
+fn what_a_tool_prints_is_searched_for_the_secrets_of_its_stage() {
+    let dir = scratch("echoed");
+    fs::write(dir.join("site.yaml"), ECHOED).unwrap();
+    let out = meridian(&dir, &["apply", "site.yaml"]);
+    assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
+    let log = stderr(&out);
+    // The tool of the second stage echoed its inputs, one of which is the
+    // very text of a secret that stage fetched.
+    let echoed: Vec<&str> = log
+        .lines()
+        .filter(|l| l.contains("web ! inputs:"))
+        .collect();
+    assert_eq!(echoed.len(), 1, "{log}");
+    assert!(echoed[0].contains("(sensitive)"), "{log}");
+    assert!(!echoed[0].contains(PASSWORD), "{log}");
+    // The address, which is no secret, is still there to read.
+    assert!(echoed[0].contains("10.0.0.5"), "{log}");
+}

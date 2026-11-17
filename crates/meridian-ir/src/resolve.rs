@@ -17,7 +17,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use meridian_expr::{has_interpolation, Expr, Names, Scope, Template};
-use meridian_secret::{SecretTable, SecretValue};
+use meridian_secret::{Masker, SecretTable, SecretValue};
 use meridian_value::Value;
 
 use crate::condition::{self, Data};
@@ -89,6 +89,20 @@ impl Secrets {
     /// null.
     pub fn absent(&mut self, name: &str) {
         self.values.insert(name.to_owned(), Value::Null);
+    }
+
+    /// A filter for what a tool prints, holding every secret fetched so far
+    /// in each form a tool is likely to print it. A secret too short to
+    /// search for is left out.
+    pub fn masker(&self) -> Masker {
+        let mut masker = Masker::new();
+        for value in self.values.values() {
+            if let Value::Secret(at) = value {
+                // One that is not fetched has nothing to search for.
+                let _ = self.table.with(*at, |held| masker.add(held));
+            }
+        }
+        masker
     }
 
     /// The table the values point into.
