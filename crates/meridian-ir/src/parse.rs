@@ -402,6 +402,7 @@ impl Decoder<'_> {
                     variables: self.value_map(f.get("variables"), "spec.variables"),
                     conditions: self.conditions(f.get("conditions")),
                     secrets: self.secrets(f.get("secrets"), &pos),
+                    imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                     outputs: self.outputs(f.get("outputs"), &pos),
                 };
@@ -422,6 +423,7 @@ impl Decoder<'_> {
                     conditions: self.conditions(f.get("conditions")),
                     secrets: self.secrets(f.get("secrets"), &pos),
                     target_host: self.target_host(f.get("targetHost"), &pos),
+                    imports: self.imports(f.get("imports"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                 };
                 Document::ResourceSet(ResourceSet {
@@ -592,6 +594,24 @@ impl Decoder<'_> {
                 name: self.string(f.get("name"), &join(&path, "name")),
                 value: self.string(f.get("value"), &join(&path, "value")),
                 when: self.string(f.get("when"), &join(&path, "when")),
+                pos: self.at_or(item, doc_pos),
+            });
+        }
+        out
+    }
+
+    fn imports(&mut self, node: Option<&Node>, doc_pos: &Position) -> Vec<Import> {
+        let mut out = Vec::new();
+        for (i, item) in self.list(node, "spec.imports").iter().enumerate() {
+            let path = format!("spec.imports[{i}]");
+            let f = self.fields(Some(item), &path, &schema::IMPORT.names());
+            out.push(Import {
+                name: self.string(f.get("name"), &join(&path, "name")),
+                from: self.string(f.get("from"), &join(&path, "from")),
+                r#ref: self.string(f.get("ref"), &join(&path, "ref")),
+                file: self.string(f.get("file"), &join(&path, "file")),
+                output: self.string(f.get("output"), &join(&path, "output")),
+                sensitive: self.flag(f.get("sensitive"), &join(&path, "sensitive")),
                 pos: self.at_or(item, doc_pos),
             });
         }

@@ -116,6 +116,7 @@ async fn serve_async(plugin: Plugin) -> Result<(), ServeError> {
     let emitter = EmitterServer::new(EmitterHandler {
         emitter: Arc::clone(&plugin.emitter),
         operations,
+        accepts_inputs: plugin.runner.as_ref().is_some_and(|r| r.accepts_inputs()),
         protocol,
     });
     let mut router = tonic::transport::Server::builder().add_service(emitter);
@@ -221,6 +222,7 @@ impl Drop for Socket {
 struct EmitterHandler {
     emitter: Arc<dyn Emitter + Send + Sync>,
     operations: Operations,
+    accepts_inputs: bool,
     /// The protocol version agreed with the host.
     protocol: u32,
 }
@@ -248,6 +250,7 @@ impl EmitterService for EmitterHandler {
                 .map(wire::resource_schema_to_wire)
                 .collect(),
             operations: Some(wire::operations_to_wire(self.operations)),
+            accepts_inputs: self.accepts_inputs,
         }))
     }
 

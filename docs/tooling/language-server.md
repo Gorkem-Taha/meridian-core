@@ -32,6 +32,7 @@ lists it, with its documentation.
 | `notifies[].action` | the actions the notified resource's type takes |
 | Inside `${...}` | the resources of the document, and after `resource.` the things that can be read from it |
 | `when` (on a document, a resource, an edge or an output) | `data.<key>` and `defined(...)`, and the names the document declares: `cond.<name>` from `spec.conditions`, `var.<name>` from `spec.variables`, `secret.<name>` from `spec.secrets` |
+| An entry of `spec.imports` | its fields, and for `from` the two sources (`artifact`, `output`) |
 | An entry of `spec.secrets` | its fields, `name` and `from` first, and for `from` the three sources (`env`, `file`, `exec`) |
 | `targetHost.ref`, `targetHost.output` | the Infrastructure documents in the workspace, and the outputs the one named declares |
 

@@ -175,6 +175,7 @@ impl Client {
                 .map(wire::resource_schema_from_wire)
                 .collect(),
             operations: wire::operations_from_wire(reply.operations),
+            accepts_inputs: reply.accepts_inputs,
             path: path.to_owned(),
         };
         Ok(Client {

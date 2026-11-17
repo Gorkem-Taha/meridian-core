@@ -48,6 +48,9 @@ pub struct Info {
     pub category: Category,
     /// What the target can do beyond compiling.
     pub operations: Operations,
+    /// Whether the target hands a run's inputs to its tool, which a
+    /// document's `spec.imports` needs.
+    pub accepts_inputs: bool,
     /// The versions of its tool the target compiles for; empty when it does
     /// not say.
     pub target_versions: Vec<String>,

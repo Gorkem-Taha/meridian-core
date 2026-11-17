@@ -31,6 +31,19 @@ pub(crate) fn apply_ordering(
                 format!("an edge names resource {missing:?}, which this document does not declare"),
             ));
         };
+        if let Some(variable) = [from, to].into_iter().find(|b| b.kind == Kind::Variable) {
+            return Err(refuse_at(
+                &edge.to,
+                &edge.pos,
+                "unsupported-dependency",
+                format!(
+                    "{:?} is a variable, which has its value before Terraform creates \
+                     anything; nothing can depend on it or be ordered by it. Refer to it as \
+                     ${{{}}} where its value is wanted",
+                    variable.name, variable.name
+                ),
+            ));
+        }
         let (Some(from_address), Some(_)) = (from.address(), to.address()) else {
             let settings = if from.address().is_none() { from } else { to };
             return Err(refuse_at(

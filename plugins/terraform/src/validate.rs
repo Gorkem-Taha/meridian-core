@@ -89,7 +89,7 @@ pub(crate) fn validate(config: &Config) -> Result<(), CompileError> {
                     ));
                 }
             }
-            Kind::Data | Kind::Managed => {}
+            Kind::Data | Kind::Managed | Kind::Variable => {}
         }
     }
 

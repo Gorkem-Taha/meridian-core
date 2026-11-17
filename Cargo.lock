@@ -1116,6 +1116,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "jsonschema",
+ "meridian-expr",
  "meridian-graph",
  "meridian-ir",
  "meridian-lsp",
@@ -1253,6 +1254,17 @@ dependencies = [
  "meridian-ir",
  "meridian-plugin-host",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-policy-opa"
+version = "0.1.0"
+dependencies = [
+ "meridian-ir",
+ "meridian-orchestrator",
+ "meridian-plugin-host",
+ "meridian-target-fake",
+ "meridian-value",
 ]
 
 [[package]]
@@ -1398,6 +1410,8 @@ dependencies = [
 name = "meridian-target-opentofu"
 version = "0.1.0"
 dependencies = [
+ "meridian-ir",
+ "meridian-orchestrator",
  "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",

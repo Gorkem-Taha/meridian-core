@@ -38,7 +38,7 @@ byte. The reasons, the layout and the order of work are in
 | [Install](quickstart/install.md) | build Meridian, and what each target needs |
 | [Your first ResourceSet](quickstart/first-resourceset.md) | one document, from validate to apply, and the same document on another tool |
 | [A two-stage workflow](quickstart/first-two-stage.md) | one tool creates a machine, another configures it |
-| [Worked workflows](quickstart/workflows.md) | six workflows across every target: three tiers on four tools, a cluster platform, a golden image, Windows on Azure, an edge site, and one file for every environment |
+| [Worked workflows](quickstart/workflows.md) | seven workflows across every target: three tiers on four tools, a cluster platform, a golden image, Windows on Azure, an edge site, one file for every environment, and one file for every customer |
 
 | Concepts | |
 |---|---|
@@ -46,6 +46,7 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, putting one back, finding drift, asking a policy first, sharing state |
 | [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
 | [How a secret is held in memory](concepts/secrets-in-memory.md) | locked, wiped memory, the hardened process, how a secret reaches a tool, and what is not promised |
 
@@ -63,6 +64,8 @@ byte. The reasons, the layout and the order of work are in
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
 | [Lint rules](reference/lint.md) | every rule of `meridian lint`, with an example and what to do |
+| [Policy checks](reference/policy.md) | asking a policy before a change is made: the options, the input a policy sees, Rego with Open Policy Agent, and how to write an engine |
+| [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
@@ -97,6 +100,7 @@ plugins.
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Modules and versioning](plans/modules-and-versioning.md) | Proposed, built: shareable modules (sources, lockfile, integrity), how `apiVersion` is enforced, protocol negotiation |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
+| [Run safety](plans/run-safety.md) | State and locking, resume, rollback, drift, policy checks, values handed between stages |
 | [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing

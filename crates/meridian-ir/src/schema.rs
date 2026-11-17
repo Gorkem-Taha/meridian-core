@@ -11,8 +11,8 @@
 //! orders it with no further change.
 
 use crate::types::{
-    Kind, API_VERSION_V1, NOTIFY_ON_CHANGED, TARGET_HOST_FROM_INFRASTRUCTURE,
-    TARGET_HOST_FROM_INLINE,
+    Kind, API_VERSION_V1, IMPORT_FROM_ARTIFACT, IMPORT_FROM_OUTPUT, NOTIFY_ON_CHANGED,
+    TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
 };
 
 /// One mapping in a document: the fields it may hold, in the order the
@@ -547,6 +547,66 @@ const SECRETS: Field = Field {
     role: Role::None,
 };
 
+/// Where an imported value comes from.
+pub const IMPORT_FROM: &[Choice] = &[
+    choice(
+        IMPORT_FROM_ARTIFACT,
+        "The text of a file another document compiles to, named by `ref` and `file`.",
+    ),
+    choice(
+        IMPORT_FROM_OUTPUT,
+        "A value another document's apply produced, named by `ref` and `output`.",
+    ),
+];
+
+/// One entry of `spec.imports`.
+pub const IMPORT: Shape = Shape {
+    name: "Import",
+    doc: "A value the document's tool is handed from another document of the workflow.",
+    fields: &[
+        text(
+            "name",
+            true,
+            Role::None,
+            "The name the value arrives under, as the tool's own variable or parameter.",
+        ),
+        Field {
+            name: "from",
+            doc: "Where the value comes from.",
+            required: true,
+            ty: Type::Enum(IMPORT_FROM),
+            role: Role::None,
+        },
+        text(
+            "ref",
+            true,
+            Role::None,
+            "The `metadata.name` of the document the value comes from.",
+        ),
+        text(
+            "file",
+            false,
+            Role::None,
+            "With `from: artifact`: the compiled file whose text is the value.",
+        ),
+        text(
+            "output",
+            false,
+            Role::None,
+            "With `from: output`: the output whose value it is.",
+        ),
+        flag("sensitive", "Mask the value wherever Meridian prints."),
+    ],
+};
+
+const IMPORTS: Field = Field {
+    name: "imports",
+    doc: "Values handed to the document's tool from other documents of the workflow.",
+    required: false,
+    ty: Type::List(&IMPORT),
+    role: Role::None,
+};
+
 /// `spec` of an Infrastructure document.
 pub const INFRASTRUCTURE_SPEC: Shape = Shape {
     name: "InfrastructureSpec",
@@ -558,6 +618,7 @@ pub const INFRASTRUCTURE_SPEC: Shape = Shape {
         VARIABLES,
         CONDITIONS,
         SECRETS,
+        IMPORTS,
         RESOURCES,
         Field {
             name: "outputs",
@@ -577,6 +638,10 @@ pub const RESOURCE_SET_SPEC: Shape = Shape {
     fields: &[
         TARGET,
         TARGET_VERSION,
+        SPEC_WHEN,
+        VARIABLES,
+        CONDITIONS,
+        SECRETS,
         Field {
             name: "targetHost",
             doc: "The host this document configures.",
@@ -584,10 +649,7 @@ pub const RESOURCE_SET_SPEC: Shape = Shape {
             ty: Type::Object(&TARGET_HOST),
             role: Role::None,
         },
-        SPEC_WHEN,
-        VARIABLES,
-        CONDITIONS,
-        SECRETS,
+        IMPORTS,
         RESOURCES,
     ],
 };

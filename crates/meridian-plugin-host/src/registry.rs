@@ -118,6 +118,7 @@ impl Registry {
             target_versions: emitter.target_versions(),
             resource_schemas: emitter.resource_schemas(),
             operations: Operations::COMPILE_ONLY,
+            accepts_inputs: false,
             path: String::new(),
         };
         self.targets.insert(
