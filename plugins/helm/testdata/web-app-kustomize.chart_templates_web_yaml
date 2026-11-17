@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: {{ .Values.replicas | toRawJson }}
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - env:
+            - name: SETTINGS
+              valueFrom:
+                configMapKeyRef:
+                  key: mode
+                  name: web-settings
+          image: {{ .Values.image | toRawJson }}
+          name: nginx
