@@ -15,7 +15,7 @@ meridian plugins
 meridian import   <paths>... [--from TARGET] [--name NAME] [-o DIR] [-r] [--force] [--strict]
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
-meridian module   install [--locked] | update [NAME]... | verify | list | pack [--out FILE] | push REPOSITORY
+meridian module   install [--locked] | update [NAME]... | verify | list | sign --key FILE | pack [--out FILE] | push REPOSITORY
 meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--data FILE] [--set KEY=VALUE]
 ```
 
@@ -390,7 +390,8 @@ meridian signing verify --trusted-key acme.pub meridian-target-acme
 |---|---|---|---|
 | `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`, or `;` on Windows) | the directory `meridian` is really in, following a link to it | where to look for plugins; may be repeated |
 | `--plugin-signatures POLICY` | `MERIDIAN_PLUGIN_SIGNATURES` | `require` in a released `meridian`, `off` in one built from source | what to do about [plugin signatures](plugin-signatures.md): `off` does not look, `warn` starts an unsigned or wrongly signed plugin and says so, `require` starts only plugins signed by a trusted key |
-| `--trusted-key FILE` | `MERIDIAN_TRUSTED_KEYS` (separated by `:`, or `;` on Windows) | the key a released `meridian` was built with | a public key whose signatures on plugins are trusted, or a directory of `*.pub` files; may be repeated |
+| `--trusted-key FILE` | `MERIDIAN_TRUSTED_KEYS` (separated by `:`, or `;` on Windows) | the key a released `meridian` was built with | a public key whose signatures on plugins and on [modules](modules.md#signatures) are trusted, or a directory of `*.pub` files; may be repeated, and given to any command |
+| `--module-signatures POLICY` | `MERIDIAN_MODULE_SIGNATURES` | `off` | what to do about [module signatures](modules.md#signatures): `off` does not look, `warn` uses an unsigned or wrongly signed module and says so, `require` uses only modules signed by a trusted key. Applies to modules fetched from git or a registry, when they are installed and every time they are used; may be given to any command |
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, fetched [modules](modules.md#where-modules-are-kept), and with the local backend Meridian's own record |
 | `--backend NAME` | `MERIDIAN_BACKEND` | `local` | where Meridian's own record (the lock, the run-state, the runs) is kept: `local`, or a [backend program](state.md#writing-a-backend) |
 | `--backend-config KEY=VALUE` | | | a setting for the backend; may be repeated |
@@ -467,8 +468,9 @@ the current directory requires.
 |---|---|
 | `meridian module install` | Resolves the requirements, fetches what is missing, writes `meridian.lock`. With `--locked`, fails if the lockfile would change |
 | `meridian module update [NAME]...` | Moves the named modules, or all of them, to the newest version that still fits |
-| `meridian module verify` | Checks every pinned module against its hash; exits `1` if any differs |
+| `meridian module verify` | Checks every pinned module against its hash, and its signature when `--module-signatures` says to; exits `1` if any fails |
 | `meridian module list` | Lists the pinned modules, their versions and sources |
+| `meridian module sign --key FILE` | Signs the module in the current directory, writing `meridian.sig` in it |
 | `meridian module pack [--out FILE]` | Writes the module in the current directory as the archive a registry stores |
 | `meridian module push REPOSITORY [--insecure]` | Publishes the module in the current directory to an OCI registry under its version. A version that is already published is never replaced with other content |
 

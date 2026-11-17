@@ -11,7 +11,8 @@ mod import;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -36,6 +37,56 @@ use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
 struct Cli {
     #[command(subcommand)]
     command: Command,
+    #[command(flatten)]
+    trust: Trust,
+}
+
+/// Whose signatures count, for plugins and for modules alike, and whether
+/// modules must carry one. These can be given to any command.
+#[derive(Args)]
+struct Trust {
+    /// What to do about module signatures: off (do not look), warn (use an
+    /// unsigned or wrongly signed module, and say so) or require (use only
+    /// modules signed by a trusted key). Applies to modules fetched from git
+    /// or a registry, when they are installed and every time they are used
+    #[arg(
+        long = "module-signatures",
+        global = true,
+        value_name = "POLICY",
+        env = "MERIDIAN_MODULE_SIGNATURES",
+        default_value = "off"
+    )]
+    module_signatures: SignaturePolicy,
+    #[command(flatten)]
+    keys: TrustedKeys,
+}
+
+/// The trusted keys the command line named, kept for the whole run: plugins
+/// and modules are checked against the same ones.
+static TRUSTED_KEYS: OnceLock<TrustedKeys> = OnceLock::new();
+/// The policy and keys fetched modules are checked against.
+static MODULE_SIGNATURES: OnceLock<meridian_module::Verification> = OnceLock::new();
+
+/// Every key to trust: the release's own, then the ones named.
+fn trusted_keys() -> Result<Vec<PublicKey>, Failure> {
+    match TRUSTED_KEYS.get() {
+        Some(keys) => keys.read(),
+        None => TrustedKeys::default().read(),
+    }
+}
+
+/// Settles the trust settings once, before any command runs.
+fn settle(trust: Trust) -> Result<(), Failure> {
+    let policy = trust.module_signatures;
+    let _ = TRUSTED_KEYS.set(trust.keys);
+    // With signatures off the keys are not needed, and a key file that has
+    // gone missing should not stop a run that does not use it.
+    let trusted = match policy {
+        SignaturePolicy::Off => Vec::new(),
+        SignaturePolicy::Warn | SignaturePolicy::Require => trusted_keys()?,
+    };
+    let _ = MODULE_SIGNATURES.set(meridian_module::Verification { policy, trusted });
+    Ok(())
 }
 
 #[derive(Subcommand)]
@@ -222,10 +273,18 @@ enum ModuleCommand {
         /// The modules to move; every module when none is named
         names: Vec<String>,
     },
-    /// Check every pinned module against the hash in meridian.lock
+    /// Check every pinned module against the hash in meridian.lock, and its
+    /// signature when --module-signatures says to
     Verify,
     /// List the pinned modules, their versions and where they come from
     List,
+    /// Sign this module as it is now, writing meridian.sig in it. Do it
+    /// last, before the version is tagged or pushed
+    Sign {
+        /// The secret key to sign with, from `meridian signing keygen`
+        #[arg(long, value_name = "FILE")]
+        key: PathBuf,
+    },
     /// Write this module as the archive a registry stores
     Pack {
         /// The file to write. Defaults to a file under the state directory
@@ -301,8 +360,6 @@ enum SigningCommand {
     },
     /// Check the signatures of plugin binaries against the trusted keys
     Verify {
-        #[command(flatten)]
-        keys: TrustedKeys,
         /// The binaries to check
         #[arg(required = true)]
         binaries: Vec<PathBuf>,
@@ -314,13 +371,15 @@ enum SigningCommand {
 /// A build from source has none.
 const RELEASE_PUBLIC_KEY: Option<&str> = option_env!("MERIDIAN_RELEASE_PUBLIC_KEY");
 
-#[derive(Args)]
+#[derive(Args, Default)]
 struct TrustedKeys {
-    /// A public key file whose signatures on plugins are trusted, or a
-    /// directory of *.pub files; may be given more than once. A released
-    /// meridian already trusts the key its own plugins were signed with
+    /// A public key file whose signatures on plugins and modules are
+    /// trusted, or a directory of *.pub files; may be given more than once.
+    /// A released meridian already trusts the key its own plugins were
+    /// signed with
     #[arg(
         long = "trusted-key",
+        global = true,
         value_name = "FILE",
         env = "MERIDIAN_TRUSTED_KEYS",
         value_delimiter = PATH_LIST_SEPARATOR
@@ -387,8 +446,6 @@ struct PluginDirs {
         env = "MERIDIAN_PLUGIN_SIGNATURES"
     )]
     signatures: Option<SignaturePolicy>,
-    #[command(flatten)]
-    keys: TrustedKeys,
 }
 
 impl PluginDirs {
@@ -401,7 +458,7 @@ impl PluginDirs {
         // has gone missing should not stop a run that does not use it.
         let trusted = match policy {
             SignaturePolicy::Off => Vec::new(),
-            SignaturePolicy::Warn | SignaturePolicy::Require => self.keys.read()?,
+            SignaturePolicy::Warn | SignaturePolicy::Require => trusted_keys()?,
         };
         Ok(Verification { policy, trusted })
     }
@@ -505,7 +562,7 @@ fn main() -> ExitCode {
     // cannot leave that way.
     let _ = meridian_secret::harden_process();
     let cli = Cli::parse();
-    let outcome = match cli.command {
+    let outcome = settle(cli.trust).and_then(|()| match cli.command {
         Command::Validate { files, state_dir } => load(&files, &state_dir).map(|bundle| {
             println!("{} valid", count(bundle.documents.len(), "document"));
         }),
@@ -593,7 +650,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         Command::Signing { command } => signing(command),
-    };
+    });
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
         Err(Failure::Reported) => ExitCode::FAILURE,
@@ -748,6 +805,20 @@ fn project(state_dir: &Path) -> meridian_module::Project<'_> {
         dir: Path::new("."),
         state_dir,
         core_version: env!("CARGO_PKG_VERSION"),
+        signatures: MODULE_SIGNATURES
+            .get()
+            .unwrap_or(&meridian_module::NO_SIGNATURES),
+    }
+}
+
+/// Says, once a run, which modules are in use although their signature did
+/// not pass. Only the warn policy lets that happen.
+fn warn_about_modules(warnings: &[String]) {
+    static SAID: AtomicBool = AtomicBool::new(false);
+    if !warnings.is_empty() && !SAID.swap(true, Ordering::Relaxed) {
+        for warning in warnings {
+            eprintln!("warning: {warning}");
+        }
     }
 }
 
@@ -765,6 +836,7 @@ fn in_modules(files: &[PathBuf], state_dir: &Path) -> Result<Vec<PathBuf>, Failu
         return Ok(files.to_vec());
     }
     let modules = Modules::load(&project(state_dir)).map_err(module_failure)?;
+    warn_about_modules(modules.warnings());
     files
         .iter()
         .map(|file| match file.to_str() {
@@ -798,7 +870,19 @@ fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
             let mut failed = 0;
             for check in &checks {
                 match &check.problem {
-                    None => println!("ok      {}", named(&check.module)),
+                    None => match &check.signature {
+                        Signature::NotChecked => println!("ok      {}", named(&check.module)),
+                        Signature::Verified { key_id } => {
+                            println!("ok      {}  signed by key {key_id}", named(&check.module))
+                        }
+                        Signature::Unsigned => {
+                            println!("ok      {}  not signed", named(&check.module))
+                        }
+                        Signature::Invalid(why) => println!(
+                            "ok      {}  signature does not pass: {why}",
+                            named(&check.module)
+                        ),
+                    },
                     Some(problem) => {
                         failed += 1;
                         println!("FAILED  {}", named(&check.module));
@@ -838,6 +922,23 @@ fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
             }
             return Ok(());
         }
+        ModuleCommand::Sign { key } => {
+            let key = SecretKey::read(&key).map_err(Failure::Message)?;
+            let signed = meridian_module::sign(project.dir, &key).map_err(module_failure)?;
+            println!(
+                "signed {}{} with key {}",
+                signed.name,
+                if signed.version.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", signed.version)
+                },
+                signed.key_id
+            );
+            println!("  integrity: {}", signed.integrity);
+            println!("  wrote:     {}", meridian_module::SIGNATURE_FILE);
+            return Ok(());
+        }
         ModuleCommand::Pack { out } => return pack_module(&project, out),
         ModuleCommand::Push {
             repository,
@@ -846,6 +947,7 @@ fn module(command: ModuleCommand, state_dir: &Path) -> Result<(), Failure> {
     };
 
     let report = meridian_module::install(&project, mode).map_err(module_failure)?;
+    warn_about_modules(&report.warnings());
     let mut unchanged = 0;
     for (m, change) in &report.changes {
         match change {
@@ -1192,8 +1294,8 @@ fn signing(command: SigningCommand) -> Result<(), Failure> {
             }
             Ok(())
         }
-        SigningCommand::Verify { keys, binaries } => {
-            let trusted = keys.read()?;
+        SigningCommand::Verify { binaries } => {
+            let trusted = trusted_keys()?;
             let mut failed = false;
             for binary in binaries {
                 let found = meridian_plugin_host::signature::verify_file(&binary, &trusted);

@@ -262,6 +262,21 @@ impl SecretKey {
     }
 }
 
+impl SecretKey {
+    /// Signs bytes that are not a file on disk, such as a statement about
+    /// something, and returns the text of the signature. It is the text
+    /// [`SecretKey::sign_file`] would write for a file holding these bytes.
+    pub fn sign_bytes(&self, bytes: &[u8]) -> String {
+        let digest = to_hex(&Sha256::digest(bytes));
+        let signature = self.0.sign(message(&digest).as_bytes());
+        format!(
+            "{SIGNATURE_HEADER}\nkey {}\nsha256 {digest}\nsig {}\n",
+            self.public().id(),
+            to_hex(&signature.to_bytes())
+        )
+    }
+}
+
 /// What is signed: the format's name and the binary's digest. Naming the
 /// format in the message means a signature made for something else can never
 /// be presented as a plugin's.
@@ -280,7 +295,20 @@ pub fn verify_file(binary: &Path, trusted: &[PublicKey]) -> Signature {
         Ok(digest) => digest,
         Err(e) => return Signature::Invalid(e),
     };
-    match verify_text(&text, &digest, trusted) {
+    match verify_text(&text, &digest, trusted, ("binary", "file")) {
+        Ok(key_id) => Signature::Verified { key_id },
+        Err(why) => Signature::Invalid(why),
+    }
+}
+
+/// Checks a signature's text against bytes that are not a file on disk: the
+/// counterpart of [`SecretKey::sign_bytes`]. `what` is the noun for the thing
+/// the bytes stand for in a refusal, as in "module". It never answers
+/// [`Signature::Unsigned`]: whether there is a signature at all is the
+/// caller's to know.
+pub fn verify_bytes(signature: &str, bytes: &[u8], trusted: &[PublicKey], what: &str) -> Signature {
+    let digest = to_hex(&Sha256::digest(bytes));
+    match verify_text(signature, &digest, trusted, (what, what)) {
         Ok(key_id) => Signature::Verified { key_id },
         Err(why) => Signature::Invalid(why),
     }
@@ -288,7 +316,12 @@ pub fn verify_file(binary: &Path, trusted: &[PublicKey]) -> Signature {
 
 /// Checks a signature file's text against a binary's digest, and returns the
 /// id of the trusted key that signed it.
-fn verify_text(text: &str, digest: &str, trusted: &[PublicKey]) -> Result<String, String> {
+fn verify_text(
+    text: &str,
+    digest: &str,
+    trusted: &[PublicKey],
+    (what, signed_as): (&str, &str),
+) -> Result<String, String> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
     if lines.next() != Some(SIGNATURE_HEADER) {
         return Err(format!(
@@ -319,12 +352,14 @@ fn verify_text(text: &str, digest: &str, trusted: &[PublicKey]) -> Result<String
     // know. It decides nothing: the signature is checked against the digest
     // of the file as it is, not against what the signature file claims.
     if recorded.is_some_and(|r| !r.eq_ignore_ascii_case(digest)) {
-        return Err("the binary is not the file that was signed: its contents have changed".into());
+        return Err(format!(
+            "the {what} is not the {signed_as} that was signed: its contents have changed"
+        ));
     }
     let signature = ed25519_dalek::Signature::from_bytes(&signature);
     key.0
         .verify_strict(message(digest).as_bytes(), &signature)
-        .map_err(|_| format!("the signature is not one key {key_id} made for this binary"))?;
+        .map_err(|_| format!("the signature is not one key {key_id} made for this {what}"))?;
     Ok(key_id.to_owned())
 }
 
@@ -376,6 +411,38 @@ mod tests {
         let key = SecretKey::generate().unwrap();
         fs::write(signature_path(&binary), key.sign_file(&binary).unwrap()).unwrap();
         (binary, key)
+    }
+
+    #[test]
+    fn bytes_are_signed_and_checked_like_a_file_holding_them() {
+        let dir = scratch("bytes");
+        let key = SecretKey::generate().unwrap();
+        let trusted = [key.public()];
+        let text = key.sign_bytes(b"a statement");
+        assert_eq!(
+            verify_bytes(&text, b"a statement", &trusted, "module"),
+            Signature::Verified {
+                key_id: key.public().id()
+            }
+        );
+        assert_eq!(
+            verify_bytes(&text, b"another statement", &trusted, "module"),
+            Signature::Invalid(
+                "the module is not the module that was signed: its contents have changed".into()
+            )
+        );
+        assert_eq!(
+            verify_bytes(&text, b"a statement", &[], "module"),
+            Signature::Invalid(format!(
+                "it was signed by key {}, which is not a trusted key",
+                key.public().id()
+            ))
+        );
+        // The same text is what signing a file with these bytes writes.
+        let file = dir.join("statement");
+        fs::write(&file, b"a statement").unwrap();
+        assert_eq!(key.sign_file(&file).unwrap(), text);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -481,7 +548,8 @@ mod tests {
                 "no signature of the right length",
             ),
         ] {
-            let err = verify_text(text, "00", std::slice::from_ref(&key)).unwrap_err();
+            let err = verify_text(text, "00", std::slice::from_ref(&key), ("binary", "file"))
+                .unwrap_err();
             assert!(err.contains(want), "{text:?}: {err}");
         }
     }
