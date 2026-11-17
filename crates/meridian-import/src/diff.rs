@@ -80,6 +80,10 @@ fn at(path: &str) -> &str {
 }
 
 fn walk(path: &str, expected: &Value, actual: &Value, rules: Rules, out: &mut Vec<String>) {
+    // Two ways of writing nothing are the same nothing.
+    if absent(expected, rules) && absent(actual, rules) {
+        return;
+    }
     if let (Some(a), Some(b)) = (number(expected), number(actual)) {
         if a != b {
             out.push(format!(
@@ -193,6 +197,12 @@ mod tests {
         };
         assert!(diff(&a, &b, lenient).is_empty());
         assert!(diff(&b, &a, lenient).is_empty());
+        // Both sides present, each empty in its own way.
+        assert!(diff(&value(r#"{"x": null}"#), &value(r#"{"x": {}}"#), lenient).is_empty());
+        assert_eq!(
+            diff(&value(r#"{"x": null}"#), &value(r#"{"x": {}}"#), Rules::default()).len(),
+            1
+        );
     }
 
     #[test]
