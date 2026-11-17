@@ -88,7 +88,7 @@ attribute does not exist, the tool says so when it plans.
 | `kubernetes` | the object's name | in a param, only `metadata.name` and `metadata.namespace`; in an output, any path into the live object | the value placed in the text | refused |
 | `dsc` | | `${id.Property}`: a property the other resource reported | | |
 | `podman` | the unit's name | in an output: a path into `podman inspect` | the name placed in the text | |
-| `ansible`, `puppet`, `chef` | not read: see [below](#configuration-management-the-shared-types) | | | |
+| `ansible`, `puppet`, `chef`, `cloud-init` | not read: see [below](#configuration-management-the-shared-types) | | | |
 
 Each target's page has its own table under "References".
 
@@ -112,8 +112,8 @@ flowchart LR
 
 ## Configuration management: the shared types
 
-`ansible`, `puppet` and `chef` have nothing to read at apply time: a package or
-a file is only what the document says about it. Today these three targets do
+`ansible`, `puppet`, `chef` and `cloud-init` have nothing to read at apply time:
+a package or a file is only what the document says about it. Today these targets do
 not read references at all. `${...}` in a param is ordinary text, written to the
 tool's file exactly as it stands, and `$${` is not unescaped either.
 

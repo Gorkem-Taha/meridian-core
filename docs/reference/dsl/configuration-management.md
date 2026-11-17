@@ -9,7 +9,7 @@ packages, files and services. This page is how the
 | Category, as `meridian plugins` prints it | `configuration-management` |
 | Kind of document | `ResourceSet` |
 | The machine | `spec.targetHost`, required |
-| Outputs | none: a ResourceSet has no `outputs` |
+| Outputs | none declared: a ResourceSet has no `outputs`. `cloud-init` reports two of its own (where it wrote the seed) |
 
 ## Targets
 
@@ -18,6 +18,7 @@ packages, files and services. This page is how the
 | `ansible` | the six shared types | [ansible](../../targets/ansible.md) |
 | `puppet` | the six shared types | [puppet](../../targets/puppet.md) |
 | `chef` | the six shared types | [chef](../../targets/chef.md) |
+| `cloud-init` | the six shared types, limited to what a first boot can do | [cloud-init](../../targets/cloud-init.md) |
 | `dsc` | DSC's own resources | [dsc](../../targets/dsc.md) |
 
 There are two dialects in this segment, and the table shows which target speaks
@@ -25,8 +26,8 @@ which.
 
 ## The shared dialect: six types
 
-`ansible`, `puppet` and `chef` take the same six resource types. A resource
-written with them compiles for any of the three, so changing `spec.target` is
+`ansible`, `puppet`, `chef` and `cloud-init` take the same six resource types. A
+resource written with them compiles for any of them, so changing `spec.target` is
 all it takes to move a document from one tool to another, within what each tool
 can do. This is the one place where the language is "write once".
 
@@ -95,6 +96,18 @@ In this dialect `${...}` is not read as a reference today. It is ordinary text,
 written to the tool's file as it stands. See
 [references](references.md#configuration-management-the-shared-types).
 
+### cloud-init: the same types, once, at first boot
+
+`cloud-init` takes the six types, but it is not pointed at a running machine. It
+compiles a ResourceSet into the user-data a new machine applies by itself the
+first time it boots. So it accepts only what a first boot can do: nothing can be
+removed or tracked later (`absent` and `latest` are refused), the order is the
+fixed order of cloud-init's own boot stages (a dependency that points backwards
+through them is refused), and it adds a few params of its own, such as a user's
+`ssh_authorized_keys`. Use it for what must be true before any other tool can
+reach the machine. [Its page](../../targets/cloud-init.md) has the detail, and
+[the resource types reference](../resource-types.md) marks every difference.
+
 ## The native dialect: DSC
 
 `dsc` does not take the six types. DSC's vocabulary is its resources, and there
@@ -122,13 +135,17 @@ how the tool thinks about order:
 |---|---|
 | `ansible`, `chef` | the order of the tasks or recipe. These tools run top to bottom, so resources with no dependency between them still run one after another, and the compile says which |
 | `puppet` | `require` |
+| `cloud-init` | nothing written: each resource is placed at the step of the boot that handles it; a dependency that points backwards through those steps is refused |
 | `dsc` | the runner's `dependsOn` |
 
 ## `notifies`
 
-Every target in the segment has its own mechanism for reacting to a change, so
-a notify is **native** everywhere: an Ansible handler, Puppet's `notify`, Chef's
-`notifies`, the DSC runner's `notify`.
+Every tool in the segment that runs against a live machine has its own
+mechanism for reacting to a change, so a notify is **native** there: an Ansible
+handler, Puppet's `notify`, Chef's `notifies`, the DSC runner's `notify`.
+`cloud-init` has none and runs once, so its notify is **synthetic**: the action
+becomes a command that runs once after every other command, unconditionally, and
+the compile warns.
 
 | Target | Actions accepted |
 |---|---|
@@ -136,6 +153,7 @@ a notify is **native** everywhere: an Ansible handler, Puppet's `notify`, Chef's
 | `chef` | `restart`, `reload`, `start`, `stop` on a service; `run` on an exec |
 | `puppet` | `restart` (or `refresh`) on a service; `run` on an exec. `reload`, `start` and `stop` are refused: Puppet's refresh restarts a service and takes no argument |
 | `dsc` | `refresh`: the notified resource's `Set` runs even when its `Test` says there is nothing to do |
+| `cloud-init` | `start`, `stop`, `restart`, `reload` on a service; `run` on an exec |
 
 A notified `exec` runs in its place in the order, and once more when it is
 notified.
@@ -153,6 +171,7 @@ tools.
 | `chef` | the Ruby of an `only_if` guard | `"node['platform_family'] == 'debian'"` |
 | `dsc` | a `preCondition` in the runner's function language | `"equals (nodeName) 'web'"` |
 | `puppet` | refused. A catalog is compiled before it reaches the node, so nothing is left to evaluate at apply time | |
+| `cloud-init` | refused. cloud-init evaluates nothing per resource | |
 
 ## Plan and apply
 

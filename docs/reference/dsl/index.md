@@ -29,7 +29,7 @@ flowchart TD
     CORE --> IAC["Infrastructure as code<br/>kind: Infrastructure"]
     CORE --> CON["Containerization<br/>kind: Infrastructure"]
     CORE --> ORC["Container orchestration<br/>kind: Infrastructure"]
-    CM --> CM1["shared dialect: six types<br/>ansible, puppet, chef"]
+    CM --> CM1["shared dialect: six types<br/>ansible, puppet, chef, cloud-init"]
     CM --> CM2["native dialect<br/>dsc"]
     IAC --> IAC1["the tool's own types<br/>terraform, cloudformation, bicep"]
     CON --> CON1["elements of a project<br/>docker, podman"]
@@ -361,7 +361,7 @@ Rules:
   the next, declare an [output](#outputs).
 
 The configuration management targets that use the shared resource types
-(`ansible`, `puppet`, `chef`) have nothing to read at apply time, and today do
+(`ansible`, `puppet`, `chef`, `cloud-init`) have nothing to read at apply time, and today do
 not read references at all: `${...}` in a param is ordinary text, written to the
 tool's file as it stands.
 

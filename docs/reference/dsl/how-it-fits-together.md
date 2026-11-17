@@ -28,7 +28,7 @@ flowchart TB
     ORCH <-->|"ordered resources in,<br/>files, plans and outputs back<br/>(one plugin program per target)"| PLUG
     subgraph PLUG["plugins"]
         direction LR
-        CM["configuration management<br/>ansible, puppet, chef, dsc"]
+        CM["configuration management<br/>ansible, puppet, chef, dsc, cloud-init"]
         IAC["infrastructure as code<br/>terraform, cloudformation, bicep"]
         CON["containerization<br/>docker, podman"]
         ORC["container orchestration<br/>kubernetes"]

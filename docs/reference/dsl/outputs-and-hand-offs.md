@@ -137,6 +137,7 @@ machine its own way, with its own credentials:
 | `ansible` | the play's `hosts`, and the entry in `inventory.ini` |
 | `puppet` | the node statement in `site.pp`; another machine is reached with Bolt |
 | `chef` | the machine `chef-run` is pointed at |
+| `cloud-init` | the machine's name in `meta-data`, and where an apply can wait for the first boot |
 | `dsc` | the machine the runner reaches over WinRM or SSH, as its `runner` resource says |
 
 ## The life of a hand-off

@@ -54,6 +54,7 @@ rw.yaml:8:7: puppet: resource "a" [unsupported-runtime-condition]: resource carr
 | Target | Why not |
 |---|---|
 | `puppet` | a catalog is compiled before it reaches the node |
+| `cloud-init` | it evaluates nothing per resource; the machine applies its user-data once |
 | `terraform`, `cloudformation`, `bicep` | there is no node; the tool talks to an API |
 | `docker`, `kubernetes` | nothing to check a condition against while a project or a set of objects is submitted |
 | `podman` | refused; systemd's own `Condition*=` settings under `unit` do this job |

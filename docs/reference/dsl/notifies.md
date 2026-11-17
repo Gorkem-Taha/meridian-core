@@ -101,6 +101,8 @@ tool can really do to that type of resource.
 | `puppet` | native | `service` | `restart` (or `refresh`) |
 | | | `exec` | `run` |
 | `dsc` | native | any DSC resource | `refresh` |
+| `cloud-init` | synthetic | `service` | `start`, `stop`, `restart`, `reload` |
+| | | `exec` | `run` |
 | `docker` | native from a service, synthetic from a config, secret, network or volume | `service` | `restart` |
 | `podman` | native | a unit | `restart` |
 | `kubernetes` | synthetic | a Deployment, StatefulSet or DaemonSet | `restart` |

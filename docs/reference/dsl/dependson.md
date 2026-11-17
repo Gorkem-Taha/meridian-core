@@ -126,6 +126,7 @@ flowchart TD
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
 | declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword |
 | its own rules | `docker` | `depends_on` between services |
+| the stages of a first boot | `cloud-init` | nothing written; a dependency that points backwards through the stages is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning |
 
 Two consequences worth knowing:
