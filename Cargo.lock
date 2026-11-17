@@ -777,6 +777,7 @@ dependencies = [
  "meridian-value",
  "meridian-yaml",
  "proptest",
+ "serde_json",
 ]
 
 [[package]]

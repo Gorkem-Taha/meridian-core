@@ -1,0 +1,6 @@
+# The values optional-monitoring.yaml reads.
+env: prod
+replicas: 3
+monitoring:
+  enabled: true
+  interval: 15s

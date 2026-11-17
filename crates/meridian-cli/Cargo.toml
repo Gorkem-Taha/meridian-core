@@ -26,6 +26,7 @@ meridian-resolve = { path = "../meridian-resolve" }
 meridian-value = { path = "../meridian-value" }
 meridian-yaml = { path = "../meridian-yaml" }
 proptest = { version = "1", default-features = false, features = ["std"] }
+serde_json = "1"
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
 meridian-target-arm = { path = "../../plugins/arm" }

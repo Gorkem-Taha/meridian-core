@@ -21,6 +21,7 @@
 mod eval;
 mod funcs;
 mod parse;
+mod template;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -28,6 +29,7 @@ use meridian_value::Value;
 
 pub use funcs::function_names;
 use parse::Node;
+pub use template::{has_interpolation, Template};
 
 /// A parsed expression. Parsing checks the grammar; [`Expr::check`] checks
 /// the names against what a place allows; [`Expr::eval`] decides it.
@@ -131,6 +133,15 @@ impl Expr {
     pub fn roots(&self) -> BTreeSet<String> {
         let mut out = BTreeSet::new();
         eval::roots(&self.node, &mut Vec::new(), &mut out);
+        out
+    }
+
+    /// Every root the expression reads, with the first key under it when
+    /// that key is written out: `var.name` is `("var", Some("name"))`. This
+    /// is how the order of variables and named conditions is found.
+    pub fn reads(&self) -> BTreeSet<(String, Option<String>)> {
+        let mut out = BTreeSet::new();
+        eval::reads(&self.node, &mut Vec::new(), &mut out);
         out
     }
 
