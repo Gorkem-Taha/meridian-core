@@ -2,7 +2,9 @@
 //!
 //! These tests run when `MERIDIAN_TEST_SALT_CALL` names a `salt-call`
 //! program, and pass without doing anything when it does not, so the suite
-//! needs no Salt installed. CI installs one and sets the variable.
+//! needs no Salt installed. CI installs one and sets the variable. The one
+//! test that dry-runs package, service and account states needs a Salt that
+//! runs as root; see [`privileged`].
 //!
 //! Salt is run masterless and unprivileged: a configuration directory made
 //! for the test keeps its cache and logs in a scratch directory, and every
@@ -23,30 +25,50 @@ use meridian_target_salt::{Salt, SaltRunner, Transport};
 const TMP: &str = env!("CARGO_TARGET_TMPDIR");
 const VARIABLE: &str = "MERIDIAN_TEST_SALT_CALL";
 
+/// The output of `id` with one flag: who the tests run as.
+fn id(flag: &str) -> String {
+    let output = std::process::Command::new("id")
+        .arg(flag)
+        .output()
+        .expect("id runs");
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+}
+
 /// A runner for the real `salt-call`, or `None` when the tests are not asked
 /// to use one.
 fn real(dir: &Path) -> Option<SaltRunner> {
     let program = std::env::var(VARIABLE).ok().filter(|v| !v.is_empty())?;
+    Some(runner_for(dir, program, &id("-un")))
+}
+
+/// A runner for a `salt-call` that may change the system, or `None` when
+/// there is none. Dry-running a package state refreshes the package index,
+/// which an unprivileged Salt cannot do. `MERIDIAN_TEST_SALT_CALL_ROOT` names
+/// a program that runs `salt-call` as root; without it, the ordinary one
+/// serves when the tests themselves run as root.
+fn privileged(dir: &Path) -> Option<SaltRunner> {
+    let as_root = std::env::var("MERIDIAN_TEST_SALT_CALL_ROOT")
+        .ok()
+        .filter(|v| !v.is_empty());
+    match as_root {
+        Some(program) => Some(runner_for(dir, program, "root")),
+        None if id("-u") == "0" => real(dir),
+        None => None,
+    }
+}
+
+fn runner_for(dir: &Path, program: String, user: &str) -> SaltRunner {
     let config = dir.join("config");
     fs::create_dir_all(&config).unwrap();
-    let user = String::from_utf8(
-        std::process::Command::new("id")
-            .arg("-un")
-            .output()
-            .expect("id runs")
-            .stdout,
-    )
-    .unwrap();
     fs::write(
         config.join("minion"),
         format!(
-            "root_dir: {}\nfile_client: local\nid: meridian-test\nuser: {}\n",
+            "root_dir: {}\nfile_client: local\nid: meridian-test\nuser: {user}\n",
             dir.join("root").display(),
-            user.trim()
         ),
     )
     .unwrap();
-    Some(SaltRunner {
+    SaltRunner {
         salt_call: program,
         salt_ssh: "salt-ssh".into(),
         transport: Some(Transport::Local),
@@ -56,7 +78,7 @@ fn real(dir: &Path) -> Option<SaltRunner> {
             "--log-level".into(),
             "error".into(),
         ],
-    })
+    }
 }
 
 fn context(dir: &Path) -> RunContext {
@@ -87,7 +109,9 @@ fn ids(changes: &[meridian_sdk::Change]) -> Vec<&str> {
 #[test]
 fn salt_accepts_what_every_fixture_compiles_to() {
     let dir = scratch(TMP, "real-fixtures");
-    let Some(runner) = real(&dir) else { return };
+    let Some(runner) = privileged(&dir) else {
+        return;
+    };
     let example = "docs/plugins/examples/salt-web.yaml";
     for name in [
         "accounts",

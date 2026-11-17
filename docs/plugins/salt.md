@@ -562,7 +562,9 @@ because the tools do:
 - `plugins/salt/tests/real_salt.rs` uses Salt itself. It dry-runs every golden file, and
   really applies a document to a scratch directory: plan, apply, check the files, plan
   again. It runs when `MERIDIAN_TEST_SALT_CALL` names a `salt-call`, which the `salt`
-  workflow in CI does:
+  workflow in CI does. The dry run of the golden files covers package and service
+  states, so it also needs root, or `MERIDIAN_TEST_SALT_CALL_ROOT` naming a program
+  that runs `salt-call` as root:
 
   ```
   pip install salt
