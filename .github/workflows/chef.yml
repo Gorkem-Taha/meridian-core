@@ -36,6 +36,8 @@ jobs:
         run: |
           curl --fail --silent --show-error --location https://omnitruck.cinc.sh/install.sh | sudo bash -s -- -v 18
           cinc-client --version
+          # The root test installs a small package, so apt needs a current index.
+          sudo apt-get update --quiet
 
       # Packages, users, groups and services can only be managed by root.
       # The tests run as the runner's user; this wrapper is how the one test

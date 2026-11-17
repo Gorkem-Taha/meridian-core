@@ -131,22 +131,27 @@ impl ChefRunner {
 /// `* file[nginx_conf] action create`, followed by a `- ` line for each thing
 /// it changed, or closed with `(up to date)` or `(skipped due to only_if)`
 /// when it changed nothing.
+/// Other bullets under a resource are Chef's why-run assumptions.
 fn read_report(stdout: &str) -> Vec<Change> {
     let mut changes: Vec<Change> = Vec::new();
     let mut current: Option<(String, String)> = None;
     for line in stdout.lines() {
         let line = line.trim();
         if let Some(step) = line.strip_prefix("* ") {
-            current = None;
-            let Some((resource, action)) = step.split_once(" action ") else {
+            // A resource's header is `type[name] action <action>`. In why-run
+            // mode Chef also writes its assumptions as bullets under the
+            // resource they belong to ("* Parent directory /srv/app does not
+            // exist."); those say nothing about which resource is current.
+            let header = step.split_once(" action ").and_then(|(resource, action)| {
+                let name = resource
+                    .split_once('[')
+                    .and_then(|(_, rest)| rest.strip_suffix(']'))?;
+                Some((name, action))
+            });
+            let Some((name, action)) = header else {
                 continue;
             };
-            let name = resource
-                .split_once('[')
-                .and_then(|(_, rest)| rest.strip_suffix(']'));
-            if let (Some(name), false) = (name, action.contains('(')) {
-                current = Some((name.to_owned(), action.trim().to_owned()));
-            }
+            current = (!action.contains('(')).then(|| (name.to_owned(), action.trim().to_owned()));
         } else if line.starts_with("- ") {
             let Some((name, action)) = current.take() else {
                 continue;
@@ -233,6 +238,37 @@ impl Runner for ChefRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// What chef-client really prints in why-run mode for a file whose
+    /// directory the same run would create: its assumptions come first, as
+    /// bullets of their own, and the change after them.
+    #[test]
+    fn a_why_run_assumption_does_not_hide_the_change_that_follows_it() {
+        let report = "\
+Recipe: meridian_site::default
+  * directory[app_dir] action create
+    - Would create new directory /srv/app
+    - Would change mode from '' to '0755'
+  * file[app_conf] action create
+    * Parent directory /srv/app does not exist.
+    * Assuming directory /srv/app would have been created
+    - Would create new file /srv/app/app.conf
+    - Would update content in file /srv/app/app.conf from none to 5d8a9b
+  * execute[stamp] action run
+    - Would execute /bin/true
+  * service[cron] action start (up to date)
+    * Assuming nothing
+";
+        let shown: Vec<String> = read_report(report).iter().map(|c| c.to_string()).collect();
+        assert_eq!(
+            shown,
+            [
+                "update app_dir: create",
+                "update app_conf: create",
+                "update stamp: run",
+            ]
+        );
+    }
 
     #[test]
     fn changes_are_read_from_the_report() {

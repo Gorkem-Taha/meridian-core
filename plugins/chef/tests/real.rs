@@ -77,9 +77,13 @@ fn compile(resources: &str) -> Artifact {
 
 fn plan(runner: &ChefRunner, dir: &Path, artifact: &Artifact) -> Plan {
     let log = KeptLog::default();
-    runner
+    let plan = runner
         .plan(&context(dir), artifact, &log)
-        .unwrap_or_else(|e| panic!("{e}\n{}", log.text().join("\n")))
+        .unwrap_or_else(|e| panic!("{e}\n{}", log.text().join("\n")));
+    // Shown with --nocapture, so that what the client really prints for a
+    // why-run is on the workflow's log.
+    eprintln!("--- why-run ---\n{}", log.text().join("\n"));
+    plan
 }
 
 fn apply(runner: &ChefRunner, dir: &Path, artifact: &Artifact) -> Applied {
@@ -269,7 +273,7 @@ fn packages_accounts_and_a_service_are_managed_as_root() {
     };
 
     let present = compile(
-        "    - id: tool\n      type: package\n      params:\n        name: tree\n    - id: team\n      type: group\n      params:\n        name: meridian-team\n        system: true\n    - id: deploy\n      type: user\n      params:\n        name: meridian-deploy\n        system: true\n        shell: /usr/sbin/nologin\n        groups: [meridian-team]\n      dependsOn:\n        - resource: team\n    - id: scheduler\n      type: service\n      state: running\n      params:\n        name: cron\n        enabled: true\n",
+        "    - id: tool\n      type: package\n      params:\n        name: hello\n    - id: team\n      type: group\n      params:\n        name: meridian-team\n        system: true\n    - id: deploy\n      type: user\n      params:\n        name: meridian-deploy\n        system: true\n        shell: /usr/sbin/nologin\n        groups: [meridian-team]\n      dependsOn:\n        - resource: team\n    - id: scheduler\n      type: service\n      state: running\n      params:\n        name: cron\n        enabled: true\n",
     );
     let preview = plan(&runner, &dir, &present);
     assert_eq!(
@@ -284,7 +288,7 @@ fn packages_accounts_and_a_service_are_managed_as_root() {
     assert!(!exists(&["getent", "passwd", "meridian-deploy"]));
 
     apply(&runner, &dir, &present);
-    assert!(exists(&["dpkg", "-s", "tree"]));
+    assert!(exists(&["dpkg", "-s", "hello"]));
     assert!(exists(&["getent", "group", "meridian-team"]));
     let groups = Command::new("id")
         .args(["-nG", "meridian-deploy"])
@@ -302,7 +306,7 @@ fn packages_accounts_and_a_service_are_managed_as_root() {
 
     // Absent is a removal of each.
     let absent = compile(
-        "    - id: deploy\n      type: user\n      state: absent\n      params:\n        name: meridian-deploy\n    - id: team\n      type: group\n      state: absent\n      params:\n        name: meridian-team\n      dependsOn:\n        - resource: deploy\n    - id: tool\n      type: package\n      state: absent\n      params:\n        name: tree\n",
+        "    - id: deploy\n      type: user\n      state: absent\n      params:\n        name: meridian-deploy\n    - id: team\n      type: group\n      state: absent\n      params:\n        name: meridian-team\n      dependsOn:\n        - resource: deploy\n    - id: tool\n      type: package\n      state: absent\n      params:\n        name: hello\n",
     );
     let applied = apply(&runner, &dir, &absent);
     assert_eq!(
@@ -315,5 +319,5 @@ fn packages_accounts_and_a_service_are_managed_as_root() {
     );
     assert!(!exists(&["getent", "passwd", "meridian-deploy"]));
     assert!(!exists(&["getent", "group", "meridian-team"]));
-    assert!(!exists(&["dpkg", "-s", "tree"]));
+    assert!(!exists(&["dpkg", "-s", "hello"]));
 }
