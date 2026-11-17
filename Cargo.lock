@@ -608,12 +608,14 @@ dependencies = [
  "meridian-target-ansible",
  "meridian-target-bicep",
  "meridian-target-chef",
+ "meridian-target-cloud-init",
  "meridian-target-cloudformation",
  "meridian-target-docker",
  "meridian-target-dsc",
  "meridian-target-fake",
  "meridian-target-kubernetes",
  "meridian-target-openvox",
+ "meridian-target-podman",
  "meridian-target-puppet",
  "meridian-target-terraform",
 ]
@@ -717,6 +719,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "meridian-target-cloud-init"
+version = "0.1.0"
+dependencies = [
+ "meridian-ir",
+ "meridian-orchestrator",
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-target-fake",
+ "meridian-yaml",
+]
+
+[[package]]
 name = "meridian-target-cloudformation"
 version = "0.1.0"
 dependencies = [
@@ -767,6 +782,15 @@ dependencies = [
  "meridian-plugin-testkit",
  "meridian-sdk",
  "meridian-target-puppet",
+]
+
+[[package]]
+name = "meridian-target-podman"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
 ]
 
 [[package]]

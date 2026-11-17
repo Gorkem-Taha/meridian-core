@@ -1,0 +1,17 @@
+# Written by Meridian from the document "web-app". The next apply overwrites any change made here.
+
+[Unit]
+After=shop-db.service
+Description=The shop's web front end
+Requires=shop-db.service
+
+[Container]
+AutoUpdate=registry
+Environment=DATABASE_HOST=shop-db
+Image=docker.io/library/nginx:1.27
+Network=shop-net.network
+PublishPort=8080:80
+PublishPort=8443:443
+
+[Install]
+WantedBy=default.target

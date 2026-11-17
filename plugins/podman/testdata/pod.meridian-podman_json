@@ -1,0 +1,37 @@
+{
+  "document": "metrics-pod",
+  "outputs": [
+    {
+      "name": "pod_name",
+      "value": [
+        "metrics"
+      ]
+    }
+  ],
+  "units": [
+    {
+      "file": "metrics.pod",
+      "id": "metrics",
+      "kind": "pod",
+      "service": "metrics-pod.service"
+    },
+    {
+      "file": "app-image.image",
+      "id": "app-image",
+      "kind": "image",
+      "service": "app-image-image.service"
+    },
+    {
+      "file": "prometheus.container",
+      "id": "prometheus",
+      "kind": "container",
+      "service": "prometheus.service"
+    },
+    {
+      "file": "exporter.container",
+      "id": "exporter",
+      "kind": "container",
+      "service": "exporter.service"
+    }
+  ]
+}

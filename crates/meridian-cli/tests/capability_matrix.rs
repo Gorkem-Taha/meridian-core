@@ -73,6 +73,10 @@ fn matrix() -> String {
             &meridian_target_chef::ChefRunner::from_env(),
         ),
         row(
+            &meridian_target_cloud_init::CloudInit,
+            &meridian_target_cloud_init::CloudInitRunner::from_env(),
+        ),
+        row(
             &meridian_target_cloudformation::CloudFormation,
             &meridian_target_cloudformation::CloudFormationRunner::from_env(),
         ),
@@ -87,6 +91,10 @@ fn matrix() -> String {
         row(
             &meridian_target_kubernetes::Kubernetes,
             &meridian_target_kubernetes::KubernetesRunner::from_env(),
+        ),
+        row(
+            &meridian_target_podman::Podman,
+            &meridian_target_podman::PodmanRunner::from_env(),
         ),
         row(
             &meridian_target_openvox::OpenVox,

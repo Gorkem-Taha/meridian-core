@@ -1,0 +1,49 @@
+# A web server set up on a machine's first boot.
+#
+# The same resources as examples/ansible/web-server.yaml, with one target
+# changed. cloud-init applies them in its own order: the package is installed
+# first, the configuration file is written after it (so the package's default
+# does not replace it), and the service and the reload are commands that run
+# last.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: cloud-init
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: nginx_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/site.conf
+        content: |
+          server {
+            listen 80;
+            root /srv/www;
+          }
+        owner: root
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      # On a first boot the file always changes, so the reload always runs:
+      # once, after every other command.
+      notifies:
+        - resource: nginx_svc
+          action: reload
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg

@@ -1,0 +1,17 @@
+#cloud-config
+# Compiled by Meridian from the document "web". Change the document, not this file.
+write_files:
+  - path: /etc/app/app.conf
+    content: |
+      mode = fast
+      workers = 8
+    permissions: "0640"
+    defer: true
+packages:
+  - app
+runcmd:
+  - set -e
+  - systemctl enable --now app
+  - /usr/local/bin/warm-cache --all
+  - systemctl restart app
+  - /usr/local/bin/warm-cache --all

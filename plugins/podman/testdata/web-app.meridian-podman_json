@@ -1,0 +1,53 @@
+{
+  "document": "web-app",
+  "outputs": [
+    {
+      "name": "web_url",
+      "value": [
+        "http://localhost:8080/"
+      ]
+    },
+    {
+      "name": "web_service",
+      "value": [
+        "shop-web.service"
+      ]
+    },
+    {
+      "name": "data_directory",
+      "value": [
+        {
+          "inspect": "volume",
+          "name": "systemd-shop-data",
+          "path": "Mountpoint"
+        }
+      ]
+    }
+  ],
+  "units": [
+    {
+      "file": "shop-net.network",
+      "id": "shop-net",
+      "kind": "network",
+      "service": "shop-net-network.service"
+    },
+    {
+      "file": "shop-data.volume",
+      "id": "shop-data",
+      "kind": "volume",
+      "service": "shop-data-volume.service"
+    },
+    {
+      "file": "shop-db.container",
+      "id": "shop-db",
+      "kind": "container",
+      "service": "shop-db.service"
+    },
+    {
+      "file": "shop-web.container",
+      "id": "shop-web",
+      "kind": "container",
+      "service": "shop-web.service"
+    }
+  ]
+}

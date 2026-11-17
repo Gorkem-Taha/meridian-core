@@ -18,6 +18,7 @@ That produces the `meridian` command and one binary per plugin, all in
 ```
 meridian
 meridian-target-ansible
+meridian-target-cloud-init
 meridian-target-openvox
 meridian-target-terraform
 ...
@@ -51,10 +52,12 @@ hand:
 | `openvox` | OpenVox's `puppet`, or OpenBolt's `bolt` to reach another host |
 | `chef` | `chef-client`, or `chef-run` to reach another host |
 | `dsc` | PowerShell (`pwsh`) with the Dsc.PipelineRunner module |
+| `cloud-init` | `cloud-init`, to check the user-data (Linux only; the check can be turned off). `ssh` as well, if an apply is to wait for the machine's first boot |
 | `terraform` | `terraform` (or `tofu`) |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
 | `docker` | `docker` with the Compose plugin |
+| `podman` | `podman` 4.4 or later on a Linux host with systemd |
 | `kubernetes` | `kubectl` |
 
 Each tool keeps using its own credentials and configuration. Meridian does not

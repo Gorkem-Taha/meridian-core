@@ -1,0 +1,24 @@
+{
+  "document": "edge-proxy",
+  "outputs": [],
+  "units": [
+    {
+      "file": "proxy-image.image",
+      "id": "proxy-image",
+      "kind": "image",
+      "service": "proxy-image-image.service"
+    },
+    {
+      "file": "proxy-config.volume",
+      "id": "proxy-config",
+      "kind": "volume",
+      "service": "proxy-config-volume.service"
+    },
+    {
+      "file": "proxy.container",
+      "id": "proxy",
+      "kind": "container",
+      "service": "proxy.service"
+    }
+  ]
+}
