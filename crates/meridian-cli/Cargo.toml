@@ -18,6 +18,11 @@ meridian-plugin-host = { path = "../meridian-plugin-host" }
 meridian-sdk = { path = "../meridian-sdk" }
 
 [dev-dependencies]
+meridian-graph = { path = "../meridian-graph" }
+meridian-resolve = { path = "../meridian-resolve" }
+meridian-value = { path = "../meridian-value" }
+meridian-yaml = { path = "../meridian-yaml" }
+proptest = { version = "1", default-features = false, features = ["std"] }
 meridian-plugin-testkit = { path = "../meridian-plugin-testkit" }
 meridian-target-ansible = { path = "../../plugins/ansible" }
 meridian-target-arm = { path = "../../plugins/arm" }
