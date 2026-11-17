@@ -1,0 +1,73 @@
+# A web application and its database as Podman containers on this machine,
+# kept running by systemd.
+#
+# Every resource becomes one Quadlet unit file. Its type is the kind of unit
+# and its params are Quadlet's own keys. ${id} refers to another resource of
+# this document by its unit file, which is how Quadlet links units.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-app
+spec:
+  target: podman
+  resources:
+    - id: shop-net
+      type: network
+      params:
+        Subnet: 10.89.7.0/24
+        Label:
+          app: shop
+
+    - id: shop-data
+      type: volume
+      params:
+        Label:
+          app: shop
+
+    - id: shop-db
+      type: container
+      params:
+        Image: docker.io/library/postgres:17
+        ContainerName: shop-db
+        Network: ${shop-net}
+        Volume: ${shop-data}:/var/lib/postgresql/data
+        # A map is written as one name=value per entry, and each value means
+        # exactly what it says: the % and the $ below reach the container.
+        Environment:
+          POSTGRES_DB: shop
+          POSTGRES_USER: shop
+          POSTGRES_PASSWORD: s3cr3t%and$more
+        HealthCmd: pg_isready -U shop
+        HealthInterval: 10s
+        # The other sections of the unit file are lower-case params.
+        service:
+          Restart: always
+
+    - id: shop-web
+      type: container
+      params:
+        Image: docker.io/library/nginx:1.27
+        Network: ${shop-net}
+        PublishPort:
+          - "8080:80"
+          - "8443:443"
+        Environment:
+          # The name Podman gives the database container, which is also its
+          # name on the network.
+          DATABASE_HOST: ${shop-db.name}
+        AutoUpdate: registry
+        unit:
+          Description: The shop's web front end
+      # Nothing in the params names the database's unit file, so this order
+      # is written out as Requires= and After=.
+      dependsOn:
+        - resource: shop-db
+
+  outputs:
+    - name: web_url
+      value: http://localhost:8080/
+    - name: web_service
+      value: ${shop-web.service}
+    # Read from `podman volume inspect` once the volume exists.
+    - name: data_directory
+      value: ${shop-data.inspect.Mountpoint}
