@@ -94,7 +94,7 @@ jobs:
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       TARGET: ${{ matrix.target }}
-      PYTHON: ${{ runner.os == 'Windows' && 'python' || 'python3' }}
+      PYTHON: ${{ startsWith(matrix.os, 'windows') && 'python' || 'python3' }}
     steps:
       - uses: actions/checkout@v4
 
