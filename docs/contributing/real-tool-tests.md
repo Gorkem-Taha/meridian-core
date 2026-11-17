@@ -90,7 +90,12 @@ change-set calls works end to end, and a preview, an apply, a no-op, an update a
 deletion are each reported as what they are.
 
 What it cannot prove: that the real service behaves as the emulator does in every detail,
-in particular how long a change set takes and what a replacement looks like. To run the
+in particular how long a change set takes and what a replacement looks like. Two places
+where the emulator was seen to differ: LocalStack 4.4 reported an unchanged resource as an
+update, which 4.14, the version the workflow pins, does not; and LocalStack accepts a
+resource type that does not exist, which CloudFormation refuses, so the refusal the tests
+use is a reference to a resource the template does not have, which both refuse in the
+same words. To run the
 same tests against a real account, sign the `aws` command in, leave `MERIDIAN_AWS_ARGS`
 unset and set `MERIDIAN_TEST_REAL_CLOUDFORMATION=1`. They create a stack named
 `meridian-real` in `us-east-1` and delete it.

@@ -272,15 +272,16 @@ fn a_template_cloudformation_rejects_fails_the_plan_and_leaves_no_stack() {
     delete_stack(REJECTED);
     let _tear_down = TearDown(REJECTED);
     let dir = scratch(TMP, "real-rejected");
-    // The compile cannot know that there is no such resource type; only
-    // CloudFormation can.
-    let text = "apiVersion: meridian/v1\nkind: Infrastructure\nmetadata:\n  name: messaging\nspec:\n  target: cloudformation\n  resources:\n    - id: deployment\n      type: stack\n      params:\n        name: meridian-real-rejected\n        region: us-east-1\n    - id: thing\n      type: AWS::Meridian::NoSuchType\n      params:\n        Name: nothing\n";
+    // The param is CloudFormation's own function, written out, so the
+    // compile hands it over as it is. Only CloudFormation knows the template
+    // has no resource called Nowhere.
+    let text = "apiVersion: meridian/v1\nkind: Infrastructure\nmetadata:\n  name: messaging\nspec:\n  target: cloudformation\n  resources:\n    - id: deployment\n      type: stack\n      params:\n        name: meridian-real-rejected\n        region: us-east-1\n    - id: thing\n      type: AWS::SSM::Parameter\n      params:\n        Name: /meridian/real/rejected\n        Type: String\n        Value:\n          Fn::GetAtt: [Nowhere, Arn]\n";
     let artifact = compile(text);
     let error = CloudFormationRunner::from_env()
         .plan(&context(&dir), &artifact, &NoLog)
         .expect_err("CloudFormation refuses the template");
     assert!(
-        format!("{} {}", error.msg, error.output).contains("NoSuchType"),
+        format!("{} {}", error.msg, error.output).contains("Nowhere"),
         "{error:?}"
     );
     assert!(!stack_exists(REJECTED), "a refused plan leaves no stack");
