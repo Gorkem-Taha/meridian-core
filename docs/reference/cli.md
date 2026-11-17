@@ -18,6 +18,10 @@ meridian version
 meridian module   install [--locked] | update [NAME]... | verify | list | pack [--out FILE] | push REPOSITORY
 meridian secret check <files>...
 meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--data FILE] [--set KEY=VALUE]
+meridian fmt      <paths>... [--check] [--keep-order]
+meridian lint     <paths>... [--data FILE] [--set KEY=VALUE] [--state-dir DIR] [--fix] [--strict] [--json]
+meridian schema   [--target TARGET] [-o FILE]
+meridian lsp
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -226,7 +230,7 @@ second one collide with it.
 
 Lists every plugin Meridian can find: its category, what it can do, the resource
 types it takes, the versions of its tool it compiles for (when it declares any),
-and where its binary is.
+where its binary is, and what checking its signature found.
 
 ```
 dsc
@@ -238,6 +242,7 @@ dsc
   imports:   DSC v3 configuration documents and DscPipelineRunner projects (*.dsc.yaml, *.dsc.yml, *.dsc.json, *.dsc.config.yaml, *.dsc.config.yml, *.dsc.config.json, Datum.yml, *.yaml, *.yml, *.json)
   sdk:       0.1.0 (protocol 2)
   binary:    /usr/local/bin/meridian-target-dsc
+  signature: verified, signed by key 780001b5de1d7691
 ```
 
 `inputs` in the `can` line says the plugin hands its tool the values a
@@ -393,11 +398,77 @@ error: 1 secret would not be found by plan or apply
 It takes `--state-dir`, for a file written `@<module>:<path>`, and loads no
 plugin.
 
+### `fmt`
+
+Rewrites documents in the one standard layout: two-space indentation, the
+language's own field order, no trailing spaces. It changes how a document is
+laid out and never what it says, and it checks that before writing. `--check`
+changes nothing, lists the files that are not formatted and exits `1` if there
+are any. `--keep-order` leaves fields in the order they were written. `-` reads
+standard input and writes standard output.
+
+A path may be a directory, which is searched for Meridian documents. Full
+description: [The formatter](../tooling/formatter.md).
+
+### `lint`
+
+Reports everything `validate` and `compile` would refuse, for every document
+under the paths given, and then things that compile and are probably mistakes.
+Each document is compiled by its target's plugin in memory; nothing is written
+and no tool is run.
+
+```console
+$ meridian lint stacks/
+stacks/web.yaml:16:15: warning: mode 0644 is read as a number, not as permissions; write it as a quoted string [unquoted-mode]
+stacks/web.yaml:35:21: error: spec.resources[3].dependsOn[0].resource: resource "warm" depends on unknown resource "wbe" [invalid-document]
+1 error, 1 warning, 0 notes
+```
+
+`--fix` applies the fixes that are safe. `--strict` fails on warnings as well
+as errors. `--json` prints one JSON object per finding. `--data` and `--set`
+are as for `compile`; without them a document that needs data is checked
+with every `when` treated as true. Full
+description: [The linter](../tooling/linter.md); the rules:
+[Lint rules](lint.md).
+
+### `schema`
+
+Prints a JSON Schema (draft 7) of the document language and of the resource
+types of every plugin found, for editors that validate YAML against a schema.
+`--target` writes one target's rules only; `-o` writes to a file. Full
+description: [The JSON Schema](../tooling/json-schema.md).
+
+### `lsp`
+
+Runs the language server on standard input and output. An editor starts it;
+there is nothing to see when it is run by hand. Full description:
+[The language server](../tooling/language-server.md).
+
+### `signing`
+
+Makes signing keys, signs plugin binaries and checks their signatures. It is
+for people who ship a plugin, or who want to check one without starting it;
+[Plugin signatures](plugin-signatures.md) is the guide.
+
+```
+meridian signing keygen --secret acme.key --public acme.pub
+meridian signing sign --key acme.key meridian-target-acme
+meridian signing verify --trusted-key acme.pub meridian-target-acme
+```
+
+| Command | Does |
+|---|---|
+| `signing keygen --secret FILE --public FILE` | makes a new key pair. Neither file may exist already |
+| `signing sign --key FILE BINARY...` | writes `<BINARY>.sig` beside each binary |
+| `signing verify [--trusted-key FILE]... BINARY...` | prints what each binary's signature amounts to; exits non-zero if any is not verified |
+
 ## Options
 
 | Option | Environment | Default | Meaning |
 |---|---|---|---|
-| `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`) | the directory `meridian` is in | where to look for plugins; may be repeated |
+| `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`, or `;` on Windows) | the directory `meridian` is really in, following a link to it | where to look for plugins; may be repeated |
+| `--plugin-signatures POLICY` | `MERIDIAN_PLUGIN_SIGNATURES` | `require` in a released `meridian`, `off` in one built from source | what to do about [plugin signatures](plugin-signatures.md): `off` does not look, `warn` starts an unsigned or wrongly signed plugin and says so, `require` starts only plugins signed by a trusted key |
+| `--trusted-key FILE` | `MERIDIAN_TRUSTED_KEYS` (separated by `:`, or `;` on Windows) | the key a released `meridian` was built with | a public key whose signatures on plugins are trusted, or a directory of `*.pub` files; may be repeated |
 | `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, fetched [modules](modules.md#where-modules-are-kept), and with the local backend Meridian's own record |
 | `--backend NAME` | `MERIDIAN_BACKEND` | `local` | where Meridian's own record (the lock, the run-state, the runs) is kept: `local`, or a [backend program](state.md#writing-a-backend) |
 | `--backend-config KEY=VALUE` | | | a setting for the backend; may be repeated |
@@ -513,8 +584,9 @@ No version is deprecated today.
 not compile, a tool failed, a policy denied a change or could not be asked, a
 stage could not be rolled back, or the run was
 refused because the state is locked or there was nothing to resume or roll
-back. `2` for a mistake in the command line itself, and from `drift` when a
-stage has drifted.
+back; when `fmt --check` found a file that is not formatted; and when `lint`
+found an error, or a warning with `--strict`. `2` for a mistake in the command
+line itself, and from `drift` when a stage has drifted.
 
 `import` exits `0` when it wrote its documents, whatever it reported about
 them; `1` when the source could not be read or no plugin imports it, and, with

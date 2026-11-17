@@ -5,6 +5,8 @@
 //! own output and errors, and the exit status says whether everything asked
 //! for was done.
 
+mod tools;
+
 use std::collections::BTreeMap;
 mod import;
 
@@ -21,7 +23,10 @@ use meridian_orchestrator::{
     Observer, OnFailure, Options, Outcome, Policy, Resume, RollbackOutcome, RollbackReport,
     RunRecord, Selector, StageId, StageReport, MASK, REASON_POLICY_DENIED,
 };
-use meridian_plugin_host::{Registry, StartOptions};
+use meridian_plugin_host::{
+    signature::signature_path, Policy as SignaturePolicy, PublicKey, Registry, SecretKey,
+    Signature, StartOptions, Verification,
+};
 use meridian_sdk::{ChangeAction, Data, LogLine, LogStream, Output};
 
 #[derive(Parser)]
@@ -190,6 +195,19 @@ enum Command {
         #[command(subcommand)]
         command: SecretCommand,
     },
+    /// Rewrite documents in the one standard layout, changing no value
+    Fmt(tools::FmtArgs),
+    /// Report errors, and things that compile but are probably mistakes
+    Lint(tools::LintArgs),
+    /// Print a JSON Schema of the document language, for YAML editors
+    Schema(tools::SchemaArgs),
+    /// Run the language server, for editors, on standard input and output
+    Lsp(tools::LspArgs),
+    /// Make signing keys, sign plugin binaries and check their signatures
+    Signing {
+        #[command(subcommand)]
+        command: SigningCommand,
+    },
     /// Fetch, pin and check the modules the project's meridian.yaml requires
     Module {
         #[command(subcommand)]
@@ -276,17 +294,132 @@ enum RulesCommand {
     },
 }
 
+#[derive(Subcommand)]
+enum SigningCommand {
+    /// Make a new key pair for signing plugins
+    Keygen {
+        /// Where to write the secret key, which signs. Keep it private
+        #[arg(long, value_name = "FILE")]
+        secret: PathBuf,
+        /// Where to write the public key, which those who run the plugins trust
+        #[arg(long, value_name = "FILE")]
+        public: PathBuf,
+    },
+    /// Sign plugin binaries, writing <BINARY>.sig beside each
+    Sign {
+        /// The secret key to sign with
+        #[arg(long, value_name = "FILE")]
+        key: PathBuf,
+        /// The binaries to sign
+        #[arg(required = true)]
+        binaries: Vec<PathBuf>,
+    },
+    /// Check the signatures of plugin binaries against the trusted keys
+    Verify {
+        #[command(flatten)]
+        keys: TrustedKeys,
+        /// The binaries to check
+        #[arg(required = true)]
+        binaries: Vec<PathBuf>,
+    },
+}
+
+/// The public key this build's own plugins were signed with, when it is a
+/// release build: the release workflow sets the variable while it compiles.
+/// A build from source has none.
+const RELEASE_PUBLIC_KEY: Option<&str> = option_env!("MERIDIAN_RELEASE_PUBLIC_KEY");
+
 #[derive(Args)]
-struct PluginDirs {
+struct TrustedKeys {
+    /// A public key file whose signatures on plugins are trusted, or a
+    /// directory of *.pub files; may be given more than once. A released
+    /// meridian already trusts the key its own plugins were signed with
+    #[arg(
+        long = "trusted-key",
+        value_name = "FILE",
+        env = "MERIDIAN_TRUSTED_KEYS",
+        value_delimiter = PATH_LIST_SEPARATOR
+    )]
+    trusted_keys: Vec<PathBuf>,
+}
+
+impl TrustedKeys {
+    /// Every key to trust: the release's own, then the ones named.
+    fn read(&self) -> Result<Vec<PublicKey>, Failure> {
+        let mut keys = Vec::new();
+        if let Some(key) = RELEASE_PUBLIC_KEY.filter(|k| !k.trim().is_empty()) {
+            keys.push(PublicKey::parse(key).map_err(|e| {
+                Failure::Message(format!("the public key built into this meridian: {e}"))
+            })?);
+        }
+        for path in &self.trusted_keys {
+            if path.is_dir() {
+                let mut files: Vec<PathBuf> = std::fs::read_dir(path)
+                    .map_err(|e| {
+                        Failure::Message(format!(
+                            "reading the key directory {}: {e}",
+                            path.display()
+                        ))
+                    })?
+                    .filter_map(Result::ok)
+                    .map(|entry| entry.path())
+                    .filter(|file| file.extension().is_some_and(|ext| ext == "pub"))
+                    .collect();
+                files.sort();
+                for file in files {
+                    keys.push(PublicKey::read(&file).map_err(Failure::Message)?);
+                }
+            } else {
+                keys.push(PublicKey::read(path).map_err(Failure::Message)?);
+            }
+        }
+        Ok(keys)
+    }
+}
+
+/// What separates the directories in `MERIDIAN_PLUGIN_DIR`: the system's own
+/// separator for a list of paths, since a Windows path holds a colon.
+const PATH_LIST_SEPARATOR: char = if cfg!(windows) { ';' } else { ':' };
+
+#[derive(Args)]
+pub(crate) struct PluginDirs {
     /// A directory to look for plugins in; may be given more than once.
     /// Defaults to the directory the meridian binary is in
     #[arg(
         long = "plugin-dir",
         value_name = "DIR",
         env = "MERIDIAN_PLUGIN_DIR",
-        value_delimiter = ':'
+        value_delimiter = PATH_LIST_SEPARATOR
     )]
-    dirs: Vec<PathBuf>,
+    pub(crate) dirs: Vec<PathBuf>,
+    /// What to do about plugin signatures: off (do not look), warn (start an
+    /// unsigned or wrongly signed plugin, and say so) or require (start only
+    /// plugins signed by a trusted key). Defaults to require in a released
+    /// meridian and to off in one built from source
+    #[arg(
+        long = "plugin-signatures",
+        value_name = "POLICY",
+        env = "MERIDIAN_PLUGIN_SIGNATURES"
+    )]
+    signatures: Option<SignaturePolicy>,
+    #[command(flatten)]
+    keys: TrustedKeys,
+}
+
+impl PluginDirs {
+    fn verification(&self) -> Result<Verification, Failure> {
+        let policy = self.signatures.unwrap_or(match RELEASE_PUBLIC_KEY {
+            Some(key) if !key.trim().is_empty() => SignaturePolicy::Require,
+            _ => SignaturePolicy::Off,
+        });
+        // With signatures off the keys are not needed, and a key file that
+        // has gone missing should not stop a run that does not use it.
+        let trusted = match policy {
+            SignaturePolicy::Off => Vec::new(),
+            SignaturePolicy::Warn | SignaturePolicy::Require => self.keys.read()?,
+        };
+        Ok(Verification { policy, trusted })
+    }
 }
 
 /// Where Meridian keeps what it knows.
@@ -500,6 +633,11 @@ fn main() -> ExitCode {
             print!("{}", versions());
             Ok(())
         }
+        Command::Fmt(args) => tools::format(&args),
+        Command::Lint(args) => tools::lint(&args),
+        Command::Schema(args) => tools::schema(&args),
+        Command::Lsp(args) => tools::lsp(&args),
+        Command::Signing { command } => signing(command),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -512,7 +650,7 @@ fn main() -> ExitCode {
     }
 }
 
-enum Failure {
+pub(crate) enum Failure {
     /// Something to print.
     Message(String),
     /// Already printed, stage by stage.
@@ -521,7 +659,7 @@ enum Failure {
     Drifted,
 }
 
-fn count(n: usize, noun: &str) -> String {
+pub(crate) fn count(n: usize, noun: &str) -> String {
     if n == 1 {
         format!("1 {noun}")
     } else {
@@ -854,7 +992,7 @@ fn push_module(
 
 /// Reads the `--data` files into one map. Each file is a mapping; a key in a
 /// later file replaces the same key from an earlier one, whole.
-fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
+pub(crate) fn read_data(files: &[PathBuf], state_dir: &Path) -> Result<Data, Failure> {
     let mut data = Data::new();
     for file in &in_modules(files, state_dir)? {
         let name = file.to_string_lossy();
@@ -962,7 +1100,7 @@ fn check_rules(
 /// Applies the `--set key=value` options to the data, in the order given.
 /// A dotted key sets a value inside a mapping, creating the mappings on the
 /// way; the other keys of those mappings are kept.
-fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
+pub(crate) fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
     use meridian_ir::Value;
     for set in sets {
         let refuse = |why: &str| Failure::Message(format!("--set {set}: {why}"));
@@ -1006,11 +1144,7 @@ fn apply_sets(data: &mut Data, sets: &[String]) -> Result<(), Failure> {
 /// The directories plugins, and backend programs, are looked for in.
 fn plugin_dirs(plugins: &PluginDirs) -> Vec<PathBuf> {
     if plugins.dirs.is_empty() {
-        std::env::current_exe()
-            .ok()
-            .and_then(|exe| exe.parent().map(Path::to_path_buf))
-            .into_iter()
-            .collect()
+        own_directory().into_iter().collect()
     } else {
         plugins.dirs.clone()
     }
@@ -1041,15 +1175,107 @@ fn backend(state: &State) -> Result<Arc<dyn Backend>, Failure> {
         .map_err(Failure::Message)
 }
 
-fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
+pub(crate) fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
     let dirs = plugin_dirs(plugins);
+    let options = StartOptions {
+        verification: plugins.verification()?,
+        ..StartOptions::default()
+    };
     let mut registry = Registry::new();
     for dir in dirs {
-        registry
-            .discover(&dir.to_string_lossy(), &StartOptions::default())
+        let loaded = registry
+            .discover(&dir.to_string_lossy(), &options)
             .map_err(|e| Failure::Message(e.to_string()))?;
+        // Under `warn` a plugin that did not pass was started all the same;
+        // this is the saying so.
+        for info in loaded {
+            match &info.signature {
+                Signature::Unsigned => {
+                    eprintln!("warning: plugin {} is not signed", info.path)
+                }
+                Signature::Invalid(why) => eprintln!(
+                    "warning: plugin {}: its signature does not pass: {why}",
+                    info.path
+                ),
+                Signature::NotChecked | Signature::Verified { .. } => {}
+            }
+        }
     }
     Ok(registry)
+}
+
+fn signing(command: SigningCommand) -> Result<(), Failure> {
+    match command {
+        SigningCommand::Keygen { secret, public } => {
+            // Neither file is replaced: writing over a secret key loses the
+            // only thing that can make signatures its public key accepts.
+            for path in [&secret, &public] {
+                if path.exists() {
+                    return Err(Failure::Message(format!(
+                        "{} already exists; a key is not written over",
+                        path.display()
+                    )));
+                }
+            }
+            let key = SecretKey::generate().map_err(Failure::Message)?;
+            write_secret(&secret, &format!("{}\n", key.to_text()))
+                .and_then(|()| std::fs::write(&public, format!("{}\n", key.public().to_text())))
+                .map_err(|e| Failure::Message(format!("writing the key pair: {e}")))?;
+            println!("key {}", key.public().id());
+            println!("  secret: {}", secret.display());
+            println!("  public: {}", public.display());
+            Ok(())
+        }
+        SigningCommand::Sign { key, binaries } => {
+            let key = SecretKey::read(&key).map_err(Failure::Message)?;
+            for binary in binaries {
+                let text = key.sign_file(&binary).map_err(Failure::Message)?;
+                let path = signature_path(&binary);
+                std::fs::write(&path, text)
+                    .map_err(|e| Failure::Message(format!("writing {}: {e}", path.display())))?;
+                println!("signed {} with key {}", binary.display(), key.public().id());
+            }
+            Ok(())
+        }
+        SigningCommand::Verify { keys, binaries } => {
+            let trusted = keys.read()?;
+            let mut failed = false;
+            for binary in binaries {
+                let found = meridian_plugin_host::signature::verify_file(&binary, &trusted);
+                failed |= !matches!(found, Signature::Verified { .. });
+                println!("{}: {found}", binary.display());
+            }
+            if failed {
+                Err(Failure::Reported)
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// Writes a secret key so that only its owner can read it, where the system
+/// has such a thing as a file mode.
+fn write_secret(path: &Path, text: &str) -> std::io::Result<()> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)?.write_all(text.as_bytes())
+}
+
+/// The directory the `meridian` binary really is in.
+///
+/// A package manager often puts a link to the binary on the `PATH` and keeps
+/// the binary itself, with its plugins beside it, somewhere else. The link is
+/// followed, so the plugins are found wherever the command was started from.
+fn own_directory() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let exe = meridian_sdk::tool::absolute_path(&exe);
+    exe.parent().map(Path::to_path_buf)
 }
 
 fn import_configuration(plugins: &PluginDirs, request: &import::Request) -> Result<(), Failure> {
@@ -1108,6 +1334,7 @@ fn list_plugins(plugins: &PluginDirs) -> Result<(), Failure> {
             info.sdk_version, info.protocol_version
         );
         println!("  binary:    {}", info.path);
+        println!("  signature: {}", info.signature);
     }
     registry
         .close()

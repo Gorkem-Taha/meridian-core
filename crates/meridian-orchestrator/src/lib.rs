@@ -2145,10 +2145,8 @@ impl Run<'_> {
         std::fs::create_dir_all(&work_dir)
             .map_err(|e| format!("creating the work directory {}: {e}", work_dir.display()))?;
         // A plugin is a separate process with its own working directory, so
-        // it is always given an absolute path.
-        let work_dir = work_dir
-            .canonicalize()
-            .map_err(|e| format!("resolving the work directory {}: {e}", work_dir.display()))?;
+        // it is always given an absolute path, in the form a tool can take.
+        let work_dir = meridian_sdk::tool::absolute_path(&work_dir);
         Ok(RunContext {
             document: id.name.clone(),
             host: host.to_owned(),
