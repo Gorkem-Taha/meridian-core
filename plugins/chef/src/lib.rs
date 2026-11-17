@@ -123,6 +123,9 @@ impl Emitter for Chef {
     }
 
     fn emit(&self, graph: &ResourceGraph, _data: &Data) -> Result<Emitted, CompileError> {
+        // A resource here has nothing to read at apply time, so a reference
+        // is settled now, from what the document declares, or refused.
+        let graph = &meridian_sdk::expr::resolve_declared(graph, NAME)?;
         let mut cookbook = transform::transform(graph)?;
         sort::apply_ordering(graph, &mut cookbook)?;
         validate::validate(&cookbook)?;

@@ -92,8 +92,9 @@ Anything outside the six types and their params is refused when the document is
 compiled: an unknown type, a param the type does not have, a state the tool
 cannot express. Nothing is dropped.
 
-In this dialect `${...}` is not read as a reference today. It is ordinary text,
-written to the tool's file as it stands. See
+In this dialect a reference is settled when the document is compiled:
+`${id.param}` becomes the value the document gives that param on the resource
+`id`. Anything else in `${...}` is refused, and `$${` is a literal `${`. See
 [references](references.md#configuration-management-the-shared-types).
 
 ### cloud-init: the same types, once, at first boot
