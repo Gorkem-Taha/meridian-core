@@ -1,0 +1,50 @@
+name: ansible
+
+# The Ansible plugin against a real ansible-playbook, over the local
+# connection. The rust workflow already runs the plugin's other tests; without
+# MERIDIAN_TEST_REAL_ANSIBLE these ones pass without doing anything, so they
+# are run here, where Ansible is installed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/ansible/**'
+      - 'examples/ansible/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/ansible.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ansible:
+    name: check mode and a real play with ansible-playbook
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # The runner image ships an Ansible of its own; this one is pinned so
+      # that the version under test is chosen here.
+      - name: Install ansible-core
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ansible"
+          "$RUNNER_TEMP/ansible/bin/pip" install --quiet 'ansible-core==2.19.*'
+          echo "$RUNNER_TEMP/ansible/bin" >> "$GITHUB_PATH"
+
+      - name: Show the version under test
+        run: ansible-playbook --version
+
+      # With the variable set, an ansible-playbook that does not run fails the
+      # tests, so this job cannot pass by checking nothing.
+      - name: Test against ansible-playbook
+        env:
+          MERIDIAN_TEST_REAL_ANSIBLE: '1'
+        run: cargo test -p meridian-target-ansible --locked --test real -- --nocapture

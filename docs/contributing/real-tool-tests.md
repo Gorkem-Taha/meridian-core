@@ -31,7 +31,7 @@ Two rules keep a green job honest:
 
 | Target | Workflow | Runs against | Switch |
 |---|---|---|---|
-| `ansible` | none yet | stand-ins only | |
+| `ansible` | `ansible.yml` | `ansible-playbook` (ansible-core 2.19) over the local connection | `MERIDIAN_TEST_REAL_ANSIBLE=1` |
 | `arm` | `azure.yml` | the Bicep compiler reading each template; Azure itself [when a subscription is configured](#azure) | `MERIDIAN_TEST_REAL_ARM=1` |
 | `bicep` | `azure.yml` | the Bicep compiler building each file; Azure itself [when a subscription is configured](#azure) | `MERIDIAN_TEST_REAL_BICEP=1` |
 | `chef` | `chef.yml` | Cinc Client 18 in local mode, as the user and as root | `MERIDIAN_TEST_REAL_CHEF=1` |
