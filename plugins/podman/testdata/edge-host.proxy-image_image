@@ -1,0 +1,4 @@
+# Written by Meridian from the document "edge-proxy". The next apply overwrites any change made here.
+
+[Image]
+Image=docker.io/library/caddy:2.9

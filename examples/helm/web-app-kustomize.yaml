@@ -1,0 +1,84 @@
+# The same web server, with a Kustomize overlay on top of the chart: Helm
+# renders the chart, Kustomize patches what it rendered, and Helm installs the
+# result as one release.
+#
+# The overlay's params are the fields of a kustomization.yaml. A patch is
+# written as the YAML it is; Meridian turns it into the string Kustomize
+# reads.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-app-prod
+spec:
+  target: helm
+  resources:
+    - id: values
+      type: values
+      params:
+        replicas: 2
+        image: nginx:1.27
+
+    - id: release
+      type: release
+      params:
+        name: web-app
+        namespace: prod
+
+    - id: overlay
+      type: kustomization
+      params:
+        namePrefix: prod-
+        labels:
+          - pairs:
+              environment: production
+            includeSelectors: false
+        images:
+          - name: nginx
+            newName: registry.example.com/mirror/nginx
+        replicas:
+          - name: ${web}
+            count: 4
+        patches:
+          - target:
+              kind: Deployment
+              name: ${web}
+            patch:
+              - op: add
+                path: /spec/template/spec/containers/0/resources
+                value:
+                  limits:
+                    memory: 256Mi
+
+    - id: web
+      type: apps/v1/Deployment
+      params:
+        spec:
+          replicas: ${values.replicas}
+          selector:
+            matchLabels: {app: web}
+          template:
+            metadata:
+              labels: {app: web}
+            spec:
+              containers:
+                - name: nginx
+                  image: ${values.image}
+                  env:
+                    - name: SETTINGS
+                      valueFrom:
+                        configMapKeyRef:
+                          name: ${web_settings}
+                          key: mode
+
+    - id: web_settings
+      type: v1/ConfigMap
+      params:
+        data:
+          mode: production
+
+  outputs:
+    # The overlay renames the objects; an output follows them.
+    - name: deployment
+      value: ${web}
+    - name: ready_replicas
+      value: ${web.status.readyReplicas}

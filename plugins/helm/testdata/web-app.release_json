@@ -1,0 +1,60 @@
+{
+  "atomic": false,
+  "chart": {
+    "name": "web-app",
+    "version": "1.4.0"
+  },
+  "createNamespace": true,
+  "kustomize": false,
+  "namespace": "web",
+  "outputs": [
+    {
+      "name": "web_address",
+      "parts": [
+        {
+          "path": [
+            "status",
+            "loadBalancer",
+            "ingress",
+            0,
+            "ip"
+          ],
+          "resource": "web_svc"
+        }
+      ],
+      "sensitive": false
+    },
+    {
+      "name": "web_cluster_url",
+      "parts": [
+        {
+          "text": "http://web-app.web.svc:80/"
+        }
+      ],
+      "sensitive": false
+    }
+  ],
+  "release": "web-app",
+  "resources": {
+    "web": {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "name": "web-app",
+      "namespace": ""
+    },
+    "web_config": {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "name": "web-app-config",
+      "namespace": ""
+    },
+    "web_svc": {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "name": "web-app",
+      "namespace": ""
+    }
+  },
+  "timeout": "5m",
+  "wait": true
+}

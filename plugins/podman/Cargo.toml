@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-podman"
+description = "The Meridian plugin for Podman: compiles a document to Quadlet units and runs them with systemd and podman"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+
+[dev-dependencies]
+meridian-plugin-host = { path = "../../crates/meridian-plugin-host" }
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

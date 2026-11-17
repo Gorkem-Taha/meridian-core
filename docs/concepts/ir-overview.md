@@ -22,6 +22,10 @@ spec:
 
 They are separate on purpose. See [the two-stage architecture](two-stage-architecture.md).
 
+This page is the overview. Every field, with its rules, is in
+[the language reference](../reference/dsl/index.md), and each segment's way of
+writing resources is on its own page there.
+
 ## Resources
 
 A resource is one thing the document wants to be true.
@@ -45,11 +49,13 @@ A resource is one thing the document wants to be true.
 
 What `type` and `params` mean depends on the target's category.
 
-**Configuration management targets** (`ansible`, `puppet`, `chef`) share six
-abstract types: `package`, `file`, `service`, `user`, `group` and `exec`. The
+**Configuration management targets** (`ansible`, `puppet`, `chef`, `cloud-init`)
+share six abstract types: `package`, `file`, `service`, `user`, `group` and `exec`. The
 same resource compiles for any of them, and each target's page has the table of
 what a type and its params become. This is where "write once" is real, because
-these tools manage the same small set of things.
+these tools manage the same small set of things. `cloud-init` takes the same six
+and applies them once, on a machine's first boot, which narrows what some of
+them can mean; [its page](../targets/cloud-init.md) says how.
 
 **Everything else is native passthrough.** A Terraform provider has thousands of
 resource types, Kubernetes has its whole API, Azure has every service. Meridian
@@ -64,7 +70,9 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
 | `pulumi` | the Pulumi type token | `aws:ec2:Instance` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
+| `helm` | API version and kind, the same as `kubernetes` | `apps/v1/Deployment` |
 | `docker` | an element of a Compose file | `service` |
+| `podman` | a kind of Quadlet unit | `container` |
 | `dsc` | module and resource | `PSDscResources/Service` |
 
 What Meridian adds for these targets is everything around the resource: one
@@ -75,15 +83,20 @@ to the next stage, and one way to plan and apply.
 Most passthrough targets also take one **settings resource** that is not part of
 the tool's file: where to deploy, which cluster, which daemon. It has a fixed
 type name (`stack`, `deployment`, `cluster`, `project`, `runner`) and is
-described on the target's page.
+described on the target's page. The `helm` target has four: `values`, `chart`,
+`release` and `kustomization`.
 
 ## References
 
 `${id}` or `${id.path}` inside a param refers to another resource in the same
 document. Meridian checks that the resource exists, and each target rewrites the
 reference into the tool's own form: a Terraform address, a CloudFormation `Ref`,
-the name of a Kubernetes object. What a path can read depends on the tool, and
+the name of a Kubernetes object, a `{{ .Values }}` expression in a Helm chart. What a path can read depends on the tool, and
 the target's page says. Write `$${` for a literal `${`.
+
+The configuration management targets that share the six abstract types do not
+resolve references. In a ResourceSet for `ansible`, `puppet`, `chef` or
+`cloud-init`, a `${...}` in a param is text and is written out as it stands.
 
 ## What is not here yet
 
