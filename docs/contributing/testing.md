@@ -21,6 +21,7 @@ flowchart TD
 | Unit tests | `crates/*/tests/`, `plugins/*/tests/` | `cargo test -p <crate>` |
 | Golden files | `plugins/<name>/testdata/` | `cargo test -p meridian-target-<name>`; record with `UPDATE_GOLDEN=1` |
 | Property tests | `crates/meridian-cli/tests/properties.rs` | `cargo test -p meridian-cli --test properties` |
+| Placement tests | `crates/meridian-cli/tests/placement.rs`, `placement_properties.rs` | `cargo test -p meridian-cli --test placement --test placement_properties` |
 | Conformance tests | `crates/meridian-cli/tests/conformance.rs` | `cargo test -p meridian-cli --test conformance` |
 | Robustness tests | `crates/meridian-cli/tests/robustness.rs` | `cargo test -p meridian-cli --test robustness` |
 | Examples | `crates/meridian-cli/tests/examples.rs` | `cargo test -p meridian-cli --test examples` |
@@ -113,6 +114,39 @@ What these tests have found so far, each fixed with a test of its own:
   thread with a small one. The limit is now 64 levels, in YAML and in JSON, and
   holds on a 1 MiB stack.
 
+### Placement: what data supplies is text
+
+[Interpolation](../reference/dsl/interpolation.md) makes one promise that is
+easy to break: whatever text data supplies, a tool reads it as text. Only what
+the author wrote is ever a reference. Two files hold it in place.
+
+`placement.rs` is a table. Each row is a value an author might write, the data
+it reads, and exactly what the plugin must be given, compiled by the real
+command:
+
+| Row | Written | Data | The plugin is given |
+|---|---|---|---|
+| data that looks like a reference | `${{ data.v }}` | `${web.id}` | text that reads `${web.id}`, and no reference |
+| two halves that would meet | `${{ data.a }}${{ data.b }}` | `$` and `{web.id}` | text, kept apart from each other |
+| a reference beside data | `${web.id}-${{ data.v }}` | `${x}` | the reference to `web`, then text |
+| a dollar from data before a reference | `${{ data.v }}${web.id}` | `costs $` | refused: the reference would be lost |
+
+There are twenty-four rows, and a test that the references a plugin reads are
+exactly the ones the author wrote. To add a case, add a `Row`.
+
+`placement_properties.rs` asks the same of generated values. It builds a value
+from pieces, some the author's text and some from data, out of the characters
+that matter (`$`, `{`, `}`, `$$`, `${`, `}}`). The model is a few lines: read
+each of the author's pieces the way a plugin reads it, and put the data
+between them as plain text. The implementation has to reach the same reading by
+escaping, and the test fails wherever the two differ. Its failures are kept in
+`placement_properties.proptest-regressions`.
+
+The table found one: a value from data ending in `$`, placed directly before a
+reference, turned the reference into literal text, because a `$` before `${` is
+how a plugin is told the text is literal. That is now refused, with a message
+that says to put a space between the two.
+
 ### Writing one
 
 Add a property when you add something that parses, orders, merges or decides.
@@ -166,6 +200,13 @@ dropped; a target that declares no notify refuses one between any two
 resources; an unknown type is refused under one rule. A document written for
 Terraform compiles to the same configuration for OpenTofu.
 
+Literal text is held to the same standard on all eighteen. Every text param of
+every example is compiled three ways: with plain text, with text that looks
+like a reference but is marked literal, and with the reference itself. Where
+the target accepts the text at all, the literal reaches the output as the
+characters it is, and never as what the reference compiles to. No target may
+read text as a reference because of what it holds.
+
 To add a case, add a `case(...)` to `CASES` and record the page:
 
 ```
@@ -204,7 +245,13 @@ Every `.yaml` file under `examples/` is validated and compiled by the real
 - a workflow with data files is compiled once per data set
   (`site.data.yaml`, then `site.<name>.data.yaml` layered over it), and
   `environments.yaml` is checked resource by resource against what its
-  conditions should keep in development and in production.
+  conditions should keep in development and in production;
+- a document left out by its own `spec.when` is expected to be reported as
+  skipped and to compile nothing, and every document must be kept by at least
+  one of the workflow's data sets, so no document goes untested;
+- `tenants.yaml` is checked for what each plan decides: which documents run,
+  which resources and outputs they hold, the values functions work out, the
+  types those values keep, and that text from data reaches a file unchanged.
 
 An example the documentation shows is always one of these files, so it cannot
 rot.

@@ -1,7 +1,7 @@
 # Worked workflows
 
 A workflow is several documents given to one `meridian` command. This page walks
-through six of them, each a file under
+through seven of them, each a file under
 [`examples/workflow/`](../../examples/workflow). Between them they use every
 target Meridian ships, and each shows a different way of fitting tools together.
 
@@ -16,6 +16,7 @@ the ways the page describes, so what you read here is what the command does.
 | [Windows web server](#windows-web-server) | ARM, Bicep, DSC | two deployment scopes, then configuration over WinRM |
 | [Edge site](#edge-site) | Pulumi, Chef, OpenVox, Podman | two machines with different roles; containers under systemd |
 | [Environments](#environments) | Terraform, Ansible, Kubernetes | one workflow for every environment, decided by `--data` |
+| [Tenants](#tenants) | Terraform, Salt, Kubernetes, Chef | one workflow for every customer: the plan decides which documents run, which resources they hold and what size they are |
 
 If you have not yet run a workflow of two documents, start with
 [a two-stage workflow](first-two-stage.md). The rules every workflow follows are
@@ -255,6 +256,100 @@ What the example is there to show:
 - **`runtimeWhen` is the other kind.** `apt_cache` in the Ansible document
   carries `runtimeWhen`, which Meridian does not decide: it is copied into the
   task's `when:` and Ansible checks it on the machine.
+
+## Tenants
+
+[`examples/workflow/tenants.yaml`](../../examples/workflow/tenants.yaml),
+with [`tenants.data.yaml`](../../examples/workflow/tenants.data.yaml) and
+[`tenants.enterprise.data.yaml`](../../examples/workflow/tenants.enterprise.data.yaml)
+
+```mermaid
+flowchart TD
+    D["--data tenants.data.yaml<br/>--data tenants.enterprise.data.yaml"] --> M
+    subgraph M["Meridian works out every name, size and condition"]
+        direction LR
+        N["network<br/>Terraform<br/>always"]
+        A["app<br/>Salt<br/>always"]
+        K["dashboards<br/>Kubernetes<br/>monitoring add-on"]
+        B["backup<br/>Chef<br/>enterprise plan"]
+    end
+    N -- "address" --> A
+    M --> O["the documents this customer's plan includes"]
+```
+
+Nothing in the file names a customer. The tenant, the plan and the add-ons come
+from data, and the plan decides three things at once: which documents are part
+of the run, which resources each holds, and what the values in them are.
+
+```
+meridian compile examples/workflow/tenants.yaml \
+    --data examples/workflow/tenants.data.yaml
+
+meridian compile examples/workflow/tenants.yaml \
+    --data examples/workflow/tenants.data.yaml \
+    --data examples/workflow/tenants.enterprise.data.yaml
+```
+
+The first is a customer on the starter plan, and the command says what the plan
+left out:
+
+```
+network (Infrastructure, target terraform)
+  when: 2 removed
+    resource "db": cond.own_database is false
+    output "database": cond.own_database is false
+  compiled 1 file into out/network
+dashboards (Infrastructure, target kubernetes)
+  skipped: its when (data.addons.monitoring ?? false) is false
+app (ResourceSet, target salt)
+  when: 2 removed
+    resource "site_cert": cond.tls is false
+    "site_conf" depends on "site_cert": cond.tls is false
+  deferred: needs the output "address" of Infrastructure "network", which has not been applied yet
+backup (ResourceSet, target chef)
+  skipped: its when (data.plan == 'enterprise') is false
+```
+
+| What | Where | Starter | Enterprise |
+|---|---|---|---|
+| `dashboards` document | `spec.when: data.addons.monitoring ?? false` | skipped | compiled |
+| `backup` document | `spec.when: data.plan == 'enterprise'` | skipped | compiled |
+| `db` and the `database` output | `when: cond.own_database` | removed | kept |
+| `site_cert`, and the order `site_conf` waits in | `when: cond.tls` | removed | kept |
+| `instance_type` | `cond.enterprise ? 'm6i.large' : 't3.small'` | `t3.small` | `m6i.large` |
+| `listen` in the site configuration | `join(var.ports, ' ')` | `8080` | `80 443` |
+| `RETAIN_DAYS` | `data.backup.retain_days ?? 30` | not compiled | `90` |
+
+What the example is there to show:
+
+- **A condition on a whole document.** `spec.when` takes the document out of
+  the run. Nothing is compiled for it, no plugin is started for it, and the
+  command says which condition decided it. A customer without the monitoring
+  add-on has no `dashboards` directory at all.
+- **Named conditions, decided once.** `conditions:` gives a condition a name,
+  read as `cond.<name>`. `own_database` reads `enterprise`, so the rule "an
+  enterprise tenant, or anyone who bought the add-on" is written in one place
+  and used by a resource and an output.
+- **Variables and functions.** `variables:` are worked out once per document
+  and read as `var.<name>`. `cidrSubnet(data.cidr, 8, 1)` turns the tenant's
+  `10.20.0.0/16` into `10.20.1.0/24`; `upper`, `title`, `join`, `merge` and
+  `toString` shape the rest. Every one is in
+  [the function reference](../reference/dsl/expressions.md#functions).
+- **Values keep their type.** A value that is one interpolation and nothing
+  else is placed as what it is: `multi_az` is a boolean, `allocated_storage` a
+  number, `tags` a whole mapping. Interpolated into longer text it is text.
+- **Interpolations beside references.** `vpc_id: ${main.id}` is a reference,
+  left for Terraform to resolve. `cidr_block: ${{ var.app_cidr }}` is an
+  interpolation, decided by Meridian. Both sit in the same resource.
+- **Text from data is never a reference.** The customer's message of the day
+  holds `${EDITOR}`. It is written to `/etc/motd` exactly as typed, on every
+  target, and is never mistaken for a reference to a resource called `EDITOR`.
+  [Interpolation](../reference/dsl/interpolation.md) has the rule.
+- **Optional data.** `data.addons.database ?? false` and
+  `data.backup.retain_days ?? 30` give a key that may be missing a value to
+  fall back on, so the starter data file does not have to mention either.
+- **One thing changed by hand.** `--set tenant=globex` compiles the same
+  workflow for another customer without a file of their own.
 
 ## Using these as a starting point
 

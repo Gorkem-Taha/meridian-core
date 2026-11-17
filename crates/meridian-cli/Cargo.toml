@@ -22,6 +22,7 @@ meridian-sdk = { path = "../meridian-sdk" }
 meridian-secret = { path = "../meridian-secret" }
 
 [dev-dependencies]
+meridian-expr = { path = "../meridian-expr" }
 meridian-graph = { path = "../meridian-graph" }
 meridian-resolve = { path = "../meridian-resolve" }
 meridian-value = { path = "../meridian-value" }

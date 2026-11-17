@@ -746,6 +746,7 @@ name = "meridian-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "meridian-expr",
  "meridian-graph",
  "meridian-ir",
  "meridian-module",

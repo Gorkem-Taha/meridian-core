@@ -1170,3 +1170,110 @@ fn terraform_and_opentofu_compile_one_document_to_the_same_configuration() {
     }
     assert!(compared > 0, "no Terraform example was found");
 }
+
+/// A value that an interpolation places from data reaches a plugin with the
+/// escape for a literal: data holding `${web.ip}` is handed over as
+/// `$${web.ip}`. What the author wrote in the document is a reference; what
+/// the data supplied never becomes one. This holds every target to its half
+/// of that rule, at every text param of every example:
+///
+/// - the text between the braces is still in the output, wherever plain text
+///   in that param reaches the output;
+/// - the literal is never compiled to what the reference of the same spelling
+///   compiles to.
+///
+/// Every target must have at least one param where this was seen to hold.
+#[test]
+fn text_given_as_a_literal_is_never_a_reference_on_any_target() {
+    use meridian_sdk::Value;
+
+    const PLAIN: &str = "zzqplain";
+    const NAME: &str = "zzqlit.attr";
+    let literal = format!("$${{{NAME}}}");
+    let reference = format!("${{{NAME}}}");
+    // A literal in the middle of longer text, as a join gives it.
+    let joined = format!("a $${{{NAME}}}/b");
+
+    let files = |emitted: &Emitted| -> String {
+        emitted
+            .artifact
+            .files
+            .iter()
+            .map(|(path, content)| format!("{path}\n{content}\n"))
+            .collect()
+    };
+
+    let mut failures = Vec::new();
+    for target in emitters() {
+        let name = target.name().to_owned();
+        let mut carried = 0;
+        for (path, example_target) in examples() {
+            if example_target != name {
+                continue;
+            }
+            let graph = graph_from_file(&path, &name);
+            for index in 0..graph.resources.len() {
+                let texts: Vec<String> = graph.resources[index]
+                    .params
+                    .iter()
+                    .filter(|(_, value)| matches!(value, Value::String(_)))
+                    .map(|(key, _)| key.clone())
+                    .collect();
+                for key in texts {
+                    let with = |text: &str| {
+                        let mut changed = graph.clone();
+                        changed.resources[index]
+                            .params
+                            .insert(key.clone(), Value::String(text.to_owned()));
+                        target.emit(&changed, &no_data())
+                    };
+                    let place = format!(
+                        "{name}: {path}: resource {:?} param {key:?}",
+                        graph.resources[index].id
+                    );
+                    let plain = with(PLAIN);
+                    for given in [&literal, &joined] {
+                        let as_literal = with(given);
+                        // A literal is text with a dollar sign and braces in
+                        // it, which a name, a path or a command may not be
+                        // allowed to hold. Such a refusal is about the text
+                        // and is the target's to make.
+                        if let (Ok(plain), Ok(as_literal)) = (&plain, &as_literal) {
+                            let plain = files(plain);
+                            let out = files(as_literal);
+                            if plain.contains(PLAIN) {
+                                if out.contains(NAME) {
+                                    carried += 1;
+                                } else {
+                                    failures.push(format!(
+                                        "{place}: {given:?} is not in the output as text"
+                                    ));
+                                }
+                            }
+                            if let Ok(as_reference) = with(&reference) {
+                                if given == &literal && files(&as_reference) == out {
+                                    failures.push(format!(
+                                        "{place}: the literal {given:?} compiles to the \
+                                         same files as the reference {reference:?}"
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if carried == 0 {
+            failures.push(format!(
+                "{name}: no text param of any example carried a literal into the output, so \
+                 nothing was checked for this target"
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} failures:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
