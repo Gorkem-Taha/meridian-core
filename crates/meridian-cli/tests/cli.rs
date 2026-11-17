@@ -2,7 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 const WORKFLOW: &str = r#"apiVersion: meridian/v1
 kind: Infrastructure
@@ -110,6 +110,31 @@ fn plugins_lists_what_each_plugin_is_and_can_do() {
              resources: file\n  versions:  1, 2.4\n  imports:   Fake files (*.fake)\n  sdk:       0.1.0 (protocol 2)\n  binary:    {}\n  signature: not checked\n",
             binary.display()
         )
+    );
+}
+
+#[test]
+fn plugins_exits_cleanly_when_stdout_pipe_is_closed() {
+    let dir = scratch("plugins-broken-pipe", WORKFLOW);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_meridian"))
+        .args(["plugins"])
+        .current_dir(dir)
+        .env("MERIDIAN_PLUGIN_DIR", meridian_target_fake::plugin_dir())
+        .env_remove("MERIDIAN_STATE_DIR")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("meridian starts");
+
+    // Close the reader before the command writes its multi-line listing.
+    drop(child.stdout.take());
+    let output = child.wait_with_output().expect("meridian exits");
+
+    assert!(output.status.success(), "status: {}", output.status);
+    assert!(
+        output.stderr.is_empty(),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
 }
 

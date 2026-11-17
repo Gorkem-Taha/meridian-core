@@ -6,7 +6,6 @@
 //! report and written into the documents as `TODO` markers.
 
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use meridian_import::{render_all, Rendered, TODO_MARKER};
@@ -348,12 +347,11 @@ pub(crate) fn run(registry: &Registry, request: &Request) -> Result<(), Failure>
 /// where each one went, in order; empty when they were printed.
 fn write_documents(rendered: &[Rendered], request: &Request) -> Result<Vec<PathBuf>, Failure> {
     let Some(dir) = request.out else {
-        let mut out = std::io::stdout().lock();
         for (index, document) in rendered.iter().enumerate() {
             if index > 0 {
-                let _ = writeln!(out, "---");
+                crate::write_stdout(format_args!("---"), true)?;
             }
-            let _ = out.write_all(document.text.as_bytes());
+            crate::write_stdout_bytes(document.text.as_bytes())?;
         }
         return Ok(Vec::new());
     };

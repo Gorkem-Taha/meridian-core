@@ -5,7 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 fn scratch(test: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
@@ -239,6 +239,36 @@ fn a_module_changed_after_it_was_pinned_stops_the_run() {
     ok(&site, &["module", "install", "--locked"]);
     ok(&site, &["module", "verify"]);
     ok(&site, &["validate", "@acme/motd:documents/motd.yaml"]);
+}
+
+#[test]
+fn module_verify_keeps_failure_status_when_stdout_pipe_closes() {
+    let (_, site) = project("tamper-broken-pipe");
+    ok(&site, &["module", "install"]);
+    let stored = site.join(".meridian/modules/acme/motd/1.1.0");
+    fs::write(
+        stored.join("documents/motd.yaml"),
+        MOTD.replace("from the module", "from somewhere else"),
+    )
+    .unwrap();
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_meridian"))
+        .args(["module", "verify"])
+        .current_dir(&site)
+        .env("MERIDIAN_PLUGIN_DIR", meridian_target_fake::plugin_dir())
+        .env_remove("MERIDIAN_STATE_DIR")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("meridian starts");
+    drop(child.stdout.take());
+    let output = child.wait_with_output().expect("meridian exits");
+
+    assert_eq!(output.status.code(), Some(1));
+    assert_eq!(
+        String::from_utf8_lossy(&output.stderr),
+        "error: 1 module failed verification\n"
+    );
 }
 
 #[test]

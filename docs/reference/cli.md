@@ -616,6 +616,8 @@ refused because the state is locked or there was nothing to resume or roll
 back; when `fmt --check` found a file that is not formatted; and when `lint`
 found an error, or a warning with `--strict`. `2` for a mistake in the command
 line itself, and from `drift` when a stage has drifted.
+Closing stdout early, as in `meridian plugins | head -1`, stops further output
+without changing the command's exit status. Other stdout write failures exit `1`.
 
 `import` exits `0` when it wrote its documents, whatever it reported about
 them; `1` when the source could not be read or no plugin imports it, and, with

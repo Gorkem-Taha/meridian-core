@@ -153,7 +153,7 @@ pub fn format(args: &FmtArgs) -> Result<(), Failure> {
             };
         }
         // A reader that stops early, such as `head`, is not an error.
-        let _ = std::io::stdout().write_all(formatted.as_bytes());
+        crate::write_stdout_bytes(formatted.as_bytes())?;
         return Ok(());
     }
 
@@ -174,11 +174,11 @@ pub fn format(args: &FmtArgs) -> Result<(), Failure> {
             Ok(formatted) => {
                 changed += 1;
                 if args.check {
-                    println!("{name}");
+                    crate::write_stdout(format_args!("{name}"), true)?;
                 } else {
                     std::fs::write(path, formatted)
                         .map_err(|e| Failure::Message(format!("writing {name}: {e}")))?;
-                    println!("formatted {name}");
+                    crate::write_stdout(format_args!("formatted {name}"), true)?;
                 }
             }
             Err(e) => {
@@ -196,14 +196,17 @@ pub fn format(args: &FmtArgs) -> Result<(), Failure> {
                 count(changed, "file")
             );
         } else if failed == 0 {
-            println!("{} formatted", count(checked, "file"));
+            crate::write_stdout(format_args!("{} formatted", count(checked, "file")), true)?;
         }
     } else if failed == 0 {
-        println!(
-            "{} formatted, {} already formatted",
-            count(changed, "file"),
-            unchanged
-        );
+        crate::write_stdout(
+            format_args!(
+                "{} formatted, {} already formatted",
+                count(changed, "file"),
+                unchanged
+            ),
+            true,
+        )?;
     }
     if failed > 0 || (args.check && changed > 0) {
         Err(Failure::Reported)
@@ -284,7 +287,7 @@ pub fn lint(args: &LintArgs) -> Result<(), Failure> {
         eprintln!("warning: {e}");
     }
 
-    let mut out = std::io::stdout().lock();
+    let mut out = Vec::new();
     for d in &found {
         let _ = if args.json {
             writeln!(out, "{}", to_json(d))
@@ -330,6 +333,7 @@ pub fn lint(args: &LintArgs) -> Result<(), Failure> {
             )
         };
     }
+    crate::write_stdout_bytes(&out)?;
     if errors > 0 || (args.strict && warnings > 0) {
         Err(Failure::Reported)
     } else {
@@ -363,7 +367,7 @@ pub fn schema(args: &SchemaArgs) -> Result<(), Failure> {
         Some(path) => std::fs::write(path, text)
             .map_err(|e| Failure::Message(format!("writing {}: {e}", path.display()))),
         None => {
-            let _ = std::io::stdout().write_all(text.as_bytes());
+            crate::write_stdout_bytes(text.as_bytes())?;
             Ok(())
         }
     }
