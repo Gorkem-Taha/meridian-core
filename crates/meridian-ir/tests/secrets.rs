@@ -71,7 +71,7 @@ const DECLARED: &str = "secrets:
     optional: true
 ";
 
-fn with_secrets(rest: &str) -> String {
+fn document_declaring(rest: &str) -> String {
     resource_set(&format!("{DECLARED}{rest}"))
 }
 
@@ -114,7 +114,9 @@ fn is(secrets: &Secrets, value: &Value, want: &str) -> bool {
 
 #[test]
 fn a_secret_is_declared_with_where_it_comes_from() {
-    let doc = document(&with_secrets("resources:\n  - id: x\n    type: file\n"));
+    let doc = document(&document_declaring(
+        "resources:\n  - id: x\n    type: file\n",
+    ));
     let secrets = doc.secrets();
     assert_eq!(secrets.len(), 3);
     assert_eq!(
@@ -130,7 +132,9 @@ fn a_secret_is_declared_with_where_it_comes_from() {
     assert!(secrets[1].allow_wide_mode && secrets[1].keep_trailing_newline);
     assert_eq!(secrets[2].command, ["pass", "show", "registry"]);
     assert!(secrets[2].optional);
-    valid(&with_secrets("resources:\n  - id: x\n    type: file\n"));
+    valid(&document_declaring(
+        "resources:\n  - id: x\n    type: file\n",
+    ));
     // Both kinds of document take them.
     valid(&infrastructure(&format!(
         "{DECLARED}resources:\n  - id: x\n    type: file\n"
@@ -313,7 +317,7 @@ fn where_a_secret_comes_from_cannot_be_interpolated() {
 fn a_secret_that_is_read_must_be_declared() {
     let open = concat!("$", "{{");
     refused(
-        &with_secrets(&format!(
+        &document_declaring(&format!(
             "resources:\n  - id: conf\n    type: file\n    params:\n      content: \"{open} \
              secret.db_pasword }}}}\"\n"
         )),
@@ -328,7 +332,7 @@ fn a_secret_that_is_read_must_be_declared() {
         &["secret.x is not declared", "spec.secrets declares none"],
     );
     refused(
-        &with_secrets("resources:\n  - id: conf\n    type: file\n    when: secret == 'a'\n"),
+        &document_declaring("resources:\n  - id: conf\n    type: file\n    when: secret == 'a'\n"),
         &["secret must be followed by the name of a secret, as in secret.name"],
     );
 }
@@ -346,7 +350,7 @@ fn a_secret_is_refused_wherever_a_value_is_shown_stored_or_shapes_the_document()
     );
     refused(&doc, &["spec.target", why]);
     refused(
-        &with_secrets(&format!(
+        &document_declaring(&format!(
             "targetVersion: {read}\nresources:\n  - id: x\n    type: file\n"
         )),
         &["spec.targetVersion", why],
@@ -367,7 +371,7 @@ fn a_secret_is_refused_wherever_a_value_is_shown_stored_or_shapes_the_document()
     refused(&doc, &["spec.targetHost.host", why]);
     // A resource's state.
     refused(
-        &with_secrets(&format!(
+        &document_declaring(&format!(
             "resources:\n  - id: conf\n    type: file\n    state: {read}\n"
         )),
         &["spec.resources[0].state", why],
@@ -381,7 +385,7 @@ fn a_secret_is_refused_wherever_a_value_is_shown_stored_or_shapes_the_document()
     );
     // An id is part of the skeleton, like any interpolation.
     refused(
-        &with_secrets(&format!("resources:\n  - id: {read}\n    type: file\n")),
+        &document_declaring(&format!("resources:\n  - id: {read}\n    type: file\n")),
         &["spec.resources[0].id", "skeleton"],
     );
 }
@@ -413,7 +417,7 @@ fn a_secret_reaching_a_shown_field_through_a_variable_is_refused_when_resolved()
 
 fn site() -> String {
     let open = concat!("$", "{{");
-    with_secrets(&format!(
+    document_declaring(&format!(
         "variables:\n  url: \"postgres://app:{open} urlEncode(secret.db_password) }}}}@db/app\"\n\
          conditions:\n  has_token: secret.token != null\nresources:\n  - id: conf\n    type: \
          file\n    params:\n      content: \"password={open} secret.db_password }}}}\\n\"\n      \
@@ -512,7 +516,7 @@ fn without_fetching_a_secret_in_a_param_is_named_and_a_condition_on_one_is_an_er
     let open = concat!("$", "{{");
     // No condition reads a secret: the document resolves, and each secret
     // is described by name.
-    let text = with_secrets(&format!(
+    let text = document_declaring(&format!(
         "resources:\n  - id: conf\n    type: file\n    params:\n      content: \
          \"password={open} secret.db_password }}}}\\n\"\n      url: \"postgres://app:{open} \
          urlEncode(secret.db_password) }}}}@db/app\"\n"
@@ -550,7 +554,7 @@ fn without_fetching_a_secret_in_a_param_is_named_and_a_condition_on_one_is_an_er
 #[test]
 fn an_optional_secret_that_was_not_found_is_null() {
     let open = concat!("$", "{{");
-    let text = with_secrets(&format!(
+    let text = document_declaring(&format!(
         "resources:\n  - id: conf\n    type: file\n    params:\n      token: \"{open} \
          secret.token ?? 'anonymous' }}}}\"\n      set: \"{open} secret.token != null }}}}\"\n"
     ));
@@ -561,7 +565,7 @@ fn an_optional_secret_that_was_not_found_is_null() {
     assert_eq!(param(&resolved, "conf", "set"), &Value::Bool(false));
 
     // Placed inside text with no default, null has no text form.
-    let text = with_secrets(&format!(
+    let text = document_declaring(&format!(
         "resources:\n  - id: conf\n    type: file\n    params:\n      line: \"token={open} \
          secret.token }}}}\"\n"
     ));

@@ -8,10 +8,13 @@ fn secret(text: &str) -> SecretValue {
     SecretValue::from_reader(text.as_bytes(), 4096).unwrap()
 }
 
-fn masker(secrets: &[&str]) -> Masker {
+fn masker(texts: &[&str]) -> Masker {
     let mut masker = Masker::new();
-    for text in secrets {
-        assert!(masker.add(&secret(text)).unwrap(), "{text} is long enough");
+    for text in texts {
+        assert!(
+            masker.add(&secret(text)).unwrap(),
+            "every text here is long enough to search for"
+        );
     }
     masker
 }

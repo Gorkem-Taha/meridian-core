@@ -6,13 +6,13 @@ use std::io::Read;
 
 use meridian_secret::{SecretValue, MASK};
 
-fn secret(text: &str) -> SecretValue {
+fn held(text: &str) -> SecretValue {
     SecretValue::from_reader(text.as_bytes(), 1024).unwrap()
 }
 
 #[test]
 fn a_secret_has_no_text_form() {
-    let value = secret("correct horse battery staple");
+    let value = held("correct horse battery staple");
     for shown in [
         format!("{value}"),
         format!("{value:?}"),
@@ -49,13 +49,13 @@ fn a_secret_has_no_text_form() {
 
 #[test]
 fn the_bytes_are_reached_only_through_expose() {
-    let value = secret("s3cr3t");
+    let value = held("s3cr3t");
     assert_eq!(value.len(), 6);
     assert!(!value.is_empty());
     assert!(value.expose(|bytes| bytes == b"s3cr3t"));
     // What the closure returns is the caller's business; a length is fine.
     assert_eq!(value.expose(<[u8]>::len), 6);
-    assert!(secret("").is_empty());
+    assert!(held("").is_empty());
 }
 
 #[test]
@@ -117,15 +117,15 @@ fn taking_a_secret_from_ordinary_memory_wipes_that_memory() {
 
 #[test]
 fn two_secrets_are_compared_by_name_and_never_with_equals() {
-    assert!(secret("same").same(&secret("same")));
-    assert!(!secret("same").same(&secret("sane")));
-    assert!(!secret("same").same(&secret("same ")));
-    assert!(secret("").same(&secret("")));
+    assert!(held("same").same(&held("same")));
+    assert!(!held("same").same(&held("sane")));
+    assert!(!held("same").same(&held("same ")));
+    assert!(held("").same(&held("")));
 }
 
 #[test]
 fn a_copy_is_asked_for_and_stands_on_its_own() {
-    let first = secret("one of two");
+    let first = held("one of two");
     let second = first.duplicate().unwrap();
     assert_ne!(first.address_for_tests(), second.address_for_tests());
     drop(first);
@@ -134,7 +134,7 @@ fn a_copy_is_asked_for_and_stands_on_its_own() {
 
 #[test]
 fn a_secret_is_derived_into_protected_memory() {
-    let value = secret("abc");
+    let value = held("abc");
     let doubled = value
         .derive(6, |from, home| {
             home[..3].copy_from_slice(from);
@@ -156,7 +156,7 @@ fn one_trailing_line_ending_is_not_part_of_the_secret() {
         ("\n", ""),
         ("", ""),
     ] {
-        let value = secret(given).without_trailing_newline().unwrap();
+        let value = held(given).without_trailing_newline().unwrap();
         assert!(value.expose(|bytes| bytes == want.as_bytes()), "{given:?}");
     }
 }
@@ -201,7 +201,7 @@ mod linux {
 
     #[test]
     fn the_memory_is_guarded_and_left_out_of_core_dumps() {
-        let value = secret("where does this live?");
+        let value = held("where does this live?");
         let protection = value.protection();
         assert!(protection.guarded);
         assert!(protection.undumpable);
@@ -222,7 +222,7 @@ mod linux {
 
     #[test]
     fn the_memory_is_locked_when_the_system_allows_and_says_so_when_it_does_not() {
-        let value = secret("never to swap");
+        let value = held("never to swap");
         let mapping = mapping_of(value.address_for_tests());
         let flags = flags(&mapping);
         // The claim is that the answer is truthful, in both directions: a

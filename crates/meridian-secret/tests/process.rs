@@ -94,7 +94,7 @@ fn a_secret_read_from_the_environment_is_not_inherited_by_what_is_started_next()
 #[allow(dead_code)]
 struct Stage {
     name: String,
-    password: SecretValue,
+    held: SecretValue,
 }
 
 #[test]
@@ -104,20 +104,20 @@ fn a_panic_while_a_secret_is_held_does_not_print_it() {
     if let Some(role) = role().filter(|r| r.starts_with("panic")) {
         let stage = Stage {
             name: "db".to_owned(),
-            password: from_env(TOKEN).unwrap(),
+            held: from_env(TOKEN).unwrap(),
         };
         match role.as_str() {
             // The ways a value usually reaches a panic message.
             "panic-debug" => panic!("stage failed: {stage:?}"),
-            "panic-display" => panic!("bad password {}", stage.password),
+            "panic-display" => panic!("bad value {}", stage.held),
             "panic-unwrap" => {
                 let outcome: Result<(), &Stage> = Err(&stage);
                 outcome.unwrap();
             }
-            "panic-assert" => assert_eq!(format!("{:?}", stage.password), "x"),
+            "panic-assert" => assert_eq!(format!("{:?}", stage.held), "x"),
             "panic-expect" => {
-                let outcome: Result<(), SecretValue> = Err(stage.password);
-                outcome.expect("the password was accepted");
+                let outcome: Result<(), SecretValue> = Err(stage.held);
+                outcome.expect("the value was accepted");
             }
             _ => unreachable!(),
         }
