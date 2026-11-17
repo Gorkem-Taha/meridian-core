@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use meridian_ast::ResourceGraph;
-use meridian_ir::{Bundle, Document, Value};
+use meridian_ir::{Bundle, Document, Resolution, Value};
 use meridian_orchestrator::version_fits;
 use meridian_plugin_host::{to_sdk, EmitError, Registry};
 use meridian_sdk::Data;
@@ -108,12 +108,24 @@ pub struct Parsed {
 /// Whether text looks like it holds a Meridian document: some line gives an
 /// `apiVersion` in the `meridian/` group.
 pub fn is_meridian(text: &str) -> bool {
-    text.lines().any(|line| {
+    let value_of = |line: &str, key: &str| -> Option<String> {
         let line = line.trim_start_matches(['{', ' ', '\t', '"', '\'']);
-        line.strip_prefix("apiVersion")
-            .map(|rest| rest.trim_start_matches(['"', '\'', ' ', ':', '\t']))
-            .is_some_and(|value| value.starts_with("meridian/"))
-    })
+        line.strip_prefix(key).map(|rest| {
+            rest.trim_start_matches(['"', '\'', ' ', ':', '\t'])
+                .to_owned()
+        })
+    };
+    let versioned = text
+        .lines()
+        .any(|line| value_of(line, "apiVersion").is_some_and(|v| v.starts_with("meridian/")));
+    // A module's manifest (`kind: Module`) carries the same apiVersion and
+    // is read by `meridian module`, not compiled as a document.
+    let manifest = text.lines().any(|line| {
+        !line.starts_with([' ', '\t'])
+            && value_of(line, "kind")
+                .is_some_and(|v| v.trim_end_matches(['"', '\'']).trim() == "Module")
+    });
+    versioned && !manifest
 }
 
 impl Parsed {
@@ -196,6 +208,15 @@ impl Parsed {
             source: "meridian".to_owned(),
             fix: None,
         }
+    }
+
+    /// Whether document `doc` holds a `${{ ... }}` interpolation anywhere.
+    pub fn interpolates(&self, doc: usize) -> bool {
+        self.file.docs.get(doc).is_some_and(|d| {
+            self.file.lines[d.first_line..d.end_line.min(self.file.lines.len())]
+                .iter()
+                .any(|line| meridian_expr::has_interpolation(line))
+        })
     }
 
     /// The text a compiler position and path are about. `line` and `column`
@@ -522,6 +543,7 @@ fn list(names: impl IntoIterator<Item = impl AsRef<str>>) -> String {
 fn schema_problems(file: &Parsed, parsed: &ParsedDoc, catalog: &Catalog) -> Vec<Diagnostic> {
     let doc = &parsed.doc;
     let mut out = Vec::new();
+    // A target that is worked out from data is not known here.
     let Some(target) = catalog.target(doc.target()) else {
         return out;
     };
@@ -571,7 +593,11 @@ fn schema_problems(file: &Parsed, parsed: &ParsedDoc, catalog: &Catalog) -> Vec<
                     ));
                 }
             }
-            if !r.state.is_empty() && !schema.states.contains(&r.state) {
+            // A state worked out from data is judged once it is known.
+            if !r.state.is_empty()
+                && !schema.states.contains(&r.state)
+                && !meridian_expr::has_interpolation(&r.state)
+            {
                 let message = if schema.states.is_empty() {
                     format!(
                         "resource type {:?} takes no state on target {:?}",
@@ -688,14 +714,75 @@ fn key_span(file: &Parsed, doc: usize, id: &str, param: &str) -> Span {
 /// Asks the document's target to compile it and reports what it says. This
 /// follows the orchestrator's own compile step: same target lookup, same
 /// kind and version rules, same tree, same `emit`.
+/// The document with every `when` taken off, so that everything in it is
+/// checked: what an editor shows when it has no data to decide them with.
+fn without_conditions(doc: &Document) -> Document {
+    let mut doc = doc.clone();
+    let (when, resources, outputs) = match &mut doc {
+        Document::Infrastructure(d) => (
+            &mut d.spec.when,
+            &mut d.spec.resources,
+            Some(&mut d.spec.outputs),
+        ),
+        Document::ResourceSet(d) => (&mut d.spec.when, &mut d.spec.resources, None),
+    };
+    when.clear();
+    for r in resources {
+        r.when.clear();
+        for d in &mut r.depends_on {
+            d.when.clear();
+        }
+        for n in &mut r.notifies {
+            n.when.clear();
+        }
+    }
+    for o in outputs.into_iter().flatten() {
+        o.when.clear();
+    }
+    doc
+}
+
 fn compile(file: &Parsed, parsed: &ParsedDoc, bundle: &Bundle, env: &Env<'_>) -> Vec<Diagnostic> {
-    let doc = &parsed.doc;
     let index = parsed.index;
     let mut out = Vec::new();
     let at = |path: &str| file.span_of(index, path, 0, 0);
     let fail = |span: Span, code: &str, message: String| {
         vec![problem(file, span, code, "meridian", message)]
     };
+
+    // Work out the document as a run would: variables, named conditions,
+    // every `when` and every interpolation. With data that is exactly what
+    // `compile` does. Without it, a document that needs none is still worked
+    // out in full; one that does need data is checked as if every condition
+    // held, and is not handed to the plugin while it still holds
+    // interpolations nobody can place, since the plugin would be judging
+    // text the tool will never see.
+    let empty = Data::new();
+    let data = env.data.unwrap_or(&empty);
+    let mut compilable = true;
+    let resolved = match meridian_ir::resolve(&parsed.doc, data) {
+        Ok(Resolution::Kept { document, .. }) => *document,
+        Ok(Resolution::Skipped { .. }) => return out,
+        Err(e) if env.data.is_some() => {
+            return vec![problem(
+                file,
+                file.span_of(index, &e.path, e.pos.line, e.pos.column),
+                "invalid-condition",
+                "meridian",
+                e.msg,
+            )]
+        }
+        Err(_) => {
+            compilable = !file.interpolates(index);
+            without_conditions(&parsed.doc)
+        }
+    };
+    let doc = &resolved;
+    if meridian_expr::has_interpolation(doc.target())
+        || meridian_expr::has_interpolation(doc.target_version())
+    {
+        return out;
+    }
 
     let Some(target) = env.catalog.target(doc.target()) else {
         if env.catalog.is_empty() {
@@ -742,46 +829,17 @@ fn compile(file: &Parsed, parsed: &ParsedDoc, bundle: &Bundle, env: &Env<'_>) ->
         }
     }
 
-    let Some(plugin) = env.registry.and_then(|r| r.target(doc.target())) else {
+    let Some(plugin) = env
+        .registry
+        .and_then(|r| r.target(doc.target()))
+        .filter(|_| compilable)
+    else {
         return out;
     };
 
-    // Decide every `when`, or with no data treat each as true.
-    let resources = match env.data {
-        Some(data) => match meridian_ir::prune(doc.resources(), data) {
-            Ok(resources) => resources,
-            Err(e) => {
-                return vec![problem(
-                    file,
-                    file.span_of(index, &e.path, e.pos.line, e.pos.column),
-                    "invalid-condition",
-                    "meridian",
-                    e.msg,
-                )]
-            }
-        },
-        None => doc
-            .resources()
-            .iter()
-            .cloned()
-            .map(|mut r| {
-                r.when = String::new();
-                r
-            })
-            .collect(),
-    };
-
-    let empty = Data::new();
-    let data = env.data.unwrap_or(&empty);
     let graph = match doc {
-        Document::Infrastructure(infra) => {
-            let mut infra = infra.clone();
-            infra.spec.resources = resources;
-            ResourceGraph::build_infrastructure(&infra)
-        }
+        Document::Infrastructure(infra) => ResourceGraph::build_infrastructure(infra),
         Document::ResourceSet(rs) => {
-            let mut rs = rs.clone();
-            rs.spec.resources = resources;
             if rs.spec.target_host.is_none() {
                 return fail(
                     at("spec"),
@@ -792,12 +850,12 @@ fn compile(file: &Parsed, parsed: &ParsedDoc, bundle: &Bundle, env: &Env<'_>) ->
             // An editor has no applied infrastructure to read a host from,
             // so the output's declaration stands in for its value.
             let host = bundle
-                .resolve_target_host(&rs)
+                .resolve_target_host(rs)
                 .map(|(_, output)| output.value.clone())
                 .ok()
                 .filter(|host| !host.is_empty())
                 .unwrap_or_else(|| "host".to_owned());
-            ResourceGraph::build(&rs, &host)
+            ResourceGraph::build(rs, &host)
         }
     };
     let graph = match graph {

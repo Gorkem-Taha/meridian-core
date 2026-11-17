@@ -47,6 +47,7 @@ byte. The reasons, the layout and the order of work are in
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
 | [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
+| [How a secret is held in memory](concepts/secrets-in-memory.md) | locked, wiped memory, the hardened process, how a secret reaches a tool, and what is not promised |
 
 | Editor and authoring tools | |
 |---|---|
@@ -67,6 +68,7 @@ byte. The reasons, the layout and the order of work are in
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
 | The language by segment | how `type`, `state`, `params`, references and notifies are written for [configuration management](reference/dsl/configuration-management.md), [infrastructure as code](reference/dsl/infrastructure-as-code.md), [containerization](reference/dsl/containerization.md) and [container orchestration](reference/dsl/container-orchestration.md) |
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
+| [Modules](reference/modules.md) | packaging configuration to share it: the manifest, sources (path, git, registry), versions, the lockfile, integrity, the `meridian module` commands |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 | [Conformance matrix](reference/conformance-matrix.md) | the same document on every configuration management target, cell by cell; generated from the plugins |
 | [Compatibility](reference/compatibility.md) | which language versions a build reads, and which plugins it loads; generated from the code |
@@ -93,7 +95,7 @@ plugins.
 | [Migration & adoption path](plans/migration-and-adoption.md) | Forward-compile scope decision, coexistence, pilot guidance |
 | [Observability, logging & diagnostics](plans/observability.md) | Log schema, plan output, fact provenance, telemetry, audit |
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
-| [Modules and versioning](plans/modules-and-versioning.md) | Proposed: shareable modules (sources, lockfile, integrity), how `apiVersion` is enforced, protocol negotiation |
+| [Modules and versioning](plans/modules-and-versioning.md) | Proposed, built: shareable modules (sources, lockfile, integrity), how `apiVersion` is enforced, protocol negotiation |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
 | [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 

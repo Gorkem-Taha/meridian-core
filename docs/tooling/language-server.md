@@ -31,7 +31,8 @@ lists it, with its documentation.
 | `dependsOn[].resource`, `notifies[].resource` | the ids of the other resources in the document |
 | `notifies[].action` | the actions the notified resource's type takes |
 | Inside `${...}` | the resources of the document, and after `resource.` the things that can be read from it |
-| `when` | `data.<key>` and `defined(...)`, the two things a condition reads |
+| `when` (on a document, a resource, an edge or an output) | `data.<key>` and `defined(...)`, and the names the document declares: `cond.<name>` from `spec.conditions`, `var.<name>` from `spec.variables`, `secret.<name>` from `spec.secrets` |
+| An entry of `spec.secrets` | its fields, `name` and `from` first, and for `from` the three sources (`env`, `file`, `exec`) |
 | `targetHost.ref`, `targetHost.output` | the Infrastructure documents in the workspace, and the outputs the one named declares |
 
 ![Completion of a resource's type, with the type's params shown beside it](images/completion-types.png)
@@ -81,9 +82,19 @@ come from four places, and each says which in its code:
 Two things are different from `meridian compile`, both because an editor has
 less to go on:
 
-- **Conditions.** The server is given no `--data` files, so it cannot decide a
-  `when`. Every resource is checked as if its condition held. A condition that
-  is not written correctly is still reported.
+- **Conditions and interpolation.** The server is given no `--data` files. A
+  document that needs none (its conditions and `${{ ... }}` read only
+  `spec.variables` and literals) is worked out and compiled exactly as
+  `meridian compile` would. A document that needs data is checked with every
+  `when` treated as true, and if it interpolates values it is checked against
+  the language only and not handed to the plugin, because the values are not
+  known. A condition that is not written correctly is still reported. See
+  [conditions and data](linter.md#conditions-and-data).
+- **Secrets.** Neither the server nor `meridian lint` ever fetches a secret:
+  no environment variable is read, no file is opened and no `exec` command is
+  run because a document was opened or checked.
+- **Module manifests.** A `meridian.yaml` with `kind: Module` is not a
+  document to compile, and the server says nothing about it.
 - **A missing plugin.** A document whose target has no installed plugin gets
   one error on `spec.target` (`unknown-target`) that lists the targets that
   are installed, and is otherwise checked against the language only. When no

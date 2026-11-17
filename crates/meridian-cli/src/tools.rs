@@ -44,6 +44,15 @@ pub struct LintArgs {
     /// more than once, and is applied after the `--data` files
     #[arg(long, value_name = "KEY=VALUE")]
     set: Vec<String>,
+    /// Where fetched modules are kept, for a `--data` file written
+    /// `@<module>:<path>`
+    #[arg(
+        long,
+        value_name = "DIR",
+        env = "MERIDIAN_STATE_DIR",
+        default_value = ".meridian"
+    )]
+    state_dir: PathBuf,
     /// Apply the fixes that are safe to apply, such as quoting a file mode
     #[arg(long)]
     fix: bool,
@@ -236,7 +245,7 @@ pub fn lint(args: &LintArgs) -> Result<(), Failure> {
     let data = if args.data.is_empty() && args.set.is_empty() {
         None
     } else {
-        let mut data = read_data(&args.data)?;
+        let mut data = read_data(&args.data, &args.state_dir)?;
         apply_sets(&mut data, &args.set)?;
         Some(data)
     };

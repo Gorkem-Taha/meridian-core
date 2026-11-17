@@ -93,6 +93,71 @@
         }
       }
     },
+    "Secret": {
+      "description": "A secret's name and where it comes from. Its value is never written in a document.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "from"
+      ],
+      "properties": {
+        "name": {
+          "description": "The name the secret is read by, as `secret.<name>`.",
+          "type": "string",
+          "minLength": 1
+        },
+        "from": {
+          "description": "The provider the value is fetched from.",
+          "type": "string",
+          "oneOf": [
+            {
+              "const": "env",
+              "description": "An environment variable, named by `key`."
+            },
+            {
+              "const": "file",
+              "description": "A file, named by `path`."
+            },
+            {
+              "const": "exec",
+              "description": "The output of a program, given by `command`. No shell reads it."
+            }
+          ]
+        },
+        "key": {
+          "description": "With `from: env`: the environment variable that holds the value.",
+          "type": "string"
+        },
+        "path": {
+          "description": "With `from: file`: the file that holds the value.",
+          "type": "string"
+        },
+        "command": {
+          "description": "With `from: exec`: the program and its arguments, as a list. No shell reads them.",
+          "type": "array",
+          "items": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "optional": {
+          "description": "A secret that cannot be found is `null` instead of an error.",
+          "type": "boolean"
+        },
+        "allowWideMode": {
+          "description": "With `from: file`: read the file even though others can read it as well.",
+          "type": "boolean"
+        },
+        "keepTrailingNewline": {
+          "description": "With `from: file` and `from: exec`: keep the value's last line ending.",
+          "type": "boolean"
+        }
+      }
+    },
     "Dependency": {
       "description": "A hard ordering constraint: the named resource is applied before this one.",
       "type": "object",
@@ -119,6 +184,10 @@
               "description": "Drop this edge when a `when` condition has removed the named resource."
             }
           ]
+        },
+        "when": {
+          "description": "A condition on this dependency alone. When it is false the entry is dropped and both resources stay.",
+          "type": "string"
         }
       }
     },
@@ -164,6 +233,10 @@
               "description": "Drop this edge when a `when` condition has removed the named resource."
             }
           ]
+        },
+        "when": {
+          "description": "A condition on this notify alone. When it is false the entry is dropped and both resources stay.",
+          "type": "string"
         }
       }
     },
@@ -237,6 +310,10 @@
         },
         "value": {
           "description": "Where the value comes from, usually a reference to something the tool reports after applying, such as `${web_vm.public_ip}`.",
+          "type": "string"
+        },
+        "when": {
+          "description": "A condition on the output. When it is false the output is not declared.",
           "type": "string"
         }
       }
@@ -336,6 +413,32 @@
             "number",
             "boolean"
           ]
+        },
+        "when": {
+          "description": "A condition on the whole document. When it is false the document is skipped.",
+          "type": "string"
+        },
+        "variables": {
+          "description": "Named values, worked out once per document and read as `var.<name>`.",
+          "type": "object"
+        },
+        "conditions": {
+          "description": "Named conditions, read as `cond.<name>` by any `when` in the document.",
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "secrets": {
+          "description": "The secrets the document reads, each a name and where it comes from, read as `secret.<name>`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Secret"
+          }
         },
         "resources": {
           "description": "The resources that make up the document. At least one is required.",
@@ -926,6 +1029,32 @@
               "$ref": "#/definitions/TargetHost"
             }
           ]
+        },
+        "when": {
+          "description": "A condition on the whole document. When it is false the document is skipped.",
+          "type": "string"
+        },
+        "variables": {
+          "description": "Named values, worked out once per document and read as `var.<name>`.",
+          "type": "object"
+        },
+        "conditions": {
+          "description": "Named conditions, read as `cond.<name>` by any `when` in the document.",
+          "type": "object",
+          "additionalProperties": {
+            "type": [
+              "string",
+              "number",
+              "boolean"
+            ]
+          }
+        },
+        "secrets": {
+          "description": "The secrets the document reads, each a name and where it comes from, read as `secret.<name>`.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Secret"
+          }
         },
         "resources": {
           "description": "The resources that make up the document. At least one is required.",

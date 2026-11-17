@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 meridian-ast = { path = "../meridian-ast" }
+meridian-expr = { path = "../meridian-expr" }
 meridian-ir = { path = "../meridian-ir" }
 meridian-orchestrator = { path = "../meridian-orchestrator" }
 meridian-plugin-host = { path = "../meridian-plugin-host" }

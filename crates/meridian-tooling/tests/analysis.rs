@@ -89,25 +89,52 @@ fn fields_come_from_the_language_and_leave_out_what_is_already_there() {
     );
     assert_eq!(
         labels("kind: ResourceSet\nspec:\n  |"),
-        ["target", "targetVersion", "targetHost", "resources"]
+        [
+            "target",
+            "targetVersion",
+            "targetHost",
+            "when",
+            "variables",
+            "conditions",
+            "secrets",
+            "resources"
+        ]
     );
     assert_eq!(
         labels("kind: Infrastructure\nspec:\n  |"),
-        ["target", "targetVersion", "resources", "outputs"]
+        [
+            "target",
+            "targetVersion",
+            "when",
+            "variables",
+            "conditions",
+            "secrets",
+            "resources",
+            "outputs"
+        ]
     );
     assert_eq!(
         labels("kind: ResourceSet\nspec:\n  tar|"),
-        ["target", "targetVersion", "targetHost", "resources"]
+        [
+            "target",
+            "targetVersion",
+            "targetHost",
+            "when",
+            "variables",
+            "conditions",
+            "secrets",
+            "resources"
+        ]
     );
     assert_eq!(
         labels(&format!("{HEAD}      dependsOn:\n        - |")),
-        ["resource", "ifMissing"]
+        ["resource", "ifMissing", "when"]
     );
     assert_eq!(
         labels(&format!(
             "{HEAD}      notifies:\n        - resource: nginx_pkg\n          |"
         )),
-        ["on", "action", "ifMissing"]
+        ["on", "action", "ifMissing", "when"]
     );
 }
 
@@ -452,6 +479,43 @@ fn the_outline_lists_documents_with_their_resources_and_outputs() {
                 "Infrastructure".to_owned(),
                 vec!["ip x".to_owned()]
             ),
+        ]
+    );
+}
+
+#[test]
+fn secrets_and_what_a_condition_can_read_are_offered() {
+    let head = HEAD.replace(
+        "  resources:\n",
+        "  variables:\n    size: 3\n  conditions:\n    is_prod: data.env == 'prod'\n  secrets:\n    \
+         - name: token\n      from: env\n      key: TOKEN\n  resources:\n",
+    );
+    let found = labels(&format!("{head}      when: |"));
+    for expected in [
+        "data.",
+        "defined()",
+        "cond.is_prod",
+        "var.size",
+        "secret.token",
+    ] {
+        assert!(
+            found.iter().any(|l| l == expected),
+            "{expected} in {found:?}"
+        );
+    }
+    assert_eq!(
+        labels("kind: ResourceSet\nspec:\n  secrets:\n    - name: token\n      from: |"),
+        ["env", "file", "exec"]
+    );
+    assert_eq!(
+        labels("kind: ResourceSet\nspec:\n  secrets:\n    - name: token\n      from: env\n      |"),
+        [
+            "key",
+            "path",
+            "command",
+            "optional",
+            "allowWideMode",
+            "keepTrailingNewline"
         ]
     );
 }

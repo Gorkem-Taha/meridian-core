@@ -12,6 +12,7 @@ mod error;
 mod migrate;
 mod node;
 mod parse;
+mod resolve;
 pub mod schema;
 mod types;
 mod validate;
@@ -22,9 +23,10 @@ pub use error::{Error, ErrorList, Position};
 pub use meridian_value::{canonical_map, Value};
 pub use migrate::{migrate, Decisions, MigrateError, Migrated, Step, STEPS};
 pub use parse::{parse, parse_file, parse_stream, parse_value};
+pub use resolve::{resolve, resolve_with, resolved_labels, Removed, Resolution, Secrets};
 pub use types::{
     Dependency, Document, IfMissing, Infrastructure, InfrastructureSpec, Kind, Metadata,
-    Notification, Output, Resource, ResourceSet, ResourceSetSpec, TargetHost, API_VERSION_V1,
-    NOTIFY_ON_CHANGED, TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
+    Notification, Output, Resource, ResourceSet, ResourceSetSpec, Secret, TargetHost,
+    API_VERSION_V1, NOTIFY_ON_CHANGED, TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
 };
 pub use validate::{load, validate, Bundle};

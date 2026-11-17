@@ -19,6 +19,7 @@
 //! A run stops at the first stage that fails. Stages after it are reported as
 //! not run, never attempted against infrastructure in an unknown state.
 
+mod secrets;
 mod select;
 mod state;
 
@@ -27,11 +28,15 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use meridian_ast::ResourceGraph;
-use meridian_ir::{Bundle, Document, Infrastructure, ResourceSet, TARGET_HOST_FROM_INFRASTRUCTURE};
+use meridian_ir::{
+    Bundle, Document, Infrastructure, Removed, Resolution, ResourceSet, Secrets,
+    TARGET_HOST_FROM_INFRASTRUCTURE,
+};
 use meridian_plugin_host::{to_sdk, EmitError, Registry, RunFailure};
 use meridian_sdk::{
     Artifact, Category, Change, Data, LogLine, Output, Plan, RunContext, Value, Warning,
 };
+use meridian_secret::Masker;
 
 pub use select::Selector;
 pub use state::{artifact_hash, RunState, StageRecord};
@@ -94,6 +99,9 @@ pub enum Outcome {
     /// failure. A plan simply cannot see past infrastructure that is not
     /// there.
     Deferred { waiting_on: StageId, output: String },
+    /// The document's own `spec.when` was false, so it is not part of this
+    /// run. Nothing went wrong, and nothing was compiled.
+    LeftOut { condition: String },
     /// The stage failed, and the run stopped here.
     Failed(String),
     /// An earlier stage failed, so this one was not attempted.
@@ -112,6 +120,8 @@ pub struct StageReport {
     /// What the document compiled to, when it got that far.
     pub artifact: Option<Artifact>,
     pub warnings: Vec<Warning>,
+    /// What the document's conditions removed before it was compiled.
+    pub removed: Vec<Removed>,
     pub outcome: Outcome,
 }
 
@@ -196,14 +206,42 @@ pub fn run_selected(
         options,
         outputs: BTreeMap::new(),
         secrets: Vec::new(),
+        masker: Masker::new(),
         state: None,
     };
     let mut report = RunReport::default();
     let mut failed: Option<StageId> = None;
 
-    for stage in stages(bundle, selector) {
+    for stage in stages(bundle, selector, &options.data) {
         let id = stage.id();
-        let target = stage.target().to_owned();
+        // Everything the core decides is decided here, before the stage
+        // starts: its conditions and its interpolations, the target among
+        // them.
+        let document = stage.document();
+        let mut secrets = Secrets::declared(&document);
+        let mut resolution = meridian_ir::resolve_with(&document, &options.data, &secrets);
+        // A secret is fetched just before the stage that reads it, and only
+        // by plan and apply. A document its own `when` leaves out without
+        // reading a secret fetches nothing, and neither does a stage that
+        // will not run.
+        let fetches = mode != Mode::Compile
+            && failed.is_none()
+            && !document.secrets().is_empty()
+            && !matches!(resolution, Ok(Resolution::Skipped { .. }));
+        if fetches {
+            resolution = match secrets::fetch(&document, &mut secrets) {
+                Ok(()) => meridian_ir::resolve_with(&document, &options.data, &secrets),
+                Err(why) => Err(meridian_ir::Error {
+                    pos: document.position().clone(),
+                    path: "spec.secrets".to_owned(),
+                    msg: why,
+                }),
+            };
+        }
+        let target = match &resolution {
+            Ok(Resolution::Kept { document, .. }) => document.target().to_owned(),
+            _ => stage.target().to_owned(),
+        };
         if let Some(because_of) = &failed {
             let skipped = StageReport {
                 id,
@@ -211,6 +249,7 @@ pub fn run_selected(
                 host: String::new(),
                 artifact: None,
                 warnings: Vec::new(),
+                removed: Vec::new(),
                 outcome: Outcome::NotRun {
                     because_of: because_of.clone(),
                 },
@@ -220,7 +259,11 @@ pub fn run_selected(
             continue;
         }
         observer.stage_started(&id, &target);
-        let stage_report = run.stage(stage, observer);
+        let stage_report = run.stage(id, target, resolution, &secrets, observer);
+        // The stage is over: its secrets are wiped now, not at the end of
+        // the run, and so is the filter that held their forms.
+        run.masker = Masker::new();
+        drop(secrets);
         if matches!(stage_report.outcome, Outcome::Failed(_)) {
             failed = Some(stage_report.id.clone());
         }
@@ -258,18 +301,18 @@ impl Stage<'_> {
         }
     }
 
-    fn target_version(&self) -> &str {
-        match self {
-            Stage::Infrastructure(d) => &d.spec.target_version,
-            Stage::ResourceSet(d) => &d.spec.target_version,
+    fn document(&self) -> Document {
+        match *self {
+            Stage::Infrastructure(d) => Document::Infrastructure(d.clone()),
+            Stage::ResourceSet(d) => Document::ResourceSet(d.clone()),
         }
     }
 }
 
 /// How many documents of `bundle` a selector picks. A run that picks none
 /// does nothing, which a caller will usually want to say out loud.
-pub fn selected(bundle: &Bundle, selector: &Selector) -> usize {
-    stages(bundle, selector).len()
+pub fn selected(bundle: &Bundle, selector: &Selector, data: &Data) -> usize {
+    stages(bundle, selector, data).len()
 }
 
 /// Whether a document of this kind can be aimed at a target of this
@@ -331,8 +374,15 @@ pub fn version_fits(asked: &str, declared: &[String]) -> bool {
 /// Every Infrastructure document, then every ResourceSet, each in the order
 /// written. A ResourceSet can only depend on an Infrastructure document, so
 /// this order satisfies every dependency a workflow can express.
-fn stages<'a>(bundle: &'a Bundle, selector: &Selector) -> Vec<Stage<'a>> {
-    let selected = |doc: &&Document| selector.matches(doc.labels());
+///
+/// A selector matches a document's labels as they are once their
+/// interpolations are placed. A document whose labels cannot be decided stays
+/// a stage, so that its error is reported instead of the document quietly
+/// dropping out of the run.
+fn stages<'a>(bundle: &'a Bundle, selector: &Selector, data: &Data) -> Vec<Stage<'a>> {
+    let selected = |doc: &&Document| {
+        meridian_ir::resolved_labels(doc, data).map_or(true, |labels| selector.matches(&labels))
+    };
     let infrastructure = bundle
         .documents
         .iter()
@@ -357,6 +407,9 @@ struct Run<'a> {
     outputs: BTreeMap<String, Vec<Output>>,
     /// Sensitive values seen so far, masked out of everything shown.
     secrets: Vec<String>,
+    /// The filter for the secrets the stage now running fetched, for what is
+    /// said about a failure. Empty between stages.
+    masker: Masker,
     state: Option<RunState>,
 }
 
@@ -367,20 +420,63 @@ enum Halt {
 }
 
 impl Run<'_> {
-    fn stage(&mut self, stage: Stage<'_>, observer: &mut dyn Observer) -> StageReport {
-        let id = stage.id();
+    fn stage(
+        &mut self,
+        id: StageId,
+        target_name: String,
+        resolution: Result<Resolution, meridian_ir::Error>,
+        secrets: &Secrets,
+        observer: &mut dyn Observer,
+    ) -> StageReport {
         let mut report = StageReport {
             id: id.clone(),
-            target: stage.target().to_owned(),
+            target: target_name.clone(),
             host: String::new(),
             artifact: None,
             warnings: Vec::new(),
+            removed: Vec::new(),
             outcome: Outcome::Compiled,
         };
         let fail = |mut report: StageReport, why: String| {
             report.outcome = Outcome::Failed(why);
             report
         };
+
+        // What the document's conditions and interpolations come to. A
+        // document its own `when` leaves out stops here, before a plugin is
+        // even looked for.
+        let mut stage = match resolution {
+            Ok(Resolution::Kept { document, removed }) => {
+                report.removed = removed;
+                *document
+            }
+            Ok(Resolution::Skipped { condition }) => {
+                report.outcome = Outcome::LeftOut { condition };
+                return report;
+            }
+            Err(e) => return fail(report, e.to_string()),
+        };
+
+        // A secret in a param. `compile` never fetched it, and writes what
+        // stands for it. `plan` and `apply` hold it, and must hand it to the
+        // tool by a channel that is not the compiled files; until a target
+        // has one, the stage stops here instead of writing a secret into a
+        // file or dropping it silently.
+        if let Some((resource, param)) = secrets::first_in_params(&stage) {
+            if self.mode == Mode::Compile {
+                secrets::describe_in_params(&mut stage, secrets.table());
+            } else {
+                return fail(
+                    report,
+                    format!(
+                        "resource {resource:?}: {param} holds a secret, and target {:?} cannot \
+                         be handed a secret yet. A secret can decide a when today; handing one \
+                         to a tool arrives with secret delivery for each target",
+                        stage.target()
+                    ),
+                );
+            }
+        }
 
         let Some(target) = self.registry.target(stage.target()) else {
             let known = self.registry.names().join(", ");
@@ -425,31 +521,13 @@ impl Run<'_> {
             }
         }
 
-        // Decide every `when`, so the tree holds only what will be applied.
-        let pruned = |resources: &[meridian_ir::Resource]| {
-            meridian_ir::prune(resources, &self.options.data).map_err(|e| e.to_string())
-        };
-
         // Resolve what the stage needs from earlier ones, then build its tree.
-        let (graph, inputs) = match stage {
-            Stage::Infrastructure(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, why),
-                };
-                match ResourceGraph::build_infrastructure(&doc) {
-                    Ok(graph) => (graph, Data::new()),
-                    Err(e) => return fail(report, e.to_string()),
-                }
-            }
-            Stage::ResourceSet(doc) => {
-                let mut doc = doc.clone();
-                doc.spec.resources = match pruned(&doc.spec.resources) {
-                    Ok(resources) => resources,
-                    Err(why) => return fail(report, why),
-                };
-                let doc = &doc;
+        let (graph, inputs) = match &stage {
+            Document::Infrastructure(doc) => match ResourceGraph::build_infrastructure(doc) {
+                Ok(graph) => (graph, Data::new()),
+                Err(e) => return fail(report, e.to_string()),
+            },
+            Document::ResourceSet(doc) => {
                 let (host, inputs) = match self.host_of(doc) {
                     Ok(found) => found,
                     Err(Halt::Failed(why)) => return fail(report, why),
@@ -498,9 +576,14 @@ impl Run<'_> {
             Ok(context) => context,
             Err(why) => return fail(report, why),
         };
-        let secrets = self.secrets.clone();
+        // What the tool prints is searched for every sensitive output of
+        // earlier stages and for every secret this stage fetched, however
+        // the tool came to print it.
+        let sensitive = self.secrets.clone();
+        let masker = secrets.masker();
+        self.masker = secrets.masker();
         let mut log = |mut line: LogLine| {
-            line.text = mask(&line.text, &secrets);
+            line.text = masker.mask(&mask(&line.text, &sensitive));
             observer.log(&id, &line);
         };
 
@@ -661,7 +744,7 @@ impl Run<'_> {
     }
 
     fn describe(&self, failure: RunFailure) -> String {
-        mask(&failure.to_string(), &self.secrets)
+        self.masker.mask(&mask(&failure.to_string(), &self.secrets))
     }
 }
 

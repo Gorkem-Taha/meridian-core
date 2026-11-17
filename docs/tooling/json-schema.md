@@ -87,7 +87,8 @@ does not know that:
 - a `${...}` reference names something real;
 - a target accepts this kind of document (`kind: Infrastructure` with a
   configuration management target);
-- a `when` condition is written correctly;
+- a `when` condition or a `${{ ... }}` expression is written correctly, or
+  names a variable, condition or secret the document declares;
 - a plugin refuses a combination of params that are each allowed.
 
 `meridian validate`, `meridian lint` and the language server check all of

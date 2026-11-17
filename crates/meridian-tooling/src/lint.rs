@@ -51,8 +51,9 @@ pub const RULES: &[Rule] = &[
         severity: Severity::Warning,
         summary: "A param that looks like a secret holds a literal value.",
         explanation: "A password, token or key written into a document ends up in version \
-                      control and in the compiled output. Reference the value instead, or \
-                      supply it at apply time through the tool's own secret mechanism.",
+                      control and in the compiled output. Declare it under `spec.secrets` and \
+                      read it as `${{ secret.<name> }}`, or supply it at apply time through \
+                      the tool's own secret mechanism.",
     },
     Rule {
         code: "duplicate-resource",
@@ -377,6 +378,9 @@ impl Ctx<'_> {
                     continue;
                 }
                 for dep in by_id.get(id).map_or(&[][..], |r| &r.depends_on) {
+                    if !dep.when.is_empty() {
+                        continue;
+                    }
                     if dep.resource == wanted {
                         return true;
                     }
@@ -386,13 +390,21 @@ impl Ctx<'_> {
             false
         };
         for (j, dep) in r.depends_on.iter().enumerate() {
-            let earlier = r.depends_on[..j].iter().any(|d| d.resource == dep.resource);
+            // An entry with its own `when` is there for the runs where the
+            // other path is not.
+            if !dep.when.is_empty() {
+                continue;
+            }
+            let earlier = r.depends_on[..j]
+                .iter()
+                .any(|d| d.resource == dep.resource && d.when.is_empty());
             let implied = r
                 .depends_on
                 .iter()
                 .enumerate()
                 .find(|(k, other)| {
                     *k != j
+                        && other.when.is_empty()
                         && other.resource != dep.resource
                         && reaches(&other.resource, &dep.resource)
                 })

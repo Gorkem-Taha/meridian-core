@@ -43,7 +43,7 @@ pub fn parse(name: &str, data: &[u8]) -> Result<Vec<Document>, ErrorList> {
         }
     };
 
-    let (roots, json) = load_roots(name, text, true)?;
+    let (roots, json) = load_roots(name, text, true).map_err(|e| unquoted_hint(e, text))?;
     if roots.is_empty() {
         return Err(Error::new(Position::document(name, 0), "", "no documents found").into());
     }
@@ -136,6 +136,20 @@ pub fn parse_stream(name: &str, data: &[u8]) -> Result<Vec<Value>, ErrorList> {
         errs.extend(d.errs);
     }
     errs.finish(values)
+}
+
+/// YAML reads `: ` and ` #` inside an unquoted value as its own syntax, and
+/// an expression often holds one (`a ? b : c`). The YAML error alone does
+/// not say that, so a line that holds an interpolation gets the way out.
+fn unquoted_hint(mut e: Error, text: &str) -> Error {
+    let line = e.pos.line.checked_sub(1).and_then(|i| text.lines().nth(i));
+    if line.is_some_and(meridian_expr::has_interpolation) {
+        e.msg.push_str(
+            "; this line holds an interpolation, and YAML reads a colon followed by a space \
+             inside an unquoted value as its own: put the whole value in double quotes",
+        );
+    }
+    e
 }
 
 fn json_error(name: &str, e: &serde_json::Error) -> Error {
@@ -384,6 +398,10 @@ impl Decoder<'_> {
                 let spec = InfrastructureSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
+                    when: self.string(f.get("when"), "spec.when"),
+                    variables: self.value_map(f.get("variables"), "spec.variables"),
+                    conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                     outputs: self.outputs(f.get("outputs"), &pos),
                 };
@@ -399,6 +417,10 @@ impl Decoder<'_> {
                 let spec = ResourceSetSpec {
                     target: self.string(f.get("target"), "spec.target"),
                     target_version: self.string(f.get("targetVersion"), "spec.targetVersion"),
+                    when: self.string(f.get("when"), "spec.when"),
+                    variables: self.value_map(f.get("variables"), "spec.variables"),
+                    conditions: self.conditions(f.get("conditions")),
+                    secrets: self.secrets(f.get("secrets"), &pos),
                     target_host: self.target_host(f.get("targetHost"), &pos),
                     resources: self.resources(f.get("resources"), &pos),
                 };
@@ -423,6 +445,16 @@ impl Decoder<'_> {
             name: self.string(f.get("name"), "metadata.name"),
             labels,
         }
+    }
+
+    /// `spec.conditions`: each name with its expression, as text.
+    fn conditions(&mut self, node: Option<&Node>) -> BTreeMap<String, String> {
+        let mut out = BTreeMap::new();
+        for (key, value) in self.entries(node, "spec.conditions") {
+            let text = self.string(Some(value), &join("spec.conditions", key));
+            out.insert(key.to_owned(), text);
+        }
+        out
     }
 
     /// The entries of a free-form mapping, with a repeated key reported.
@@ -509,6 +541,7 @@ impl Decoder<'_> {
                     if_missing: IfMissing::from_text(
                         &self.string(d.get("ifMissing"), &join(&p, "ifMissing")),
                     ),
+                    when: self.string(d.get("when"), &join(&p, "when")),
                     pos: self.at_or(dep, &pos),
                 });
             }
@@ -529,6 +562,7 @@ impl Decoder<'_> {
                     if_missing: IfMissing::from_text(
                         &self.string(d.get("ifMissing"), &join(&p, "ifMissing")),
                     ),
+                    when: self.string(d.get("when"), &join(&p, "when")),
                     pos: self.at_or(n, &pos),
                 });
             }
@@ -557,10 +591,63 @@ impl Decoder<'_> {
             out.push(Output {
                 name: self.string(f.get("name"), &join(&path, "name")),
                 value: self.string(f.get("value"), &join(&path, "value")),
+                when: self.string(f.get("when"), &join(&path, "when")),
                 pos: self.at_or(item, doc_pos),
             });
         }
         out
+    }
+
+    /// `spec.secrets`: where each secret comes from. Never a value.
+    fn secrets(&mut self, node: Option<&Node>, doc_pos: &Position) -> Vec<Secret> {
+        let mut out = Vec::new();
+        for (i, item) in self.list(node, "spec.secrets").iter().enumerate() {
+            let path = format!("spec.secrets[{i}]");
+            let f = self.fields(Some(item), &path, &schema::SECRET.names());
+            let command_path = join(&path, "command");
+            let command = self
+                .list(f.get("command"), &command_path)
+                .iter()
+                .enumerate()
+                .map(|(j, arg)| self.string(Some(arg), &format!("{command_path}[{j}]")))
+                .collect();
+            out.push(Secret {
+                name: self.string(f.get("name"), &join(&path, "name")),
+                from: self.string(f.get("from"), &join(&path, "from")),
+                key: self.string(f.get("key"), &join(&path, "key")),
+                path: self.string(f.get("path"), &join(&path, "path")),
+                command,
+                optional: self.flag(f.get("optional"), &join(&path, "optional")),
+                allow_wide_mode: self.flag(f.get("allowWideMode"), &join(&path, "allowWideMode")),
+                keep_trailing_newline: self.flag(
+                    f.get("keepTrailingNewline"),
+                    &join(&path, "keepTrailingNewline"),
+                ),
+                pos: self.at_or(item, doc_pos),
+            });
+        }
+        out
+    }
+
+    /// A yes or a no; left out, it is no.
+    fn flag(&mut self, node: Option<&Node>, path: &str) -> bool {
+        let Some(node) = node.filter(|n| !n.is_null()) else {
+            return false;
+        };
+        match &node.kind {
+            NodeKind::Scalar {
+                resolved: Scalar::Bool(b),
+                ..
+            } => *b,
+            _ => {
+                self.error(
+                    node,
+                    path,
+                    format!("expected true or false, found {}", node.describe()),
+                );
+                false
+            }
+        }
     }
 
     fn target_host(&mut self, node: Option<&Node>, doc_pos: &Position) -> Option<TargetHost> {

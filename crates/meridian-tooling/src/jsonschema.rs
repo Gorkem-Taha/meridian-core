@@ -193,6 +193,13 @@ fn field_schema(field: &Field, targets: &[&Target]) -> Value {
                 out.insert("minItems".into(), 1.into());
             }
         }
+        Type::Bool => {
+            out.insert("type".into(), "boolean".into());
+        }
+        Type::StringList => {
+            out.insert("type".into(), "array".into());
+            out.insert("items".into(), json!({ "type": scalar_as_text() }));
+        }
         Type::StringMap => {
             out.insert("type".into(), "object".into());
             out.insert(

@@ -56,8 +56,9 @@ params:
 ```
 
 A password, token or key written into a document ends up in version control
-and in the compiled output. Reference the value instead, or supply it at apply
-time through the tool's own secret mechanism.
+and in the compiled output. Declare it under `spec.secrets` and write
+`${{ secret.<name> }}` where it is used, reference another resource's value,
+or supply it at apply time through the tool's own secret mechanism.
 
 A param looks like a secret when its name contains `password`, `passwd`,
 `secret`, `token`, `api_key`, `apikey`, `private_key` or `access_key`, in any
@@ -105,6 +106,9 @@ The entry repeats another, or names a resource that one of the other
 dependencies already depends on, directly or through a chain. The order is the
 same without it. This is a note and not a warning because some teams list
 every dependency on purpose.
+
+An entry with its own `when` is never reported, and is not counted as a path
+either: it may be switched off, so it does not make another entry redundant.
 
 ## `useless-if-missing`
 

@@ -62,6 +62,10 @@ pub enum Type {
     Object(&'static Shape),
     /// A list of mappings.
     List(&'static Shape),
+    /// Yes or no.
+    Bool,
+    /// A list of strings, such as a command and its arguments.
+    StringList,
     /// A mapping of names to strings, such as labels.
     StringMap,
     /// A free-form mapping. Its keys belong to the target, not the language.
@@ -237,6 +241,12 @@ pub const DEPENDENCY: Shape = Shape {
             ty: Type::Enum(IF_MISSING),
             role: Role::None,
         },
+        text(
+            "when",
+            false,
+            Role::Condition,
+            "A condition on this dependency alone. When it is false the entry is dropped and both resources stay.",
+        ),
     ],
 };
 
@@ -272,6 +282,12 @@ pub const NOTIFICATION: Shape = Shape {
             ty: Type::Enum(IF_MISSING),
             role: Role::None,
         },
+        text(
+            "when",
+            false,
+            Role::Condition,
+            "A condition on this notify alone. When it is false the entry is dropped and both resources stay.",
+        ),
     ],
 };
 
@@ -358,6 +374,85 @@ pub const OUTPUT: Shape = Shape {
             "Where the value comes from, usually a reference to something the tool \
              reports after applying, such as `${web_vm.public_ip}`.",
         ),
+        text(
+            "when",
+            false,
+            Role::Condition,
+            "A condition on the output. When it is false the output is not declared.",
+        ),
+    ],
+};
+
+/// Where a secret comes from.
+pub const SECRET_FROM: &[Choice] = &[
+    choice("env", "An environment variable, named by `key`."),
+    choice("file", "A file, named by `path`."),
+    choice(
+        "exec",
+        "The output of a program, given by `command`. No shell reads it.",
+    ),
+];
+
+const fn flag(name: &'static str, doc: &'static str) -> Field {
+    Field {
+        name,
+        doc,
+        required: false,
+        ty: Type::Bool,
+        role: Role::None,
+    }
+}
+
+/// One entry of `spec.secrets`.
+pub const SECRET: Shape = Shape {
+    name: "Secret",
+    doc: "A secret's name and where it comes from. Its value is never written in a document.",
+    fields: &[
+        text(
+            "name",
+            true,
+            Role::None,
+            "The name the secret is read by, as `secret.<name>`.",
+        ),
+        Field {
+            name: "from",
+            doc: "The provider the value is fetched from.",
+            required: true,
+            ty: Type::Enum(SECRET_FROM),
+            role: Role::None,
+        },
+        text(
+            "key",
+            false,
+            Role::None,
+            "With `from: env`: the environment variable that holds the value.",
+        ),
+        text(
+            "path",
+            false,
+            Role::None,
+            "With `from: file`: the file that holds the value.",
+        ),
+        Field {
+            name: "command",
+            doc: "With `from: exec`: the program and its arguments, as a list. No shell \
+                  reads them.",
+            required: false,
+            ty: Type::StringList,
+            role: Role::None,
+        },
+        flag(
+            "optional",
+            "A secret that cannot be found is `null` instead of an error.",
+        ),
+        flag(
+            "allowWideMode",
+            "With `from: file`: read the file even though others can read it as well.",
+        ),
+        flag(
+            "keepTrailingNewline",
+            "With `from: file` and `from: exec`: keep the value's last line ending.",
+        ),
     ],
 };
 
@@ -420,6 +515,38 @@ const RESOURCES: Field = Field {
     role: Role::None,
 };
 
+const SPEC_WHEN: Field = text(
+    "when",
+    false,
+    Role::Condition,
+    "A condition on the whole document. When it is false the document is skipped.",
+);
+
+const VARIABLES: Field = Field {
+    name: "variables",
+    doc: "Named values, worked out once per document and read as `var.<name>`.",
+    required: false,
+    ty: Type::Params,
+    role: Role::None,
+};
+
+const CONDITIONS: Field = Field {
+    name: "conditions",
+    doc: "Named conditions, read as `cond.<name>` by any `when` in the document.",
+    required: false,
+    ty: Type::StringMap,
+    role: Role::None,
+};
+
+const SECRETS: Field = Field {
+    name: "secrets",
+    doc: "The secrets the document reads, each a name and where it comes from, read as \
+          `secret.<name>`.",
+    required: false,
+    ty: Type::List(&SECRET),
+    role: Role::None,
+};
+
 /// `spec` of an Infrastructure document.
 pub const INFRASTRUCTURE_SPEC: Shape = Shape {
     name: "InfrastructureSpec",
@@ -427,6 +554,10 @@ pub const INFRASTRUCTURE_SPEC: Shape = Shape {
     fields: &[
         TARGET,
         TARGET_VERSION,
+        SPEC_WHEN,
+        VARIABLES,
+        CONDITIONS,
+        SECRETS,
         RESOURCES,
         Field {
             name: "outputs",
@@ -453,6 +584,10 @@ pub const RESOURCE_SET_SPEC: Shape = Shape {
             ty: Type::Object(&TARGET_HOST),
             role: Role::None,
         },
+        SPEC_WHEN,
+        VARIABLES,
+        CONDITIONS,
+        SECRETS,
         RESOURCES,
     ],
 };

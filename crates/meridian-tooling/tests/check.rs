@@ -239,3 +239,64 @@ fn a_conditional_resource_is_checked_as_if_its_condition_held() {
     );
     assert_eq!(check(&text), []);
 }
+
+fn codes(text: &str) -> Vec<String> {
+    check(text).into_iter().map(|d| d.code).collect()
+}
+
+#[test]
+fn a_document_that_needs_no_data_is_worked_out_and_compiled() {
+    // The variable is placed before the plugin sees the document, so a
+    // value the plugin would refuse is found.
+    let text = GOOD
+        .replace(
+            "  resources:\n",
+            "  variables:\n    wanted: bouncing\n  resources:\n",
+        )
+        .replace("state: running", "state: \"${{ var.wanted }}\"");
+    assert_eq!(codes(&text), ["unsupported-state"]);
+    let text = text.replace("wanted: bouncing", "wanted: running");
+    assert_eq!(check(&text), []);
+}
+
+#[test]
+fn a_document_that_needs_data_is_checked_as_far_as_it_can_be_without_it() {
+    // Nobody can place `data.name` in an editor, so the plugin is not asked
+    // about text its tool will never see...
+    let text = GOOD.replace(
+        "name: nginx\n    - id",
+        "name: \"${{ data.name }}\"\n    - id",
+    );
+    assert_eq!(check(&text), []);
+    // ...but what the target says about each resource is still checked.
+    let text = text.replace("state: running", "state: running\n      colour: blue");
+    assert_eq!(codes(&text), ["invalid-document"]);
+    let text = GOOD
+        .replace(
+            "name: nginx\n    - id",
+            "name: \"${{ data.name }}\"\n    - id",
+        )
+        .replace(
+            "        name: nginx\n      dependsOn",
+            "        name: nginx\n        colour: blue\n      dependsOn",
+        );
+    assert_eq!(codes(&text), ["unsupported-param"]);
+}
+
+#[test]
+fn the_new_fields_of_the_language_are_accepted_where_they_belong() {
+    let text = GOOD
+        .replace(
+            "  resources:\n",
+            "  when: \"true\"\n  conditions:\n    always: \"true\"\n  secrets:\n    - name: token\n      \
+             from: env\n      key: TOKEN\n      optional: true\n  resources:\n",
+        )
+        .replace(
+            "        - resource: nginx_pkg\n",
+            "        - resource: nginx_pkg\n          when: cond.always\n",
+        );
+    assert_eq!(check(&text), []);
+    // A field the language does not have is still refused, there.
+    let text = text.replace("key: TOKEN", "kee: TOKEN");
+    assert_eq!(codes(&text), ["invalid-document"]);
+}

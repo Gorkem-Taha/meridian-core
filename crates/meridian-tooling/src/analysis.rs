@@ -113,7 +113,7 @@ fn walk(root: &'static Shape, path: &[Seg]) -> Walk {
                     Type::Object(next) => out.shape = Some(next),
                     Type::List(next) => list = Some(next),
                     Type::Params | Type::StringMap => free = true,
-                    Type::String | Type::Enum(_) => {}
+                    Type::String | Type::Enum(_) | Type::Bool | Type::StringList => {}
                 }
             }
             Seg::Index(_) => {
@@ -221,6 +221,8 @@ fn type_words(ty: &Type) -> &'static str {
         Type::List(_) => "list",
         Type::StringMap => "mapping of names to strings",
         Type::Params => "mapping",
+        Type::Bool => "true or false",
+        Type::StringList => "list of strings",
     }
 }
 
@@ -482,6 +484,8 @@ impl Completer<'_> {
                     let first = item.fields.first().map_or("", |f| f.name);
                     format!("{}:\n  - {first}: $0", field.name)
                 }
+                Type::Bool => format!("{}: ${{1|true,false|}}", field.name),
+                Type::StringList => format!("{}:\n  - $0", field.name),
             };
             self.snippet(field.name, CompletionKind::Field, detail, &doc, &insert);
         }
@@ -857,6 +861,31 @@ impl Completer<'_> {
                     "True when the named value was given with `--data`.",
                     "defined(data.${1:key})",
                 );
+                // What the document itself declares for a condition to read.
+                let spec = self.scope.root.and_then(|r| r.child("spec"));
+                let mut declared: Vec<(String, &str)> = Vec::new();
+                for (prefix, field, what) in [
+                    ("cond", "conditions", "a named condition of this document"),
+                    ("var", "variables", "a variable of this document"),
+                ] {
+                    for entry in spec
+                        .and_then(|s| s.child(field))
+                        .map_or(&[][..], Node::entries)
+                    {
+                        declared.push((format!("{prefix}.{}", entry.key), what));
+                    }
+                }
+                for item in spec
+                    .and_then(|s| s.child("secrets"))
+                    .map_or(&[][..], Node::items)
+                {
+                    if let Some(name) = item.value.as_ref().and_then(|v| v.text("name")) {
+                        declared.push((format!("secret.{name}"), "a secret of this document"));
+                    }
+                }
+                for (label, what) in declared {
+                    self.value(&label, what, "");
+                }
             }
             _ => {}
         }

@@ -1,7 +1,7 @@
 # The linter
 
 ```
-meridian lint <paths>... [--plugin-dir DIR] [--data FILE] [--set KEY=VALUE] [--fix] [--strict] [--json]
+meridian lint <paths>... [--plugin-dir DIR] [--data FILE] [--set KEY=VALUE] [--state-dir DIR] [--fix] [--strict] [--json]
 ```
 
 `meridian lint` checks a whole project the way the editor checks an open file.
@@ -80,12 +80,33 @@ will not compile until it is fixed.
 
 ## Conditions and data
 
-Without data, every resource is checked as if its `when` condition held, so
-that a mistake in a resource that is usually switched off is still found. With
-`--data FILE` or `--set KEY=VALUE` (each may be repeated, and they mean what
-they mean for [`meridian compile`](../reference/cli.md#deciding-conditions)),
-conditions are decided from the data and resources that are switched off are
-not compiled.
+A document can read data: in a `when`, in `spec.conditions`, and in
+`${{ ... }}` interpolation. What the linter can check depends on whether it
+has that data.
+
+- **A document that needs no data** (its conditions and interpolation read
+  only `spec.variables` and literals) is worked out exactly as
+  `meridian compile` would, and then compiled.
+- **A document that needs data, with none given.** Every `when` is treated as
+  true, so that a mistake in a resource that is usually switched off is still
+  found. If the document also interpolates values with `${{ ... }}`, the
+  values are not known, so it is checked against the language (fields, types,
+  references, dependencies) and is not handed to the plugin.
+- **With `--data FILE` or `--set KEY=VALUE`** (each may be repeated, and they
+  mean what they mean for
+  [`meridian compile`](../reference/cli.md#deciding-conditions)), conditions
+  and interpolation are decided from the data. Resources that are switched off
+  are not compiled, a document whose `spec.when` is false is not compiled, and a condition that cannot be decided is an `invalid-condition`
+  error.
+
+`--state-dir DIR` (or `MERIDIAN_STATE_DIR`, default `.meridian`) is where the
+project's fetched modules are, for `--data` files named inside a module.
+
+## Module manifests
+
+A `meridian.yaml` with `kind: Module` describes a module and is not a document
+to compile. `meridian lint` and `meridian fmt` leave it alone;
+`meridian module` checks it.
 
 ## Plugins
 

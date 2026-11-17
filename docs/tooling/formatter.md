@@ -64,7 +64,7 @@ spec:
 | It changes | It leaves alone |
 |---|---|
 | Indentation: two spaces, with list items indented under their key | Every value, exactly as typed, including numbers such as `0644` |
-| The order of the language's own fields: `apiVersion`, `kind`, `metadata`, `spec`; in a resource `id`, `type`, `state`, `when`, `runtimeWhen`, `params`, `dependsOn`, `notifies` | The order of anything the language does not define: params, labels, resources, list entries |
+| The order of the language's own fields: `apiVersion`, `kind`, `metadata`, `spec`; in `spec` `target`, `targetVersion`, `targetHost`, `when`, `variables`, `conditions`, `secrets`, `resources`, `outputs`; in a resource `id`, `type`, `state`, `when`, `runtimeWhen`, `params`, `dependsOn`, `notifies` | The order of anything the language does not define: params, labels, resources, list entries |
 | Trailing spaces, and runs of blank lines (one is kept) | Quotes, and whether a value is written in block or flow style (`{name: nginx}` stays as it is) |
 | A missing newline at the end of the file | Comments, which move with the field or list entry they are written above or beside |
 | | Block scalars (`|` and `>`): their text is kept line for line |
