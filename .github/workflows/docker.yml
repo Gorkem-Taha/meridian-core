@@ -1,0 +1,42 @@
+name: docker
+
+# The Docker plugin against the real Docker daemon and Compose. The rust
+# workflow runs the same test, but there a runner without Docker would skip
+# it; here MERIDIAN_REAL_DOCKER=1 makes a missing Docker a failure, so this
+# job cannot pass by checking nothing.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/docker/**'
+      - 'examples/docker/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/docker.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: real docker daemon and compose
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Show the versions under test
+        run: |
+          docker version
+          docker compose version
+
+      - name: Bring a project up, change it and take it down
+        env:
+          MERIDIAN_REAL_DOCKER: '1'
+        run: cargo test -p meridian-target-docker --locked --test real -- --nocapture --test-threads=1

@@ -1,0 +1,317 @@
+//! The plugin against a real reader of ARM templates, and, when an Azure
+//! subscription is available, against Azure itself.
+//!
+//! Two sets of tests, each asked for by its own variable.
+//!
+//! `MERIDIAN_TEST_REAL_ARM=1` runs what needs no account. Nothing validates
+//! an ARM template offline the way Resource Manager does, but the Bicep
+//! compiler reads ARM templates to convert them (`az bicep decompile`), and
+//! to do that it has to parse the whole template: its schema and scope,
+//! every resource, every template expression and every reference to a
+//! parameter. Each template the plugin compiles is put through it. The
+//! `azure` workflow runs these on every pull request that touches the plugin.
+//!
+//! `MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP=<name>` runs the runner for real:
+//! a what-if, a deployment and its outputs, in that resource group, with the
+//! `az` command already signed in. The group must exist. The test creates one
+//! user-assigned managed identity in it, which costs nothing, and deletes it.
+//!
+//! ```sh
+//! MERIDIAN_TEST_REAL_ARM=1 cargo test -p meridian-target-arm --test real
+//! az login
+//! MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP=meridian-ci \
+//!     cargo test -p meridian-target-arm --test real
+//! ```
+//!
+//! Without either variable the tests pass without doing anything.
+
+#![cfg(unix)]
+#![allow(clippy::result_large_err)]
+
+use std::fs;
+use std::path::Path;
+
+use meridian_plugin_testkit::{graph_from_file, graph_from_text, scratch, KeptLog};
+use meridian_sdk::tool::{write_artifact, Tool};
+use meridian_sdk::{
+    Applied, Artifact, Change, ChangeAction, Data, Emitter, NoLog, Output, Plan, ResourceGraph,
+    RunContext, Runner,
+};
+use meridian_target_arm::{Arm, ArmRunner, TEMPLATE_PATH};
+
+const TMP: &str = env!("CARGO_TARGET_TMPDIR");
+
+/// One `az` call of the test's own, returning what it printed on stdout.
+fn az(dir: &Path, args: &[&str]) -> Result<String, String> {
+    let finished = Tool::new(ArmRunner::from_env().program)
+        .args(args.iter().copied())
+        .dir(dir)
+        .capture_stdout()
+        .run(&NoLog)
+        .map_err(|e| e.to_string())?;
+    if finished.success() {
+        Ok(finished.stdout)
+    } else {
+        Err(format!("{}{}", finished.stdout, finished.stderr))
+    }
+}
+
+fn compile(graph: &ResourceGraph) -> Artifact {
+    Arm.emit(graph, &Data::new())
+        .unwrap_or_else(|e| panic!("{e}"))
+        .artifact
+}
+
+/// Reads a compiled template with the Bicep compiler and returns the Bicep
+/// it was converted to.
+fn read_back(dir: &Path, artifact: &Artifact) -> Result<String, String> {
+    write_artifact(dir, artifact).unwrap();
+    az(
+        dir,
+        &["bicep", "decompile", "--file", TEMPLATE_PATH, "--force"],
+    )?;
+    let converted = Path::new(TEMPLATE_PATH).with_extension("bicep");
+    fs::read_to_string(dir.join(&converted))
+        .map_err(|e| format!("{} was not written: {e}", converted.display()))
+}
+
+fn asked_for_the_reader() -> bool {
+    if std::env::var("MERIDIAN_TEST_REAL_ARM").ok().as_deref() != Some("1") {
+        eprintln!("skipped: set MERIDIAN_TEST_REAL_ARM=1 to have real tooling read the templates");
+        return false;
+    }
+    if let Err(why) = az(Path::new("."), &["bicep", "version"]) {
+        panic!("MERIDIAN_TEST_REAL_ARM=1, and `az bicep` does not run: {why}");
+    }
+    true
+}
+
+#[test]
+fn every_example_is_a_template_real_tooling_reads() {
+    if !asked_for_the_reader() {
+        return;
+    }
+    // Each example, with something only a reader that understood the
+    // template could have produced from it.
+    let examples = [
+        (
+            "web-vm",
+            vec![
+                "param admin_password string",
+                "'Microsoft.Network/networkInterfaces@2023-09-01'",
+                "'Microsoft.Storage/storageAccounts@2023-01-01'",
+            ],
+        ),
+        (
+            "sql-database",
+            vec![
+                "@secure()",
+                "'Microsoft.Sql/servers/databases@",
+                "'Microsoft.Authorization/locks@",
+            ],
+        ),
+        (
+            "landing-zone",
+            vec![
+                "targetScope = 'subscription'",
+                "'Microsoft.Resources/resourceGroups@2024-03-01'",
+                "param owner string = 'platform-team'",
+            ],
+        ),
+    ];
+    for (name, expected) in examples {
+        let dir = scratch(TMP, &format!("real-read-{name}"));
+        let artifact = compile(&graph_from_file(
+            &format!("examples/arm/{name}.yaml"),
+            "arm",
+        ));
+        let bicep = read_back(&dir, &artifact).unwrap_or_else(|why| {
+            panic!(
+                "{name}: the template could not be read:\n{why}\n--- {TEMPLATE_PATH} ---\n{}",
+                artifact.files[TEMPLATE_PATH]
+            )
+        });
+        for piece in expected {
+            assert!(bicep.contains(piece), "{name}: no {piece:?} in\n{bicep}");
+        }
+    }
+}
+
+#[test]
+fn a_template_with_a_broken_expression_is_refused_by_the_reader() {
+    if !asked_for_the_reader() {
+        return;
+    }
+    let dir = scratch(TMP, "real-read-broken");
+    // Proof that the reader is really reading: the same check that passes
+    // the examples refuses a template whose expression names a parameter
+    // that does not exist. The plugin itself refuses to compile such a
+    // document, so the template is damaged after compiling.
+    let mut artifact = compile(&graph_from_file("examples/arm/landing-zone.yaml", "arm"));
+    let template =
+        artifact.files[TEMPLATE_PATH].replace("parameters('owner')", "parameters('nobody')");
+    assert_ne!(template, artifact.files[TEMPLATE_PATH]);
+    artifact.files.insert(TEMPLATE_PATH.to_owned(), template);
+    let why = read_back(&dir, &artifact).expect_err("there is no such parameter");
+    assert!(why.contains("nobody"), "{why}");
+}
+
+// ---------------------------------------------------------------------------
+// Against Azure itself.
+
+/// The resource group to deploy into, or `None` to skip.
+fn resource_group() -> Option<String> {
+    let Some(group) = std::env::var("MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP")
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+    else {
+        eprintln!(
+            "skipped: set MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP to run against a real subscription"
+        );
+        return None;
+    };
+    if let Err(why) = az(Path::new("."), &["group", "show", "--name", &group]) {
+        panic!(
+            "MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP={group}, and az cannot see that group: {why}"
+        );
+    }
+    Some(group)
+}
+
+const IDENTITY: &str = "meridian-real-arm";
+
+fn identity_exists(group: &str) -> bool {
+    az(
+        Path::new("."),
+        &[
+            "identity",
+            "show",
+            "--resource-group",
+            group,
+            "--name",
+            IDENTITY,
+        ],
+    )
+    .is_ok()
+}
+
+fn delete_identity(group: &str) {
+    let _ = az(
+        Path::new("."),
+        &[
+            "identity",
+            "delete",
+            "--resource-group",
+            group,
+            "--name",
+            IDENTITY,
+        ],
+    );
+}
+
+/// Deletes what the test deployed when it ends, however it ends.
+struct TearDown(String);
+
+impl Drop for TearDown {
+    fn drop(&mut self) {
+        delete_identity(&self.0);
+    }
+}
+
+fn context(dir: &Path) -> RunContext {
+    RunContext {
+        document: "identity".into(),
+        work_dir: dir.join("work"),
+        ..RunContext::default()
+    }
+}
+
+fn plan(dir: &Path, artifact: &Artifact) -> Plan {
+    let log = KeptLog::default();
+    ArmRunner::from_env()
+        .plan(&context(dir), artifact, &log)
+        .unwrap_or_else(|e| panic!("{e}\n{}", log.text().join("\n")))
+}
+
+fn apply(dir: &Path, artifact: &Artifact) -> Applied {
+    let log = KeptLog::default();
+    ArmRunner::from_env()
+        .apply(&context(dir), artifact, &log)
+        .unwrap_or_else(|e| panic!("{e}\n{}", log.text().join("\n")))
+}
+
+fn changes(list: &[Change]) -> Vec<(ChangeAction, &str)> {
+    list.iter()
+        .map(|c| (c.action, c.resource.as_str()))
+        .collect()
+}
+
+fn output<'a>(outputs: &'a [Output], name: &str) -> &'a str {
+    outputs
+        .iter()
+        .find(|o| o.name == name)
+        .unwrap_or_else(|| panic!("no output {name:?} in {outputs:?}"))
+        .value
+        .as_str()
+        .expect("the output is text")
+}
+
+#[test]
+fn a_deployment_is_previewed_made_read_back_and_changed_in_azure() {
+    let Some(group) = resource_group() else {
+        return;
+    };
+    delete_identity(&group);
+    let _tear_down = TearDown(group.clone());
+    let dir = scratch(TMP, "real-azure");
+    let document = |stage: &str| {
+        let text = format!(
+            "apiVersion: meridian/v1\nkind: Infrastructure\nmetadata:\n  name: identity\nspec:\n  target: arm\n  resources:\n    - id: deployment\n      type: deployment\n      params:\n        name: meridian-real-arm\n        resourceGroup: {group}\n    - id: stage\n      type: parameter\n      params:\n        type: string\n        defaultValue: {stage}\n    - id: identity\n      type: Microsoft.ManagedIdentity/userAssignedIdentities\n      params:\n        apiVersion: \"2023-01-31\"\n        name: {IDENTITY}\n        location: \"[resourceGroup().location]\"\n        tags:\n          stage: ${{stage}}\n  outputs:\n    - name: principal\n      value: ${{identity.properties.principalId}}\n    - name: name\n      value: ${{identity.name}}\n"
+        );
+        compile(&graph_from_text("identity.yaml", &text, "arm"))
+    };
+
+    // What-if says what would be created, under the document's id, and
+    // creates nothing.
+    let first = document("one");
+    let preview = plan(&dir, &first);
+    assert!(!preview.unknown);
+    assert_eq!(
+        changes(&preview.changes),
+        [(ChangeAction::Create, "identity")]
+    );
+    assert!(!identity_exists(&group), "a plan creates nothing");
+
+    // The deployment creates it and reports the outputs Azure computed.
+    let applied = apply(&dir, &first);
+    assert_eq!(changes(&applied.changes), changes(&preview.changes));
+    assert_eq!(output(&applied.outputs, "name"), IDENTITY);
+    assert_eq!(output(&applied.outputs, "principal").len(), 36);
+
+    // Outputs can be read again from the deployment's record.
+    let read = ArmRunner::from_env()
+        .outputs(&context(&dir))
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(output(&read, "name"), IDENTITY);
+
+    // Nothing has changed.
+    let again = plan(&dir, &first);
+    assert!(again.changes.is_empty(), "{:?}", again.changes);
+
+    // A changed tag is an update of the one resource, and the plan names
+    // the property that changes.
+    let second = document("two");
+    let preview = plan(&dir, &second);
+    assert_eq!(
+        changes(&preview.changes),
+        [(ChangeAction::Update, "identity")]
+    );
+    assert!(
+        preview.changes[0].summary.contains("tags.stage"),
+        "{:?}",
+        preview.changes
+    );
+    apply(&dir, &second);
+    let again = plan(&dir, &second);
+    assert!(again.changes.is_empty(), "{:?}", again.changes);
+}

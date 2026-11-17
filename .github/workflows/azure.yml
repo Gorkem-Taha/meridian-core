@@ -1,0 +1,102 @@
+name: azure
+
+# The Bicep and ARM plugins against real tooling.
+#
+# The first job needs no Azure account: the real Bicep compiler builds every
+# Bicep file the Bicep plugin compiles, and reads every template the ARM
+# plugin compiles. It proves that what Meridian writes is valid; it cannot
+# prove what Azure does with it.
+#
+# The second job does that: what-if, a deployment and its outputs in a real
+# resource group. It only runs once the repository has been given a
+# subscription to use; until then it is skipped, and the workflow says so.
+# docs/contributing/real-tool-tests.md lists the settings it needs.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/bicep/**'
+      - 'plugins/arm/**'
+      - 'examples/bicep/**'
+      - 'examples/arm/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/azure.yml'
+
+permissions:
+  contents: read
+
+env:
+  BICEP_VERSION: v0.36.1
+
+jobs:
+  offline:
+    name: real bicep compiler, no account
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Install the Bicep compiler
+        run: |
+          az bicep install --version "$BICEP_VERSION"
+          az version
+          az bicep version
+
+      # With the variables set, a compiler that does not run fails the tests,
+      # so this job cannot pass by checking nothing.
+      - name: Build what the Bicep plugin compiles
+        env:
+          MERIDIAN_TEST_REAL_BICEP: '1'
+        run: cargo test -p meridian-target-bicep --locked --test real -- --nocapture
+
+      - name: Read what the ARM plugin compiles
+        env:
+          MERIDIAN_TEST_REAL_ARM: '1'
+        run: cargo test -p meridian-target-arm --locked --test real -- --nocapture
+
+  subscription:
+    name: what-if and deploy in a real subscription
+    # Runs only when the repository names a resource group to use, and never
+    # for a pull request from a fork, which cannot sign in.
+    if: >-
+      vars.AZURE_RESOURCE_GROUP != '' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # Signs in with a short-lived token GitHub issues for this run. No
+      # password or client secret is stored anywhere.
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install the Bicep compiler
+        run: az bicep install --version "$BICEP_VERSION"
+
+      - name: Deploy with the Bicep plugin
+        env:
+          MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: cargo test -p meridian-target-bicep --locked --test real a_deployment -- --nocapture
+
+      - name: Deploy with the ARM plugin
+        env:
+          MERIDIAN_TEST_REAL_AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: cargo test -p meridian-target-arm --locked --test real a_deployment -- --nocapture

@@ -1,0 +1,56 @@
+name: kubernetes
+
+# The Kubernetes plugin against a real cluster: kind starts one inside Docker
+# on the runner. The rust workflow already runs the plugin's other tests;
+# without MERIDIAN_TEST_REAL_KUBECTL these ones pass without doing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/kubernetes/**'
+      - 'examples/kubernetes/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/kubernetes.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: plan and apply on a kind cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # Built before the cluster exists, so a compile error costs no cluster.
+      - name: Build the tests
+        run: cargo test -p meridian-target-kubernetes --locked --test real --no-run
+
+      - name: Create a cluster
+        run: kind create cluster --name meridian --wait 180s
+
+      - name: Show the versions under test
+        run: |
+          kind version
+          kubectl version
+
+      # With the variable set, a cluster that cannot be reached fails the
+      # tests, so this job cannot pass by checking nothing.
+      - name: Test against the cluster
+        env:
+          MERIDIAN_TEST_REAL_KUBECTL: '1'
+        run: cargo test -p meridian-target-kubernetes --locked --test real -- --nocapture --test-threads=1
+
+      - name: Show the cluster when something failed
+        if: failure()
+        run: |
+          kubectl get all,configmaps --all-namespaces || true
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp | tail -40 || true

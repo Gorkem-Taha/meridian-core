@@ -1,0 +1,56 @@
+name: chef
+
+# The Chef plugin against a real Chef client in local mode. The client is
+# Cinc Client, the community build of Chef Infra Client's own source: it takes
+# the same arguments and reads the same cookbooks, and installs without a
+# licence to accept. The rust workflow already runs the plugin's other tests;
+# without MERIDIAN_TEST_REAL_CHEF these ones pass without doing anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/chef/**'
+      - 'examples/chef/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/chef.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: converge with a real chef client
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Install Cinc Client
+        run: |
+          curl --fail --silent --show-error --location https://omnitruck.cinc.sh/install.sh | sudo bash -s -- -v 18
+          cinc-client --version
+
+      # Packages, users, groups and services can only be managed by root.
+      # The tests run as the runner's user; this wrapper is how the one test
+      # that needs root runs the client.
+      - name: Write a wrapper that runs the client as root
+        run: |
+          printf '#!/bin/sh\nexec sudo -n "%s" "$@"\n' "$(command -v cinc-client)" > "$RUNNER_TEMP/cinc-client-as-root"
+          chmod +x "$RUNNER_TEMP/cinc-client-as-root"
+          "$RUNNER_TEMP/cinc-client-as-root" --version
+          echo "MERIDIAN_TEST_REAL_CHEF_ROOT=$RUNNER_TEMP/cinc-client-as-root" >> "$GITHUB_ENV"
+
+      # With the variable set, a client that does not run fails the tests,
+      # so this job cannot pass by checking nothing.
+      - name: Test against the client
+        env:
+          MERIDIAN_TEST_REAL_CHEF: '1'
+          MERIDIAN_CHEF_CLIENT: cinc-client
+        run: cargo test -p meridian-target-chef --locked --test real -- --nocapture --test-threads=1
