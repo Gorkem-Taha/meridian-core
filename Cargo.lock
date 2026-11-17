@@ -617,6 +617,7 @@ dependencies = [
  "meridian-target-helm",
  "meridian-target-kubernetes",
  "meridian-target-opentofu",
+ "meridian-target-openvox",
  "meridian-target-packer",
  "meridian-target-podman",
  "meridian-target-pulumi",
@@ -805,6 +806,16 @@ dependencies = [
  "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-sdk",
+]
+
+[[package]]
+name = "meridian-target-openvox"
+version = "0.1.0"
+dependencies = [
+ "meridian-plugin-host",
+ "meridian-plugin-testkit",
+ "meridian-sdk",
+ "meridian-target-puppet",
 ]
 
 [[package]]

@@ -117,6 +117,10 @@ fn matrix() -> String {
             &meridian_target_pulumi::PulumiRunner::from_env(),
         ),
         row(
+            &meridian_target_openvox::OpenVox,
+            &meridian_target_openvox::OpenVoxRunner::from_env(),
+        ),
+        row(
             &meridian_target_puppet::Puppet,
             &meridian_target_puppet::PuppetRunner::from_env(),
         ),

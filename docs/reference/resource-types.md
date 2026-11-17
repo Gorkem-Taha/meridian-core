@@ -1,8 +1,9 @@
 # The configuration management resource types
 
-The `ansible`, `puppet`, `chef`, `salt` and `cloud-init` targets share six
-resource types. A resource written with them compiles for any of the five,
-within what each tool can do.
+The `ansible`, `puppet`, `openvox`, `chef`, `salt` and `cloud-init` targets share
+six resource types. A resource written with them compiles for any of the six,
+within what each tool can do. OpenVox reads the language Puppet reads, so wherever
+this page says Puppet, the same holds for `openvox`.
 Anything outside these tables is refused, never dropped: a param a target does
 not take, a state it cannot express, an action it cannot perform.
 

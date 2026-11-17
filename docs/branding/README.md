@@ -16,6 +16,7 @@ project's own: one DSL for everything.
 | DSC | <img src="logos/meridian-dsc.svg" width="48" alt="Meridian DSC plugin logo"> | Configuration management |
 | Ansible | <img src="logos/meridian-ansible.svg" width="48" alt="Meridian Ansible plugin logo"> | Configuration management |
 | Puppet | <img src="logos/meridian-puppet.svg" width="48" alt="Meridian Puppet plugin logo"> | Configuration management |
+| OpenVox | <img src="logos/meridian-openvox.svg" width="48" alt="Meridian OpenVox plugin logo"> | Configuration management |
 | Chef | <img src="logos/meridian-chef.svg" width="48" alt="Meridian Chef plugin logo"> | Configuration management |
 | Salt | <img src="logos/meridian-salt.svg" width="48" alt="Meridian Salt plugin logo"> | Configuration management |
 | cloud-init | <img src="logos/meridian-cloud-init.svg" width="48" alt="Meridian cloud-init plugin logo"> | Configuration management |

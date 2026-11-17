@@ -1,0 +1,38 @@
+name: openvox
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: the plugin against a real OpenVox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+
+      # The gem needs no root and no package repository, and it is the same
+      # code the openvox-agent package ships.
+      - name: Install OpenVox
+        run: |
+          gem install openvox --no-document
+          puppet --version
+          puppet facts show implementation --render-as json
+
+      # Without the variable these tests skip themselves, so a missing
+      # OpenVox could never fail this job. With it, a missing one does.
+      - name: Test against OpenVox
+        env:
+          MERIDIAN_TEST_OPENVOX: '1'
+        run: cargo test -p meridian-target-openvox --locked

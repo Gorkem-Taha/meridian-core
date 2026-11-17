@@ -1,0 +1,77 @@
+# A small web application on one node, applied with OpenVox.
+#
+#   meridian compile examples/openvox/web.yaml --out build
+#   meridian plan    examples/openvox/web.yaml
+#   meridian apply   examples/openvox/web.yaml
+#
+# The host is another machine, so the manifest is applied over SSH with
+# OpenBolt. Change it to localhost to apply on the machine Meridian runs on.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: openvox
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: app_group
+      type: group
+      params:
+        name: app
+        system: true
+    - id: app_user
+      type: user
+      params:
+        name: app
+        home: /srv/app
+        shell: /usr/sbin/nologin
+        system: true
+        groups: [app]
+      dependsOn:
+        - resource: app_group
+    - id: app_dir
+      type: file
+      state: directory
+      params:
+        path: /srv/app
+        owner: app
+        group: app
+        mode: "0750"
+      dependsOn:
+        - resource: app_user
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+    - id: site_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/app.conf
+        mode: "0644"
+        content: |
+          server {
+            listen 80;
+            root /srv/app/public;
+          }
+      dependsOn:
+        - resource: nginx_pkg
+      notifies:
+        - resource: nginx_svc
+          action: restart
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_pkg
+    - id: seed_content
+      type: exec
+      params:
+        command: /usr/bin/install -o app -g app -d /srv/app/public
+        creates: /srv/app/public
+      dependsOn:
+        - resource: app_dir

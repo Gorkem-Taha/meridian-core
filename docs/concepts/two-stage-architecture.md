@@ -11,7 +11,7 @@ track of what they created, and can tell you facts about the result: an address,
 an id, a URL.
 
 A ResourceSet answers "how should this machine be set up?" Its tools (Ansible,
-Puppet, Chef, DSC) log in to a machine, or run on it, and converge packages,
+Puppet, OpenVox, Chef, DSC) log in to a machine, or run on it, and converge packages,
 files and services. They need the machine to exist first, and they need to know
 where it is.
 
