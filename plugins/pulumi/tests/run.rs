@@ -211,7 +211,7 @@ fn an_apply_previews_updates_and_reports_outputs() {
         .iter()
         .find(|o| o.name == "admin_password")
         .unwrap();
-    assert_eq!(password.value, Value::String("hunter2".into()));
+    assert!(password.value == Value::String("hunter2".into()));
     assert!(password.sensitive);
 }
 

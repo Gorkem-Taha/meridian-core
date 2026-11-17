@@ -136,8 +136,12 @@ fn a_document_is_planned_applied_and_changed() {
     // mask to the value and remembers that it was masked.
     let password = output(&applied.outputs, "password");
     assert!(password.sensitive);
-    assert_eq!(text(password).len(), 24);
-    assert_ne!(text(password), "[secret]");
+    // Checked without `assert_eq!`, which would print the value on failure.
+    assert!(
+        text(password).len() == 24,
+        "the password has the wrong length"
+    );
+    assert!(text(password) != "[secret]", "the password is still masked");
     assert!(
         !log.text().iter().any(|l| l.contains(text(password))),
         "the password reached the log"
@@ -172,10 +176,9 @@ fn a_document_is_planned_applied_and_changed() {
     );
     let renamed = text(output(&applied.outputs, "pet_name"));
     assert!(renamed.starts_with("db-"), "{renamed}");
-    assert_eq!(
-        text(output(&applied.outputs, "password")),
-        text(password),
-        "the password was not touched"
+    assert!(
+        text(output(&applied.outputs, "password")) == text(password),
+        "the password was replaced, and it should not have been"
     );
 
     // A resource taken out of the document is deleted.

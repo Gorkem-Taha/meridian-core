@@ -156,7 +156,7 @@ fn the_host_plans_applies_and_reads_outputs_through_the_binary() {
         .find(|o| o.name == "password")
         .unwrap();
     assert!(password.sensitive, "sensitivity survives the wire");
-    assert_eq!(password.value, Value::String("hunter2".into()));
+    assert!(password.value == Value::String("hunter2".into()));
 
     let outputs = client.outputs(&context).unwrap();
     assert_eq!(outputs, applied.outputs);

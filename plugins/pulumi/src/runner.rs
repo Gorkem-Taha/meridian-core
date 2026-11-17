@@ -516,7 +516,7 @@ mod tests {
         assert_eq!(outputs.len(), 4);
         let find = |name: &str| outputs.iter().find(|o| o.name == name).unwrap();
         assert!(find("db_password").sensitive);
-        assert_eq!(find("db_password").value, Value::String("hunter2".into()));
+        assert!(find("db_password").value == Value::String("hunter2".into()));
         assert!(!format!("{:?}", find("db_password")).contains("hunter2"));
         assert!(find("login").sensitive);
         assert!(!find("web_vm_ip").sensitive);
