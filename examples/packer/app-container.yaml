@@ -1,0 +1,90 @@
+# A container image built by Packer from a base image, tagged and pushed.
+#
+# The two post-processors that depend on one another form a sequence: each
+# takes the artifact of the one before it. The checksum stands alone, so it
+# starts a sequence of its own and works on what the build itself produced.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: app-container
+spec:
+  target: packer
+  resources:
+    - id: docker
+      type: plugin
+      params:
+        source: github.com/hashicorp/docker
+        version: ">= 1.0.8"
+
+    - id: version
+      type: variable
+      params:
+        type: string
+        default: 1.0.0
+
+    - id: registry_password
+      type: variable
+      params:
+        type: string
+        default: ""
+        sensitive: true
+
+    - id: app
+      type: source.docker
+      params:
+        image: debian:bookworm-slim
+        commit: true
+        changes:
+          - EXPOSE 8080
+          - ENTRYPOINT ["/usr/local/bin/app"]
+
+    - id: packages
+      type: provisioner.shell
+      params:
+        inline:
+          - apt-get update
+          - apt-get install -y --no-install-recommends ca-certificates
+          - rm -rf /var/lib/apt/lists/*
+
+    - id: binary
+      type: provisioner.file
+      params:
+        source: dist/app
+        destination: /usr/local/bin/app
+      dependsOn:
+        - resource: packages
+
+    # Runs on the machine running Packer, and only if the build fails.
+    - id: report_failure
+      type: error-cleanup-provisioner.shell-local
+      params:
+        inline:
+          - echo "the build of ${build.name} failed"
+
+    - id: tag
+      type: post-processor.docker-tag
+      params:
+        repository: registry.example.com/team/app
+        tags: ["${version}", "latest"]
+
+    - id: push
+      type: post-processor.docker-push
+      params:
+        login: true
+        login_server: registry.example.com
+        login_username: ci
+        login_password: ${registry_password}
+      dependsOn:
+        - resource: tag
+
+    - id: checksum
+      type: post-processor.checksum
+      params:
+        checksum_types: ["sha256"]
+        output: app.{{.ChecksumType}}
+
+  outputs:
+    - name: image
+      value: ${app.id}
+    - name: built_at
+      value: ${app.build_time}
