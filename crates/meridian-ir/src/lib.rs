@@ -12,6 +12,7 @@ mod error;
 mod migrate;
 mod node;
 mod parse;
+pub mod schema;
 mod types;
 mod validate;
 
@@ -20,7 +21,7 @@ pub use condition::{prune, Condition, Data};
 pub use error::{Error, ErrorList, Position};
 pub use meridian_value::{canonical_map, Value};
 pub use migrate::{migrate, Decisions, MigrateError, Migrated, Step, STEPS};
-pub use parse::{parse, parse_file, parse_value};
+pub use parse::{parse, parse_file, parse_stream, parse_value};
 pub use types::{
     Dependency, Document, IfMissing, Infrastructure, InfrastructureSpec, Kind, Metadata,
     Notification, Output, Resource, ResourceSet, ResourceSetSpec, TargetHost, API_VERSION_V1,

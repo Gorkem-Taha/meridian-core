@@ -169,6 +169,11 @@ impl Client {
             capabilities: wire::capabilities_from_wire(reply.capabilities),
             category: wire::category_from_wire(reply.category),
             target_versions: reply.target_versions,
+            resource_schemas: reply
+                .resource_schemas
+                .into_iter()
+                .map(wire::resource_schema_from_wire)
+                .collect(),
             operations: wire::operations_from_wire(reply.operations),
             path: path.to_owned(),
         };

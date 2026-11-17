@@ -43,6 +43,7 @@
 
 pub mod expr;
 mod run;
+pub mod schema;
 mod serve;
 pub mod tool;
 mod types;
@@ -62,6 +63,7 @@ pub use run::{
     Applied, Category, Change, ChangeAction, Log, LogLine, LogStream, NoLog, Operations, Output,
     Plan, RunContext, RunError, Runner,
 };
+pub use schema::{ParamKind, ParamSchema, ResourceSchema};
 pub use serve::{serve, Plugin, ServeError};
 pub use types::{
     Artifact, Capabilities, CompileError, Data, Edge, EdgeKind, Emitted, Emitter,

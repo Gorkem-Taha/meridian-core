@@ -116,6 +116,7 @@ impl Registry {
             capabilities: emitter.capabilities(),
             category: emitter.category(),
             target_versions: emitter.target_versions(),
+            resource_schemas: emitter.resource_schemas(),
             operations: Operations::COMPILE_ONLY,
             path: String::new(),
         };

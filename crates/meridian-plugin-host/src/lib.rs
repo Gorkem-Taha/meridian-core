@@ -51,6 +51,9 @@ pub struct Info {
     /// The versions of its tool the target compiles for; empty when it does
     /// not say.
     pub target_versions: Vec<String>,
+    /// What each resource type takes, as the target describes it for
+    /// editors; empty when it does not say.
+    pub resource_schemas: Vec<meridian_sdk::ResourceSchema>,
     /// The binary the plugin was loaded from; empty for an in-process emitter.
     pub path: String,
 }

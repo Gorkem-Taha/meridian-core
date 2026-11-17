@@ -241,6 +241,12 @@ impl EmitterService for EmitterHandler {
             capabilities: Some(wire::capabilities_to_wire(self.emitter.capabilities())),
             category: wire::category_to_wire(self.emitter.category()) as i32,
             target_versions: self.emitter.target_versions(),
+            resource_schemas: self
+                .emitter
+                .resource_schemas()
+                .iter()
+                .map(wire::resource_schema_to_wire)
+                .collect(),
             operations: Some(wire::operations_to_wire(self.operations)),
         }))
     }
