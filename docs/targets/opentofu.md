@@ -1,17 +1,24 @@
-# OpenTofu
+# Target: `opentofu`
 
 <img src="../branding/logos/meridian-opentofu.svg" width="72" alt="Meridian OpenTofu plugin logo">
 
-The OpenTofu plugin compiles a `kind: Infrastructure` document into an OpenTofu
-configuration and runs it with `tofu`.
+Compiles an Infrastructure document into an OpenTofu configuration and runs it
+with `tofu`.
+
+## What it does and does not support
 
 | | |
 |---|---|
-| Target name | `opentofu` |
-| Category | Infrastructure as code |
-| Operations | compile, plan, apply, outputs |
-| Compiles to | `main.tofu.json` |
-| Runs | `tofu` (OpenTofu 1.8 or later; 1.11 or later for `ephemeral.<type>`) |
+| Resource types | OpenTofu's own: any `<provider>_<type>`, plus `data.<type>`, `ephemeral.<type>`, `module`, `variable`, `local`, `provider`, `backend` and `encryption` |
+| State and plan encryption | Yes, with `type: encryption`, checked at compile time. See [State and plan encryption](#state-and-plan-encryption) |
+| `dependsOn` | Yes, as `depends_on`, unless a reference already implies the order |
+| `notifies` | Synthetic, and blunt: the action `replace` only. See [Notify](#notify) |
+| `runtimeWhen` | No. Refused |
+| `state: absent` | No. OpenTofu removes what the configuration no longer declares, so remove the resource from the document |
+| Plan | Yes: OpenTofu's own plan |
+| Outputs | Yes |
+| Compiles to | `main.tofu.json`, which only OpenTofu reads |
+| Runs | `tofu`, version 1.8 or later; 1.11 or later for `ephemeral.<type>` |
 | Plugin binary | `meridian-target-opentofu` |
 
 ## A first document
