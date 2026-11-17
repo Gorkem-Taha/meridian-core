@@ -117,7 +117,8 @@ spec:
 - **`path`** is for a monorepo and for developing a module beside its consumer. It is
   never copied and never hashed, exactly because the point of it is that an edit takes
   effect at once. A module fetched from `git` or `oci` may not require a `path` module
-  outside its own tree: that path would mean something different on every machine.
+  at all: that path would point at the disk of whoever fetched it, and would mean
+  something different on every machine.
 - **`git`** uses the `git` program already on the machine, so every transport and
   credential that works for `git clone` works here, and Meridian stores no git
   credentials.
@@ -210,8 +211,12 @@ where the content came from (a commit or a manifest digest) and is what is asked
 re-fetch, so a moved tag cannot substitute different content silently: it fails the
 integrity check instead.
 
-Signing is not in this design. It belongs with signed plugins and the SBOM in the release
-work, where one trust model can cover both.
+Signing is not built yet. Modules will be signed and verified with the same mechanism
+the release work adds for plugins (the `meridian-signing` crate: a signature over a
+file's SHA-256, checked against the keys a project trusts), so there is one trust model
+and one set of trusted keys for both. Verification starts as optional: off until a
+project names whom it trusts. It waits for plugin signing to land, and is tracked in
+[issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68).
 
 ### 1.7 Where modules are kept
 
@@ -227,6 +232,7 @@ meridian module update [NAME]...     move pinned versions to the newest that sti
 meridian module verify               check every pinned module against its integrity hash
 meridian module list                 the pinned modules, their versions and sources
 meridian module pack [--out FILE]    write this module as the archive a registry stores
+meridian module push REPOSITORY      publish this module to a registry, under its version
 ```
 
 `--locked` is for CI: it fails if the lockfile would have to change. `compile`, `plan`
@@ -234,8 +240,12 @@ and `apply` never fetch. A run that needs a module that is not installed stops a
 to run `meridian module install`, so a run never changes what it runs half way through,
 and never reaches the network unasked.
 
-`meridian module push`, which uploads a packed module to a registry, is the second step.
-Until then `oras push` with the media types above publishes a module.
+`meridian module push REPOSITORY` publishes the module in the current directory under its
+version. **A version is published once**: pushing other content under a version the
+repository already holds is refused, because consumers who pinned it would keep the old
+content while new ones got the new. Any tool that pushes OCI artifacts with the media
+types above can publish a module too. The user-facing reference for all of this is
+[Modules](../reference/modules.md).
 
 ### 1.9 What installing a module can and cannot do
 
@@ -282,8 +292,8 @@ or reports, per document, the decision only a person can make. It never guesses.
 it exists now so that the release that introduces `v2` cannot ship without it.
 
 **`meridian version`** prints every version stream of the build: the core, the language
-versions and their states, the SDK, the plugin protocol range, and the lockfile and
-run-state schemas.
+versions and their states, the SDK, the plugin protocol range and the lockfile format.
+The run-state schema joins them when the run-state gains its version stamp.
 
 ---
 
@@ -341,15 +351,24 @@ code and checked by a test, so it cannot drift:
 | Step | Holds |
 |---|---|
 | 1 | This note. `apiVersion` table, messages, per-run deprecation warning, `meridian migrate`, `meridian version`. Protocol negotiation, the SDK check, the compatibility page |
-| 2 | Modules: manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity, the `meridian module` commands, `@module:path` |
-| 3 | `meridian module push`; composites and functions resolved from modules, once the language design defines them |
+| 2 | Modules: the crate `meridian-module` (manifest, `path`, `git` and `oci` sources, resolution, lockfile, integrity), the `meridian module` commands including `push`, `@module:path` |
+| 3 | Composites and functions resolved from modules, as the language work builds them |
 
 ## 5. Open questions
 
 - **A public index.** Deliberately absent. If one is ever wanted, it is a hosted service
   and a decision for the owner.
-- **Signing.** With the release work, so plugins and modules share one trust model.
-- **Credential helpers for registries.** Only `auths` entries are read at first.
+- **Signing.** Decided: reuse the signing and verification that the release work adds
+  for plugins, optional at first. It waits for that work to land;
+  [issue 68](https://github.com/ZanattaMichael/meridian-core/issues/68). Whether registry
+  artifacts are also verified with cosign/Sigstore is open: it would be new work with a
+  new dependency.
+- **Credentials for registries.** Only `auths` entries of the Docker configuration are read
+  at first. Decided: a module source will also be able to name a credential declared in
+  the language's model ([language expansion §12](language-expansion.md#12-credentials),
+  the `registry`, `usernamePassword` and `token` types), with the Docker configuration as
+  the ambient default. Secrets and credentials are a design and not yet code, so this
+  waits for them; [issue 69](https://github.com/ZanattaMichael/meridian-core/issues/69).
 - **Removed-field messages** ([release and versioning §6](release-and-versioning.md#6-deprecation-policy))
   need a table of removed fields per `apiVersion`. It has no entries until something is
   removed, so it lands with the first removal.
