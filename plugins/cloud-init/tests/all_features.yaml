@@ -1,0 +1,154 @@
+# Every key this target can write, in one document. It is not an example of
+# anything a person would want; it exists so cloud-init's own schema check
+# sees each of them. The golden output is testdata/all_features.user-data.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: everything
+spec:
+  target: cloud-init
+  targetHost:
+    from: inline
+    host: 192.0.2.10
+  resources:
+    - id: plain_group
+      type: group
+      params:
+        name: ops
+    - id: group_with_members
+      type: group
+      params:
+        name: admins
+        members: [root, deploy]
+    - id: full_user
+      type: user
+      params:
+        name: deploy
+        uid: 1200
+        gecos: Deployment account
+        home: /srv/deploy
+        shell: /bin/bash
+        primary_group: ops
+        groups: [admins, sudo]
+        system: false
+        lock_passwd: true
+        sudo:
+          - ALL=(ALL) NOPASSWD:/usr/bin/systemctl
+          - ALL=(ALL) NOPASSWD:/usr/bin/journalctl
+        ssh_authorized_keys:
+          - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnlyReplaceWithYourOwnPublicKey00 deploy@example.com
+      dependsOn:
+        - resource: plain_group
+    - id: system_user
+      type: user
+      params:
+        name: app
+        system: true
+        shell: /usr/sbin/nologin
+        groups: ops
+        sudo: ALL=(ALL) NOPASSWD:ALL
+    - id: plain_package
+      type: package
+      params:
+        name: nginx
+    - id: pinned_package
+      type: package
+      params:
+        name: "libc6:i386"
+        version: "2.39-0ubuntu8"
+    - id: early_file
+      type: file
+      params:
+        path: /etc/motd
+        content: "Managed by Meridian.\n"
+    - id: appended_file
+      type: file
+      params:
+        path: /etc/motd
+        content: "Second line.\n"
+        append: true
+      dependsOn:
+        - resource: early_file
+    - id: encoded_file
+      type: file
+      params:
+        path: /etc/app/blob
+        content: aGVsbG8K
+        encoding: b64
+        owner: root
+        group: adm
+        mode: "0640"
+    - id: owned_file
+      type: file
+      state: file
+      params:
+        path: /srv/deploy/.profile
+        content: |
+          # "quoted", 'single', and a: colon
+          export PATH="$HOME/bin:$PATH"
+        owner: deploy
+        mode: "644"
+    - id: late_file
+      type: file
+      params:
+        path: /etc/nginx/conf.d/app.conf
+        content: "server { listen 8080; }\n"
+        group: ops
+      dependsOn:
+        - resource: plain_package
+      notifies:
+        - resource: web
+          action: reload
+        - resource: reindex
+          action: run
+    - id: directory
+      type: file
+      state: directory
+      params:
+        path: /srv/app data
+        owner: deploy
+        group: ops
+        mode: "0750"
+    - id: removal
+      type: file
+      state: absent
+      params:
+        path: /etc/nginx/sites-enabled/default
+    - id: web
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+    - id: stopped
+      type: service
+      state: stopped
+      params:
+        name: apache2
+        enabled: false
+    - id: restarted
+      type: service
+      state: restarted
+      params:
+        name: cron
+    - id: plain_command
+      type: exec
+      params:
+        command: /usr/local/bin/warm-cache --all "two words" $NOT_EXPANDED
+    - id: reindex
+      type: exec
+      params:
+        command: /usr/local/bin/reindex
+        chdir: /srv/app data
+        creates: /var/lib/app/index
+        removes: /var/lib/app/stale
+      dependsOn:
+        - resource: directory
+    - id: shell_command
+      type: exec
+      params:
+        command: |
+          curl -fsS https://example.com/health | grep -q ok  # a pipeline
+        shell: true
+        chdir: /tmp
+        creates: /var/lib/app/healthy
