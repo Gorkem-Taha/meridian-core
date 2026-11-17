@@ -2,33 +2,62 @@
 
 <img src="../branding/logos/meridian-salt.svg" width="72" alt="Meridian Salt plugin logo">
 
-The `salt` target compiles a Meridian `ResourceSet` into a [Salt](https://saltproject.io)
-state file and then drives Salt to plan and apply it. Salt still does the work: Meridian
-writes the state file a person would have written, and runs `salt-call` or `salt-ssh`
-on it.
+Compiles a ResourceSet into a [Salt](https://saltproject.io) state file and the top
+file that assigns it, and applies it with `salt-call --local`, or with `salt-ssh` for
+another machine. Salt still does the work: Meridian writes the state file a person would
+have written and runs Salt on it.
+
+## What it does and does not support
 
 | | |
 |---|---|
-| Target name | `salt` |
-| Category | configuration management |
-| Compiles to | `states/<document>.sls`, `states/top.sls` |
+| Category | Configuration management |
+| Resource types | `package`, `file`, `service`, `user`, `group`, `exec` ([reference](../reference/resource-types.md)) |
+| `dependsOn` | Yes, as `require`. The states are also written in apply order, so the dependency graph survives into the state file intact and nothing is flattened |
+| `notifies` | Native: `watch` and `onchanges`. Actions `restart`, `reload`, `start`, `stop` on a service, `run` on an exec |
+| `runtimeWhen` | Yes: a Jinja expression over grains and pillar, which the minion evaluates when it renders the file |
+| Plan | Yes: Salt's dry run, `test=True`. Every state reports whether it would change, so a plan is never "unknown" |
+| Apply | Yes |
+| Outputs | No. Salt states produce no values for a later stage to read |
+| Compiles to | `states/<document>.sls` and `states/top.sls` |
 | Runs with | `salt-call --local` on the node itself, `salt-ssh` for another host |
-| Operations | plan, apply |
-| Notifications | native: Salt's `watch` and `onchanges` requisites |
-| Runtime conditions | yes: a Jinja test the minion evaluates when it renders the file |
-| Resource types | `exec`, `file`, `group`, `package`, `service`, `user` ([reference](../reference/resource-types.md)) |
 
-Contents: [Quick start](#quick-start) ·
+What it does not do:
+
+- **It does not talk to a Salt master.** Plan and apply are masterless. The compiled
+  files work on a master, but you copy them there yourself; see
+  [Using the files with a Salt master](#using-the-files-with-a-salt-master).
+- **No pillar, grains or custom modules are written.** A `runtimeWhen` can read the
+  node's grains and pillar; the plugin does not create them.
+- **No resource types beyond the six.** There is no passthrough to arbitrary Salt state
+  modules. Anything else is refused at compile time.
+- **`restarted` and `reloaded` are not service states.** Use a notification.
+- **It creates no infrastructure.** It configures a node that already exists, and has
+  no resource types for anything else.
+
+Contents: [Requirements](#requirements) ·
+[Quick start](#quick-start) ·
 [A worked example](#a-worked-example) ·
+[What a document compiles to](#what-a-document-compiles-to) ·
 [How resources map](#how-resources-map) ·
 [Ordering](#ordering) ·
 [Notifications](#notifications) ·
 [Runtime conditions](#runtime-conditions) ·
 [Running it](#running-it) ·
 [Using the files with a Salt master](#using-the-files-with-a-salt-master) ·
+[Warnings](#warnings) ·
 [What the plugin refuses](#what-the-plugin-refuses) ·
+[When a run fails](#when-a-run-fails) ·
 [Differences from other targets](#differences-from-other-targets) ·
 [How it is tested](#how-it-is-tested)
+
+## Requirements
+
+| Where | What |
+|---|---|
+| The machine Meridian runs on | Salt: `salt-call` for a local run, `salt-ssh` for another host. `pip install salt` provides both. Tested with Salt 3008 |
+| A host reached over SSH | An SSH server and Python 3. No Salt minion is needed |
+| To compile only | Nothing. `meridian compile` never runs Salt |
 
 ## Quick start
 
@@ -275,6 +304,30 @@ Things to notice:
 - **The top file matches the host exactly.** A bare key in a top file is a glob;
   `match: list` makes it the one minion ID and nothing else.
 
+## What a document compiles to
+
+| File | What it is |
+|---|---|
+| `states/<document>.sls` | The state file: one state per resource, in apply order, then the states that notifications need |
+| `states/top.sls` | The top file, which assigns the state file to the document's host and no other |
+
+`states/` is a Salt file root. The state is applied by the document's name:
+`state.apply web` for a document named `web`.
+
+- **The document name names the state file**, so it may hold only letters, digits, `_`
+  and `-`. Salt reads a dot in a state name as a directory, and `top` is the top file.
+  A name that cannot be used is refused, not rewritten.
+- **Each resource's `id` is its state's ID.** Salt's reports, and requisites between
+  states, use it as written. The IDs `include`, `extend` and `exclude` mean something
+  else at the top of a state file and are refused.
+- **The first line says how Salt must read the file.** `#!yaml` for plain YAML,
+  `#!jinja|yaml` when a resource has a `runtimeWhen`. See
+  [Runtime conditions](#runtime-conditions).
+- **Arguments are in a fixed order**: `name`, then the rest alphabetically, then
+  `require`, `watch` and `onchanges`. The same document always compiles to the same
+  bytes.
+- **The host must be usable as a minion ID**: not empty, and without spaces or commas.
+
 ## How resources map
 
 Every resource type, state and param the plugin accepts is listed here. Anything else is
@@ -449,8 +502,20 @@ nginx_conf (file.managed): would change: The file /etc/nginx/nginx.conf is set t
 legacy_user (user.absent): ok: User old is not present
 ```
 
-If any state fails, the run fails. The error names each failed state with Salt's comment,
-and for an apply lists what had already changed.
+How the result is read:
+
+- The plugin asks Salt for its result as JSON and reads every state from it, in the
+  order Salt ran them. Salt prints that result once, at the end, so the lines above
+  appear when the run finishes. Anything Salt writes to its error stream is relayed as
+  it happens.
+- **A plan** counts a state as a change when Salt says it would change. **An apply**
+  counts a state as a change when Salt reports it changed something.
+- A change is reported as `delete` for `file.absent`, `user.absent`, `group.absent` and
+  `pkg.removed`, and as `update` for everything else. Salt does not say whether a
+  state created something or altered it.
+- A state skipped by a false `runtimeWhen`, by `creates` or `removes`, or because
+  nothing it reacts to changed, is reported as `ok` and is not a change.
+- If any state fails, the run fails. See [When a run fails](#when-a-run-fails).
 
 ### Where it runs
 
@@ -508,15 +573,39 @@ salt 'web01.example.com' state.apply web test=True
 has a top file, merge the entry into it by hand; do not overwrite it. `meridian plan`
 and `meridian apply` do not talk to a master.
 
+## Warnings
+
+A warning does not stop a compile; it is printed beside the result:
+
+```
+web (ResourceSet, target salt on localhost)
+  warning: salt: old: param "uid" means nothing for state "absent" and was left out
+  compiled 2 files into build/web
+```
+
+This target has one:
+
+| Warning | When |
+|---|---|
+| `param "<name>" means nothing for state "absent" and was left out` | A `file`, `user` or `group` is `absent` and still carries params that describe it, such as `mode` or `uid` |
+
 ## What the plugin refuses
 
-A refusal names the resource, the rule and the line in your document.
+A refusal stops the compile. It names the resource, the rule and the line in your
+document, for example:
+
+```
+web (ResourceSet, target salt on localhost)
+  FAILED: site.yaml:11:7: salt: resource "rotate" [shell-required]: the command contains '*', which a shell gives a meaning to, and Salt always runs a command through a shell; set param "shell" to true to say that is intended
+```
+
+Rules about what you wrote:
 
 | Rule | When |
 |---|---|
 | `unsupported-resource-type` | The type is not one of the six above |
 | `unsupported-param` | The type has no such param |
-| `param-conflicts-with-state` | The param belongs to another state, such as `content` on a directory |
+| `param-conflicts-with-state` | The param belongs to another state, such as `content` on a directory or `version` on a package that is `latest` |
 | `missing-param` | A required param is absent |
 | `empty-param` | A param has no value |
 | `unsupported-state` | The state is not in the type's table, or an `exec` has one |
@@ -525,10 +614,43 @@ A refusal names the resource, the rule and the line in your document.
 | `invalid-runtime-condition` | `runtimeWhen` is blank, spans lines, or holds a Jinja delimiter |
 | `invalid-sls-name` | The document name holds something other than letters, digits, `_` and `-`; Salt reads a dot as a directory |
 | `reserved-sls-name` | The document is named `top` |
-| `invalid-host`, `missing-host` | The host is empty, or holds a space or comma and cannot be a minion ID |
+| `missing-name` | The document has no name |
+| `missing-host` | The document has no host |
+| `invalid-host` | The host holds a space or a comma and cannot be a minion ID |
+| `empty-id`, `multiline-id` | A resource's `id` is blank or spans lines |
 | `reserved-id` | A resource is named `include`, `extend` or `exclude`, which Salt reads for itself |
-| `duplicate-state-id` | A resource has the name a reaction needs, such as `reload nginx_svc` |
-| `cycle`, `ordering-violated` | The tree's order contradicts its own dependencies; this guards the core, not you |
+| `duplicate-state-id` | A resource has the name a notification's state needs, such as `reload nginx_svc` |
+
+Rules that guard Meridian itself. The core checks these things before a plugin sees a
+document, so you should never meet them; if you do, it is a bug to report:
+
+| Rule | When |
+|---|---|
+| `cycle`, `ordering-violated` | The order the plugin was handed contradicts the document's own dependencies |
+| `unknown-dependency`, `unknown-notify-target`, `unknown-notifier` | A dependency or notification names a resource that is not in the document |
+| `missing-requisite`, `self-requisite` | A compiled state requires or watches a state that is not in the file, or itself |
+| `missing-function` | A compiled state has no function, or no `name` (also reported as `missing-name`) |
+| `conditional-reaction`, `unbound-reaction` | A notification's state carries a condition, or reacts to nothing |
+
+## When a run fails
+
+A failed plan or apply reports the command that ran, its exit status, and what Salt said.
+
+| Message | What happened | What to do |
+|---|---|---|
+| `could not run salt-call: it is not installed, or not on the PATH…` | Salt is not installed where Meridian runs | Install Salt, or set `MERIDIAN_SALT_CALL` / `MERIDIAN_SALT_SSH` |
+| `salt-call reported a failed state` (or `N failed states`) | Salt ran and one or more states failed. Each is listed with Salt's comment. For an apply, what had already changed is listed too | Fix the cause Salt names. A state that says `One or more requisite failed` only failed because one it requires did |
+| `salt-call could not compile the state file` | Salt could not render or compile the file. Almost always a `runtimeWhen` that is not a valid Jinja expression | Correct the expression; Salt's message has the line |
+| `salt-ssh could not run on the host` | SSH could not connect or sign in, or Python is missing on the host | Check the host, and the sign-in options in `MERIDIAN_SALT_ARGS` |
+| `salt-ssh needs a host to connect to, and the document names none` | The SSH transport was forced for a document with no host | Give the document a host, or unset `MERIDIAN_SALT_TRANSPORT` |
+| `salt-call failed` | Salt exited without printing a result, for example on an option it does not know | Read Salt's output, which is included; check `MERIDIAN_SALT_ARGS` |
+| `salt-call printed something that is not its JSON result` | Something else wrote to Salt's output | Remove options from `MERIDIAN_SALT_ARGS` that change the output format |
+| `the artifact has no states/top.sls and one state file beside it…` | The files being run were not compiled by this plugin | Compile the document again |
+
+Messages name `salt-ssh` in place of `salt-call` when that is what ran.
+
+A permission error from `salt-call`, such as being unable to write under `/var/cache/salt`,
+means it needs root or a configuration directory of its own; see [Settings](#settings).
 
 ## Differences from other targets
 
@@ -554,7 +676,7 @@ because the tools do:
 - `plugins/salt/tests/compile.rs` compiles the shared fixtures and this guide's example
   and compares them with golden files in `plugins/salt/testdata`, then checks the mapping
   and every refusal. It also checks that this page shows exactly what the example
-  compiles to.
+  compiles to, and that every rule the code can refuse with is documented here.
 - `plugins/salt/tests/run.rs` drives the runner against stand-ins for `salt-call` and
   `salt-ssh` that replay results recorded from Salt.
 - `plugins/salt/tests/boundary.rs` starts the real plugin binary and compiles, plans and

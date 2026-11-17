@@ -23,7 +23,7 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
+| declared relationships | `puppet`, `salt`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`). Salt also runs states in file order, so its states are written in order as well |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 
@@ -48,8 +48,9 @@ notifier first.
 This is where tools differ most, and where Meridian is strict.
 
 **Native** means the tool has its own mechanism. Ansible's handlers, Puppet's
-`notify`, Chef's `notifies`, DscPipelineRunner's `notify`, and Compose's
-`depends_on` with `restart: true` are native.
+`notify`, Chef's `notifies`, Salt's `watch` and `onchanges` requisites,
+DscPipelineRunner's `notify`, and Compose's `depends_on` with `restart: true`
+are native.
 
 **Synthetic** means the tool has no such mechanism, and Meridian builds the
 reaction from something the tool does have. It is real, and it is visible in the
@@ -69,7 +70,9 @@ look like.
 **The action matters.** A notify names an action, and a target accepts only the
 actions its tool can really perform on that kind of resource. Puppet can restart
 a service on refresh but cannot reload it, so `action: reload` is refused on
-Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
+Puppet with the reason, not turned into a restart. Salt restarts and reloads a
+service through the state that keeps it running, so either action aimed at a
+service whose state is `stopped` is refused. Kubernetes can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. CloudFormation and Bicep have no way to react to a change at all,
 and refuse every notify.

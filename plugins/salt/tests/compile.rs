@@ -92,6 +92,44 @@ fn the_guides_example_compiles_to_what_the_guide_shows() {
     }
 }
 
+/// Every rule the plugin can refuse with is in the guide, so a refusal a
+/// person meets is one they can look up.
+#[test]
+fn the_guide_documents_every_refusal_rule() {
+    let root = repo_root();
+    let guide = std::fs::read_to_string(root.join("docs/targets/salt.md")).unwrap();
+    let mut rules = std::collections::BTreeSet::new();
+    for file in ["transform.rs", "sort.rs", "validate.rs"] {
+        let source = std::fs::read_to_string(root.join("plugins/salt/src").join(file)).unwrap();
+        // A rule is a kebab-case string literal on a line of its own, or
+        // the first argument of a call that builds a refusal.
+        for line in source.lines() {
+            let line = line.trim();
+            for prefix in ["\"", "fail(\"", "fail_document(\"", "rule: \""] {
+                let Some(rest) = line.strip_prefix(prefix) else {
+                    continue;
+                };
+                let Some(end) = rest.find('"') else { continue };
+                let word = &rest[..end];
+                let after = rest[end + 1..].trim_start_matches(".to_owned()");
+                if word.contains('-')
+                    && word.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+                    && matches!(after, "," | "")
+                {
+                    rules.insert(word.to_owned());
+                }
+            }
+        }
+    }
+    assert!(rules.len() >= 25, "only found {rules:?}");
+    for rule in &rules {
+        assert!(
+            guide.contains(&format!("`{rule}`")),
+            "docs/targets/salt.md does not document the rule {rule}"
+        );
+    }
+}
+
 #[test]
 fn compiling_is_deterministic() {
     let graph = fixture("web_stack", "salt");

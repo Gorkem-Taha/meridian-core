@@ -1,7 +1,8 @@
 # The configuration management resource types
 
-The `ansible`, `puppet` and `chef` targets share six resource types. A resource
-written with them compiles for any of the three, within what each tool can do.
+The `ansible`, `puppet`, `chef` and `salt` targets share six resource types. A
+resource written with them compiles for any of the four, within what each tool
+can do.
 Anything outside these tables is refused, never dropped: a param a target does
 not take, a state it cannot express, an action it cannot perform.
 
@@ -12,7 +13,7 @@ Other targets do not use these types. Their resources are the tool's own; see
 
 | | |
 |---|---|
-| Params | `name` (required) |
+| Params | `name` (required). Salt also takes `version`, with `present` only |
 | States | `present` (default), `absent`, `latest` |
 | Can be notified | no |
 
@@ -29,10 +30,11 @@ Other targets do not use these types. Their resources are the tool's own; see
 |---|---|
 | Params | `name` (required), `enabled` (true or false: start at boot) |
 | States | `running` (default), `started` (the same), `stopped`. Ansible also takes `restarted` and `reloaded` |
-| Can be notified | Ansible and Chef: `restart`, `reload`, `start`, `stop`. Puppet: `restart` (or `refresh`) only |
+| Can be notified | Ansible, Chef and Salt: `restart`, `reload`, `start`, `stop`. Puppet: `restart` (or `refresh`) only |
 
-Puppet and Chef describe a state a node is left in, and "restarted" is not one,
-so they refuse it as a state. To restart a service when something changes, use
+Puppet, Chef and Salt describe a state a node is left in, and "restarted" is not
+one, so they refuse it as a state. Salt also refuses `restart` and `reload`
+aimed at a service whose state is `stopped`. To restart a service when something changes, use
 `notifies`.
 
 ```yaml
@@ -53,7 +55,9 @@ so they refuse it as a state. To restart a service when something changes, use
 | Can be notified | no |
 
 Write `mode` as a quoted string (`"0644"`), so it is not read as a number. A
-directory has no `content`.
+directory has no `content`. On Salt a `file` with no `content` creates the file
+if it is missing, a directory is created with its parents, and the attributes of
+an absent file are left out with a warning.
 
 ```yaml
 - id: app_conf
@@ -75,7 +79,8 @@ directory has no `content`.
 
 `groups` are supplementary groups. On Chef, whose `user` resource has a primary
 group only, each one becomes a separate membership block that adds the user to
-the group and leaves its other members alone.
+the group and leaves its other members alone. On Salt the list is complete: the
+user is removed from any group not in it.
 
 ## `group`
 
@@ -92,13 +97,17 @@ converge on.
 
 | | |
 |---|---|
-| Params | `command` (required), `chdir`, `creates` (skip when this path exists), `shell` (true to run through a shell). Ansible also takes `removes` |
+| Params | `command` (required), `chdir`, `creates` (skip when this path exists), `shell` (true to run through a shell). Ansible and Salt also take `removes` (run only when this path exists) |
 | States | none |
 | Can be notified | `run` |
 
 An `exec` runs on every apply unless `creates` says it is already done, so a
 plan for a document with a bare `exec` always shows a change. A notified `exec`
 runs in its place in the order, and once more when it is notified.
+
+Salt always runs a command through a shell. So that a document means the same
+on every target, Salt refuses a command that holds shell syntax unless the
+resource says `shell: true`; see [the Salt page](../targets/salt.md#exec).
 
 ```yaml
 - id: warm_cache
@@ -115,4 +124,4 @@ runs in its place in the order, and once more when it is notified.
 |---|---|---|
 | `dependsOn` | order | every target ([how](../concepts/dependencies.md)) |
 | `notifies` | react to a change | where the tool can ([matrix](capability-matrix.md)) |
-| `runtimeWhen` | a condition checked on the node during the apply, written in the tool's own language | Ansible (a `when:` expression), Chef (the Ruby of an `only_if` guard). Puppet refuses it: a catalog is compiled before it reaches the node |
+| `runtimeWhen` | a condition checked on the node during the apply, written in the tool's own language | Ansible (a `when:` expression), Chef (the Ruby of an `only_if` guard), Salt (a Jinja expression over grains and pillar). Puppet refuses it: a catalog is compiled before it reaches the node |
