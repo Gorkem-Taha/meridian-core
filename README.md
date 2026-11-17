@@ -45,6 +45,15 @@ decision and the order of work are in the
 does not change, so the Go Ansible and Puppet plugins keep working behind a Rust host, and
 the Go core stays in the repository until the Rust core reproduces its golden files.
 
+The Rust core is a Cargo workspace under `crates/`. Ported so far:
+
+- `crates/meridian-ir` — parsing and validation, the counterpart of `internal/ir`
+
+```
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+```
+
 ### Building and running the target plugins
 
 ```
