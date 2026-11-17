@@ -400,7 +400,7 @@ fn write_secret(path: &Path, text: &str) -> std::io::Result<()> {
 /// followed, so the plugins are found wherever the command was started from.
 fn own_directory() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let exe = std::fs::canonicalize(&exe).unwrap_or(exe);
+    let exe = meridian_sdk::tool::absolute_path(&exe);
     exe.parent().map(Path::to_path_buf)
 }
 

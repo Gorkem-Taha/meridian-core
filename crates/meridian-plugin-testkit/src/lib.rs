@@ -203,6 +203,22 @@ fn place_stand_in(dir: &Path, name: &str, script: &str) -> PathBuf {
     // The name is extended, not given a new extension: `docker.real` must
     // become `docker.real.exe` and its script `docker.real.sh`.
     let with = |extension: &str| dir.join(format!("{name}.{extension}"));
+    // The launcher passes the tool's arguments in the environment; these
+    // lines make them the script's own. `pwd` answers with the directory as
+    // Windows names it, which is how the code under test names it too.
+    let script = script.replacen(
+        "#!/bin/sh\n",
+        "#!/bin/sh\n\
+         set --\n\
+         meridian_arg=1\n\
+         while [ \"$meridian_arg\" -le \"${MERIDIAN_STAND_IN_ARGC:-0}\" ]; do\n\
+         \x20 eval \"set -- \\\"\\$@\\\" \\\"\\$MERIDIAN_STAND_IN_ARG_$meridian_arg\\\"\"\n\
+         \x20 meridian_arg=$((meridian_arg + 1))\n\
+         done\n\
+         unset meridian_arg\n\
+         pwd() { cygpath -w \"$(command pwd)\"; }\n",
+        1,
+    );
     fs::write(with("sh"), script).expect("writing the stand-in's script");
     let path = with("exe");
     // A stand-in a test replaces may still be running; one that is already

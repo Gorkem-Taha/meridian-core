@@ -119,7 +119,8 @@ fn compile_writes_each_documents_files_and_applies_nothing() {
     let out = meridian(&dir, &["compile", "site.yaml", "--out", "build"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(
-        stdout(&out),
+        // The directory is printed as the system writes paths.
+        stdout(&out).replace('\\', "/"),
         "network (Infrastructure, target fake)\n  compiled 4 files into build/network\n\
          web (ResourceSet, target fake)\n  deferred: needs the output \"address\" of Infrastructure \"network\", \
          which has not been applied yet\n"

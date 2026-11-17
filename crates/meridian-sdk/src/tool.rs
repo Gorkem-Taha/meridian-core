@@ -72,6 +72,37 @@ fn is_contained(name: &str) -> bool {
             .all(|c| matches!(c, Component::Normal(_)))
 }
 
+/// The absolute form of a path, as a tool can be given it.
+///
+/// Links are resolved when the path exists; when it does not, the path is
+/// only made absolute. On Windows the result never carries the `\\?\` prefix
+/// that resolving a path adds there: Windows itself accepts that form, but
+/// most command-line tools do not, and a `file://` URL built from it is not
+/// one.
+pub fn absolute_path(path: &Path) -> PathBuf {
+    let resolved = path
+        .canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_owned());
+    without_verbatim_prefix(resolved)
+}
+
+/// `\\?\C:\dir` as `C:\dir`, and `\\?\UNC\server\share` as `\\server\share`.
+/// Any other path, including every path on another system, is returned as is.
+fn without_verbatim_prefix(path: PathBuf) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path;
+    };
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    match text.strip_prefix(r"\\?\") {
+        // Only a drive path has a plain form; `\\?\Volume{...}` does not.
+        Some(rest) if rest.as_bytes().get(1) == Some(&b':') => PathBuf::from(rest),
+        _ => path,
+    }
+}
+
 /// One invocation of a command-line tool.
 #[derive(Clone, Debug)]
 pub struct Tool {
@@ -552,6 +583,27 @@ mod tests {
             .unwrap();
         assert_eq!(finished.stdout, "{\"a\": 1}\n");
         assert!(log.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_absolute_path_never_carries_the_verbatim_prefix() {
+        for (given, want) in [
+            (r"\\?\C:\work\dir", r"C:\work\dir"),
+            (r"\\?\UNC\server\share\dir", r"\\server\share\dir"),
+            (r"\\?\Volume{b75e2c83}\dir", r"\\?\Volume{b75e2c83}\dir"),
+            (r"C:\work", r"C:\work"),
+            ("/var/lib/meridian", "/var/lib/meridian"),
+        ] {
+            assert_eq!(
+                without_verbatim_prefix(PathBuf::from(given)),
+                PathBuf::from(want)
+            );
+        }
+        let here = absolute_path(Path::new("."));
+        assert!(here.is_absolute());
+        assert!(!here.to_string_lossy().starts_with(r"\\?\"));
+        // A path that does not exist is still made absolute.
+        assert!(absolute_path(Path::new("no-such-directory-here")).is_absolute());
     }
 
     #[test]

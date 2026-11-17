@@ -33,13 +33,20 @@ fn main() -> ExitCode {
     };
     let script = program.with_extension("sh");
     let shell = shell();
-    let status = Command::new(&shell)
+    // The arguments travel in the environment and not on the command line.
+    // The shell is not a Windows program at heart, and reads a Windows
+    // command line by rules of its own: a quotation mark inside an argument
+    // is lost, and a `*` is expanded. The script's first lines, which the
+    // test kit writes, put the arguments back as they were.
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    let mut command = Command::new(&shell);
+    command
         .arg(&script)
-        .args(std::env::args_os().skip(1))
-        // An argument is the tool's argument, not a pattern for the shell's
-        // runtime to expand before the script sees it.
-        .env("MSYS", "noglob")
-        .status();
+        .env("MERIDIAN_STAND_IN_ARGC", arguments.len().to_string());
+    for (index, argument) in arguments.iter().enumerate() {
+        command.env(format!("MERIDIAN_STAND_IN_ARG_{}", index + 1), argument);
+    }
+    let status = command.status();
     match status {
         Ok(status) => ExitCode::from(status.code().unwrap_or(1).clamp(0, 255) as u8),
         Err(err) => {
