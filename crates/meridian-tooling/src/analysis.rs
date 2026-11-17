@@ -1214,8 +1214,8 @@ pub fn references(workspace: &Workspace, catalog: &Catalog, name: &str, pos: Pos
     }
     // `${id.` and `${id}` anywhere in the document.
     if let Some(doc) = file.file.docs.get(cursor.doc) {
-        for line_no in doc.first_line..doc.end_line {
-            let line = &file.file.lines[line_no];
+        let lines = file.file.lines.iter().enumerate();
+        for (line_no, line) in lines.take(doc.end_line).skip(doc.first_line) {
             let mut from = 0;
             while let Some(found) = line[from..].find("${") {
                 let start = from + found + 2;
