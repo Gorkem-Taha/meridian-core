@@ -175,7 +175,10 @@ fn a_release_is_planned_installed_read_and_upgraded() {
     let applied = apply(&dir, &first);
     assert_eq!(shown(&applied.changes), shown(&planned.changes));
     assert_eq!(output(&applied, "ready"), &Value::Int(1));
-    assert_eq!(output(&applied, "deployment"), &text("meridian-helm-test-web"));
+    assert_eq!(
+        output(&applied, "deployment"),
+        &text("meridian-helm-test-web")
+    );
     // What the author wrote is what the cluster holds, character for
     // character.
     assert_eq!(
@@ -201,7 +204,12 @@ fn a_release_is_planned_installed_read_and_upgraded() {
     assert!(plan(&dir, &first).in_sync());
     assert!(apply(&dir, &first).changes.is_empty());
     let history = Tool::new("helm")
-        .args(["history", "meridian-helm-test", "--namespace", "meridian-helm-test"])
+        .args([
+            "history",
+            "meridian-helm-test",
+            "--namespace",
+            "meridian-helm-test",
+        ])
         .args(["--output", "json"])
         .capture_stdout()
         .run_ok("helm history failed", &NoLog)

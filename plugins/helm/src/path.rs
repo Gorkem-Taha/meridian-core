@@ -161,9 +161,16 @@ mod tests {
         );
         assert_eq!(
             parse(".metadata.annotations[\"example.com/owner\"]").unwrap(),
-            [key("metadata"), key("annotations"), key("example.com/owner")]
+            [
+                key("metadata"),
+                key("annotations"),
+                key("example.com/owner")
+            ]
         );
-        assert_eq!(parse(".data['tls.crt']").unwrap(), [key("data"), key("tls.crt")]);
+        assert_eq!(
+            parse(".data['tls.crt']").unwrap(),
+            [key("data"), key("tls.crt")]
+        );
     }
 
     #[test]
@@ -189,6 +196,9 @@ mod tests {
             &Value::Int(20)
         );
         assert_eq!(lookup(&root, &parse(".a.c.d").unwrap()).unwrap_err(), "a.c");
-        assert_eq!(lookup(&root, &parse(".a.b[5]").unwrap()).unwrap_err(), "a.b[5]");
+        assert_eq!(
+            lookup(&root, &parse(".a.b[5]").unwrap()).unwrap_err(),
+            "a.b[5]"
+        );
     }
 }

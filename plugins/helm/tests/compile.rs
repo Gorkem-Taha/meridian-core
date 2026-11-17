@@ -46,7 +46,8 @@ fn refusal(spec: &str) -> CompileError {
     compile_named("app", spec).expect_err("the document should be refused")
 }
 
-const CONFIG: &str = "    - id: settings\n      type: v1/ConfigMap\n      params:\n        data: {mode: fast}\n";
+const CONFIG: &str =
+    "    - id: settings\n      type: v1/ConfigMap\n      params:\n        data: {mode: fast}\n";
 
 const VALUES: &str = "    - id: values\n      type: values\n      params:\n        replicas: 3\n        big: 5000000\n        ratio: 0.5\n        debug: true\n        image: {repository: nginx, tag: \"1.27\"}\n        hosts: [a.example.com, b.example.com]\n        my-key: {inner: x}\n        resources: {limits: {memory: 64Mi}}\n";
 
@@ -94,8 +95,8 @@ fn an_object_is_one_template_named_after_its_id() {
 #[test]
 fn an_object_without_a_name_is_named_after_its_id() {
     let text = file(
-        "  resources:\n    - id: Web_Config\n      type: v1/ConfigMap\n      params:\n        metadata: {labels: {a: b}}\n        data: {k: v}\n",
-        "chart/templates/Web_Config.yaml",
+        "  resources:\n    - id: web_config\n      type: v1/ConfigMap\n      params:\n        metadata: {labels: {a: b}}\n        data: {k: v}\n",
+        "chart/templates/web_config.yaml",
     );
     assert!(
         text.contains("metadata:\n  name: web-config\n  labels:\n    a: b\n"),
@@ -167,7 +168,7 @@ fn the_release_and_the_chart_can_be_read() {
 #[test]
 fn a_reference_to_an_object_is_its_name() {
     let spec = format!(
-        "  resources:\n    - id: named\n      type: v1/ConfigMap\n      params:\n        metadata: {{name: \"${{release.name}}-config\"}}\n        data: {{k: v}}\n    - id: release\n      type: release\n      params: {{name: shop}}\n{CONFIG}    - id: user\n      type: v1/ConfigMap\n      params:\n        data:\n          plain: ${{settings}}\n          long: ${{settings.metadata.name}}\n          templated: ${{named}}\n          inside: cm/${{named}}/x\n"
+        "  resources:\n    - id: named\n      type: v1/ConfigMap\n      params:\n        metadata: {{name: \"${{release.name}}-config\"}}\n        data: {{k: v}}\n    - id: release\n      type: release\n      params: {{name: shop}}\n{CONFIG}    - id: user\n      type: v1/ConfigMap\n      params:\n        data:\n          plain: ${{settings}}\n          long: ${{settings.metadata.name}}\n          templated: ${{named}}\n          inside: cm/${{named}}/x\n          where: ${{named.metadata.namespace}}\n          host: ${{named}}.${{named.metadata.namespace}}.svc\n"
     );
     let text = file(&spec, "chart/templates/user.yaml");
     for line in [
@@ -175,6 +176,9 @@ fn a_reference_to_an_object_is_its_name() {
         "  long: settings\n",
         "  templated: {{ printf \"%s-config\" .Release.Name | toRawJson }}\n",
         "  inside: {{ printf \"cm/%s-config/x\" .Release.Name | toRawJson }}\n",
+        // An object with no namespace of its own lands in the release's.
+        "  where: {{ .Release.Namespace | toRawJson }}\n",
+        "  host: {{ printf \"%s-config.%s.svc\" .Release.Name .Release.Namespace | toRawJson }}\n",
     ] {
         assert!(text.contains(line), "{line} is not in\n{text}");
     }
@@ -228,9 +232,8 @@ fn a_restart_notification_becomes_a_checksum_on_the_pod_template() {
     let warnings: Vec<String> = emitted.warnings.iter().map(|w| w.to_string()).collect();
     assert_eq!(warnings.len(), 2);
     assert!(
-        warnings
-            .iter()
-            .any(|w| w.starts_with("helm: web: restarts by rolling its pods whenever \"settings\" changes")),
+        warnings.iter().any(|w| w
+            .starts_with("helm: web: restarts by rolling its pods whenever \"settings\" changes")),
         "{warnings:?}"
     );
 }
@@ -357,7 +360,11 @@ fn a_map_cannot_be_part_of_text_and_a_key_cannot_be_a_reference() {
         "  resources:\n{VALUES}    - id: c\n      type: v1/ConfigMap\n      params:\n        data: {{k: \"limits=${{values.resources}}\"}}\n"
     ));
     assert_eq!(err.rule, "invalid-reference");
-    assert!(err.msg.contains("puts a mapping inside text"), "{}", err.msg);
+    assert!(
+        err.msg.contains("puts a mapping inside text"),
+        "{}",
+        err.msg
+    );
 
     let err = refusal(&format!(
         "  resources:\n{VALUES}    - id: c\n      type: v1/ConfigMap\n      params:\n        data: {{\"${{values.replicas}}\": v}}\n"
@@ -381,7 +388,8 @@ fn settings_and_values_are_literal() {
 
 #[test]
 fn a_type_that_is_not_an_object_is_refused() {
-    let err = refusal("  resources:\n    - id: web\n      type: Deployment\n      params: {spec: {}}\n");
+    let err =
+        refusal("  resources:\n    - id: web\n      type: Deployment\n      params: {spec: {}}\n");
     assert_eq!(err.rule, "unsupported-resource-type");
     assert!(err.msg.contains("apps/v1/Deployment"), "{}", err.msg);
 }
@@ -512,7 +520,11 @@ fn an_overlay_becomes_a_kustomization_over_what_helm_renders() {
 
 #[test]
 fn an_overlay_cannot_name_other_files() {
-    for field in ["resources: [extra.yaml]", "helmCharts: [{name: x}]", "kind: Kustomization"] {
+    for field in [
+        "resources: [extra.yaml]",
+        "helmCharts: [{name: x}]",
+        "kind: Kustomization",
+    ] {
         let err = refusal(&format!(
             "  resources:\n{CONFIG}    - id: overlay\n      type: kustomization\n      params:\n        {field}\n"
         ));
@@ -547,7 +559,9 @@ fn outputs_are_split_into_what_is_known_and_what_the_cluster_knows() {
 fn an_output_that_refers_to_nothing_is_refused() {
     let err = compile_named(
         "app",
-        &format!("  resources:\n{CONFIG}  outputs:\n    - name: x\n      value: ${{nothing.status}}\n"),
+        &format!(
+            "  resources:\n{CONFIG}  outputs:\n    - name: x\n      value: ${{nothing.status}}\n"
+        ),
     )
     .unwrap_err();
     assert_eq!(err.rule, "invalid-reference");

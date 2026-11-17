@@ -146,7 +146,10 @@ spec:
         number: ${values.big}
 "#;
     let artifact = Helm
-        .emit(&graph_from_text("tricky.yaml", document, "helm"), &Data::new())
+        .emit(
+            &graph_from_text("tricky.yaml", document, "helm"),
+            &Data::new(),
+        )
         .unwrap_or_else(|e| panic!("{e}"))
         .artifact;
     let rendered = render(&dir, &artifact);

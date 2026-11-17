@@ -287,8 +287,9 @@ impl HelmRunner {
         // Kustomize only reads files under the overlay's own directory.
         let write = |path: std::path::PathBuf, text: &str| {
             if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| RunError::new(format!("could not create {}: {e}", parent.display())))?;
+                fs::create_dir_all(parent).map_err(|e| {
+                    RunError::new(format!("could not create {}: {e}", parent.display()))
+                })?;
             }
             fs::write(&path, text)
                 .map_err(|e| RunError::new(format!("could not write {}: {e}", path.display())))
@@ -301,10 +302,9 @@ impl HelmRunner {
             "release {}: applying the Kustomize overlay",
             release.name
         ));
-        let (program, leading) = self
-            .kustomize
-            .split_first()
-            .ok_or_else(|| RunError::new("no command is configured to build a Kustomize overlay"))?;
+        let (program, leading) = self.kustomize.split_first().ok_or_else(|| {
+            RunError::new("no command is configured to build a Kustomize overlay")
+        })?;
         let patched = Tool::new(program)
             .args(leading.iter().cloned())
             .arg(KUSTOMIZE_DIR)
@@ -344,7 +344,11 @@ impl HelmRunner {
     /// been installed.
     fn status(&self, context: &RunContext, release: &Release) -> Result<Option<String>, RunError> {
         let finished = self
-            .helm(context, release, &["status", &release.name, "--output", "json"])
+            .helm(
+                context,
+                release,
+                &["status", &release.name, "--output", "json"],
+            )
             .capture_stdout()
             .run(&NoLog)?;
         if !finished.success() {
@@ -406,7 +410,12 @@ impl HelmRunner {
     }
 
     /// Reads one object from the cluster.
-    fn object(&self, context: &RunContext, release: &Release, target: &Target) -> Result<Value, RunError> {
+    fn object(
+        &self,
+        context: &RunContext,
+        release: &Release,
+        target: &Target,
+    ) -> Result<Value, RunError> {
         // A kind alone can name two things once a cluster has custom
         // resources, so a grouped kind is asked for in full.
         let resource = match target.api_version.split_once('/') {
@@ -436,7 +445,11 @@ impl HelmRunner {
         })
     }
 
-    fn read_outputs(&self, context: &RunContext, release: &Release) -> Result<Vec<Output>, RunError> {
+    fn read_outputs(
+        &self,
+        context: &RunContext,
+        release: &Release,
+    ) -> Result<Vec<Output>, RunError> {
         let mut objects: BTreeMap<&str, Value> = BTreeMap::new();
         let mut outputs = Vec::with_capacity(release.outputs.len());
         for spec in &release.outputs {
@@ -540,7 +553,12 @@ impl Runner for HelmRunner {
             let mut upgrade = self.helm(
                 context,
                 release,
-                &["upgrade", "--install", &release.name, preview.rendered.chart],
+                &[
+                    "upgrade",
+                    "--install",
+                    &release.name,
+                    preview.rendered.chart,
+                ],
             );
             if release.create_namespace {
                 upgrade = upgrade.arg("--create-namespace");
@@ -567,12 +585,9 @@ impl Runner for HelmRunner {
     }
 
     fn outputs(&self, context: &RunContext) -> Result<Vec<Output>, RunError> {
-        let settings =
-            fs::read_to_string(context.work_dir.join(RELEASE_PATH)).map_err(|_| {
-                RunError::new(
-                    "nothing has been applied for this document yet, so it has no outputs",
-                )
-            })?;
+        let settings = fs::read_to_string(context.work_dir.join(RELEASE_PATH)).map_err(|_| {
+            RunError::new("nothing has been applied for this document yet, so it has no outputs")
+        })?;
         self.read_outputs(context, &Release::read(&settings)?)
     }
 }

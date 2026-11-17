@@ -1,0 +1,62 @@
+name: helm
+
+# The Helm plugin against the real helm and kustomize, and against a real
+# cluster. The rust workflow already runs the plugin's other tests, which
+# need nothing installed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - plugins/helm/**
+      - examples/helm/**
+      - crates/meridian-sdk/**
+      - crates/meridian-yaml/**
+      - crates/meridian-plugin-testkit/**
+      - Cargo.lock
+      - .github/workflows/helm.yml
+  pull_request:
+    paths:
+      - plugins/helm/**
+      - examples/helm/**
+      - crates/meridian-sdk/**
+      - crates/meridian-yaml/**
+      - crates/meridian-plugin-testkit/**
+      - Cargo.lock
+      - .github/workflows/helm.yml
+
+permissions:
+  contents: read
+
+jobs:
+  real-tools:
+    name: real helm, kustomize and a kind cluster
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      - name: Show the tools
+        run: |
+          helm version --short
+          kustomize version
+          kubectl version --client
+          kind version
+
+      - name: Render with the real helm and kustomize
+        run: cargo test -p meridian-target-helm --locked --test real -- --ignored
+
+      - name: Create a cluster
+        run: kind create cluster --name meridian --wait 180s
+
+      - name: Plan, apply and read outputs against the cluster
+        run: cargo test -p meridian-target-helm --locked --test cluster -- --ignored
+
+      - name: Show the cluster when something failed
+        if: failure()
+        run: |
+          helm list --all-namespaces --all
+          kubectl get all,configmaps --all-namespaces
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp | tail -40

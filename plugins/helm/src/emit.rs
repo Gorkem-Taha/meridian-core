@@ -29,7 +29,10 @@ pub(crate) fn serialise(chart: &Chart) -> BTreeMap<String, String> {
     let mut about = vec![
         ("apiVersion".to_owned(), Yaml::str("v2")),
         ("name".to_owned(), Yaml::str(&chart.chart.name)),
-        ("description".to_owned(), Yaml::str(&chart.chart.description)),
+        (
+            "description".to_owned(),
+            Yaml::str(&chart.chart.description),
+        ),
         ("type".to_owned(), Yaml::str("application")),
         ("version".to_owned(), Yaml::str(&chart.chart.version)),
     ];
@@ -122,12 +125,7 @@ fn yaml(node: &Node, actions: &mut Vec<String>) -> Yaml {
 fn release(chart: &Chart) -> Value {
     let text = |s: &str| Value::String(s.to_owned());
     let map = |pairs: Vec<(&str, Value)>| {
-        Value::Map(
-            pairs
-                .into_iter()
-                .map(|(k, v)| (k.to_owned(), v))
-                .collect(),
-        )
+        Value::Map(pairs.into_iter().map(|(k, v)| (k.to_owned(), v)).collect())
     };
     let overlay = chart.kustomization.as_ref();
 
@@ -188,7 +186,10 @@ fn release(chart: &Chart) -> Value {
     map(vec![
         ("release", text(&chart.release.name)),
         ("namespace", text(&chart.release.namespace)),
-        ("createNamespace", Value::Bool(chart.release.create_namespace)),
+        (
+            "createNamespace",
+            Value::Bool(chart.release.create_namespace),
+        ),
         ("wait", Value::Bool(chart.release.wait)),
         ("atomic", Value::Bool(chart.release.atomic)),
         ("timeout", text(&chart.release.timeout)),

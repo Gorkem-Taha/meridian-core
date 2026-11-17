@@ -226,7 +226,10 @@ spec:
                     key("apps/v1", "Deployment", "prod", "web")
                 ),
                 (ChangeAction::Create, key("v1", "Service", "", "web")),
-                (ChangeAction::Delete, key("v1", "ConfigMap", "", "web-config")),
+                (
+                    ChangeAction::Delete,
+                    key("v1", "ConfigMap", "", "web-config")
+                ),
             ]
         );
         assert_eq!(diff(&old, &old), []);

@@ -39,6 +39,12 @@ byte. The reasons, the layout and the order of work are in
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
 
+## Target guides
+
+| Target | What it compiles to and runs |
+|---|---|
+| [Helm with Kustomize](targets/helm.md) | A Helm chart with an optional Kustomize overlay, installed as a release |
+
 ## Contributing
 
 The merge bar for a target plugin, and the changes that need a second reviewer, are in

@@ -13,7 +13,11 @@ use meridian_target_helm::HelmRunner;
 const TMP: &str = env!("CARGO_TARGET_TMPDIR");
 
 fn release_json(kustomize: bool) -> String {
-    let (prefix, namespace) = if kustomize { ("prod-", "prod") } else { ("", "") };
+    let (prefix, namespace) = if kustomize {
+        ("prod-", "prod")
+    } else {
+        ("", "")
+    };
     format!(
         r#"{{"release":"web-app","namespace":"web","createNamespace":true,"wait":true,"atomic":false,"timeout":"5m",
 "chart":{{"name":"web-app","version":"1.4.0"}},"kustomize":{kustomize},
@@ -274,7 +278,10 @@ fn a_failed_release_is_upgraded_again_even_when_nothing_differs() {
     let log = KeptLog::default();
     let plan = helm.plan(&context(&dir), &compiled(false), &log).unwrap();
     assert!(plan.changes.is_empty());
-    assert!(plan.unknown, "what an upgrade repairs is not in the manifests");
+    assert!(
+        plan.unknown,
+        "what an upgrade repairs is not in the manifests"
+    );
     assert!(!plan.in_sync());
     assert!(log.text().contains(
         &"release web-app: its status is failed, so an apply will upgrade it again".to_owned()
@@ -323,7 +330,11 @@ fn an_apply_installs_with_the_releases_settings_and_reads_the_outputs() {
         outputs,
         [
             ("address", &Value::String("203.0.113.7".into()), false),
-            ("url", &Value::String("http://203.0.113.7:80/".into()), false),
+            (
+                "url",
+                &Value::String("http://203.0.113.7:80/".into()),
+                false
+            ),
             // One reference alone keeps the type the cluster gave it.
             ("replicas", &Value::Int(2), false),
             ("token", &Value::String("aHVudGVyMg==".into()), true),
@@ -394,9 +405,11 @@ fn what_kustomize_prints_is_installed_as_it_stands() {
     assert!(rendered.contains("page: '{{ .Title }}'"), "{rendered}");
     // In the chart Helm installs, the braces are escaped so that they are
     // still braces once Helm has rendered it.
-    let patched =
-        fs::read_to_string(dir.join("work/patched/templates/manifests.yaml")).unwrap();
-    assert!(patched.contains("page: '{{ `{{` }} .Title }}'"), "{patched}");
+    let patched = fs::read_to_string(dir.join("work/patched/templates/manifests.yaml")).unwrap();
+    assert!(
+        patched.contains("page: '{{ `{{` }} .Title }}'"),
+        "{patched}"
+    );
 }
 
 #[test]
@@ -466,7 +479,11 @@ fn an_artifact_from_another_plugin_is_refused() {
             &KeptLog::default(),
         )
         .unwrap_err();
-    assert!(err.msg.contains("was not compiled by this plugin"), "{}", err.msg);
+    assert!(
+        err.msg.contains("was not compiled by this plugin"),
+        "{}",
+        err.msg
+    );
     assert!(calls(&dir).is_empty());
 
     let err = helm

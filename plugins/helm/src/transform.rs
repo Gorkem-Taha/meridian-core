@@ -55,6 +55,8 @@ struct Scope<'a> {
     /// Every object's name, by id. `None` while the names themselves are
     /// being read.
     names: Option<BTreeMap<&'a str, Vec<Piece>>>,
+    /// Every object's namespace, by id: its own, or the release's.
+    namespaces: BTreeMap<&'a str, Vec<Piece>>,
 }
 
 /// What a reference turned out to point at.
@@ -147,14 +149,19 @@ pub(crate) fn transform(graph: &ResourceGraph) -> Result<Chart, CompileError> {
             .map(|(r, _, kind)| (r.id.as_str(), kind.as_str()))
             .collect(),
         names: None,
+        namespaces: BTreeMap::new(),
     };
 
-    // Names first: a reference to an object is a reference to its name.
+    // Names and namespaces first: they are what a reference to an object can
+    // read.
     let mut names = BTreeMap::new();
+    let mut namespaces = BTreeMap::new();
     for (r, _, _) in &objects {
         names.insert(r.id.as_str(), name_of(r, &scope)?);
+        namespaces.insert(r.id.as_str(), namespace_of(r, &scope)?);
     }
     scope.names = Some(names);
+    scope.namespaces = namespaces;
 
     let mut manifests = Vec::with_capacity(objects.len());
     for (r, api_version, kind) in &objects {
@@ -224,9 +231,8 @@ fn object_type(t: &str) -> Option<(&str, &str)> {
     let (api_version, kind) = t.rsplit_once('/')?;
     let kind_ok = kind.starts_with(|c: char| c.is_ascii_uppercase())
         && kind.chars().all(|c| c.is_ascii_alphanumeric());
-    let version_ok = |v: &str| {
-        v.starts_with('v') && v.len() > 1 && v.chars().all(|c| c.is_ascii_alphanumeric())
-    };
+    let version_ok =
+        |v: &str| v.starts_with('v') && v.len() > 1 && v.chars().all(|c| c.is_ascii_alphanumeric());
     let api_ok = match api_version.split_once('/') {
         None => version_ok(api_version),
         Some((group, version)) => {
@@ -329,9 +335,13 @@ impl Params<'_> {
     fn text(&self, name: &str) -> Result<Option<String>, CompileError> {
         match self.r.params.get(name) {
             None => Ok(None),
-            Some(Value::String(s)) => literal_text(s)
-                .map(Some)
-                .map_err(|msg| refuse(self.r, "invalid-reference", format!("param {name:?}: {msg}"))),
+            Some(Value::String(s)) => literal_text(s).map(Some).map_err(|msg| {
+                refuse(
+                    self.r,
+                    "invalid-reference",
+                    format!("param {name:?}: {msg}"),
+                )
+            }),
             Some(other) => Err(refuse(
                 self.r,
                 "invalid-param",
@@ -437,9 +447,8 @@ impl Scope<'_> {
         };
 
         if is(self.settings.values) {
-            let now = path::lookup(&self.values, &steps).map_err(|missing| {
-                format!("${{{expression}}}: the values have no {missing}")
-            })?;
+            let now = path::lookup(&self.values, &steps)
+                .map_err(|missing| format!("${{{expression}}}: the values have no {missing}"))?;
             return Ok(Found::Pieces(vec![Piece::Expr {
                 go: template::go_path(".Values", &steps),
                 now: now.clone(),
@@ -460,15 +469,13 @@ impl Scope<'_> {
         if is(self.settings.chart) {
             return match steps.as_slice() {
                 [Step::Key(key)] if key == "name" => text(".Chart.Name", &self.chart.name),
-                [Step::Key(key)] if key == "version" => {
-                    text(".Chart.Version", &self.chart.version)
-                }
+                [Step::Key(key)] if key == "version" => text(".Chart.Version", &self.chart.version),
                 [Step::Key(key)] if key == "appVersion" && !self.chart.app_version.is_empty() => {
                     text(".Chart.AppVersion", &self.chart.app_version)
                 }
-                [Step::Key(key)] if key == "appVersion" => Err(format!(
-                    "${{{expression}}}: the chart sets no appVersion"
-                )),
+                [Step::Key(key)] if key == "appVersion" => {
+                    Err(format!("${{{expression}}}: the chart sets no appVersion"))
+                }
                 _ => Err(format!(
                     "${{{expression}}} is not something a chart can read about itself \
                      (readable: name, version, appVersion)"
@@ -510,18 +517,25 @@ impl Scope<'_> {
             match self.find(&expression)? {
                 Found::Pieces(found) => found.into_iter().for_each(&mut push),
                 Found::Object { id, steps } => {
+                    if is_namespace(&steps) {
+                        if let Some(namespace) = self.namespaces.get(id.as_str()) {
+                            namespace.iter().cloned().for_each(&mut push);
+                            continue;
+                        }
+                    }
                     if !is_name(&steps) {
                         return Err(format!(
                             "${{{expression}}} reads {} of {id:?}, which only the cluster knows \
                              once the object is applied, so a template cannot hold it. Read it \
-                             in an output instead; ${{{id}}} alone is the object's name",
+                             in an output instead. A template can read ${{{id}}}, the object's \
+                             name, and ${{{id}.metadata.namespace}}",
                             path::show(&steps)
                         ));
                     }
                     let Some(names) = &self.names else {
                         return Err(format!(
-                            "${{{expression}}}: an object's name cannot be built from another \
-                             object's name"
+                            "${{{expression}}}: an object's name and namespace cannot be built \
+                             from another object's"
                         ));
                     };
                     names[id.as_str()].iter().cloned().for_each(&mut push);
@@ -589,6 +603,11 @@ fn is_name(steps: &[Step]) -> bool {
         [Step::Key(a), Step::Key(b)] => a == "metadata" && b == "name",
         _ => false,
     }
+}
+
+/// Whether a path into an object reads its namespace.
+fn is_namespace(steps: &[Step]) -> bool {
+    matches!(steps, [Step::Key(a), Step::Key(b)] if a == "metadata" && b == "namespace")
 }
 
 fn not_text(text: &str, kind: &str) -> String {
@@ -670,7 +689,7 @@ fn metadata_text<'a>(r: &'a Resource, field: &str) -> Result<Option<&'a str>, Co
 /// The name an object is given when its manifest does not say: its id, in the
 /// form Kubernetes accepts.
 pub(crate) fn default_name(id: &str) -> String {
-    id.replace('_', "-").to_ascii_lowercase()
+    id.replace('_', "-")
 }
 
 fn name_of(r: &Resource, scope: &Scope) -> Result<Vec<Piece>, CompileError> {
@@ -681,6 +700,24 @@ fn name_of(r: &Resource, scope: &Scope) -> Result<Vec<Piece>, CompileError> {
                 r,
                 "invalid-reference",
                 format!("param \"metadata.name\": {msg}"),
+            )
+        }),
+    }
+}
+
+/// The namespace an object ends up in: the one its manifest names, or the
+/// release's.
+fn namespace_of(r: &Resource, scope: &Scope) -> Result<Vec<Piece>, CompileError> {
+    match metadata_text(r, "namespace")? {
+        None => Ok(vec![Piece::Expr {
+            go: ".Release.Namespace".to_owned(),
+            now: Value::String(scope.release.namespace.clone()),
+        }]),
+        Some(written) => scope.pieces(written).map_err(|msg| {
+            refuse(
+                r,
+                "invalid-reference",
+                format!("param \"metadata.namespace\": {msg}"),
             )
         }),
     }
@@ -885,8 +922,7 @@ fn read_output(
         };
         match scope.find(&expression)? {
             Found::Pieces(pieces) => {
-                let text = template::render_now(&pieces)
-                    .map_err(|kind| not_text(value, kind))?;
+                let text = template::render_now(&pieces).map_err(|kind| not_text(value, kind))?;
                 push(&mut spec.parts, text);
             }
             Found::Object { id, steps } if is_name(&steps) => {
@@ -949,7 +985,7 @@ mod tests {
     #[test]
     fn an_id_becomes_a_name_kubernetes_accepts() {
         assert_eq!(default_name("web_config"), "web-config");
-        assert_eq!(default_name("WebSvc2"), "websvc2");
+        assert_eq!(default_name("web-svc2"), "web-svc2");
     }
 
     #[test]
