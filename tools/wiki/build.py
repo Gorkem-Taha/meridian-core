@@ -415,7 +415,8 @@ def decorate(rel: Path, text: str, image) -> str:
         return hero + text[:cut] + plugin_map + text[cut:]
     if rel.parts[0] == "targets" and len(rel.parts) == 2:
         logo = Path("branding") / "logos" / f"meridian-{rel.stem}.svg"
-        if (DOCS / logo).exists():
+        # A page that already shows its logo does not get a second one.
+        if (DOCS / logo).exists() and logo.name not in text:
             return (f'<img src="{image(logo)}" alt="Meridian {rel.stem} plugin logo" '
                     f'width="72" align="right">\n\n' + text)
     return text
