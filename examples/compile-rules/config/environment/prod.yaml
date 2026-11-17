@@ -1,0 +1,6 @@
+# The production environment's layer.
+variables:
+  Environment: prod
+  LogLevel: warn
+
+registry: https://registry.contoso.example

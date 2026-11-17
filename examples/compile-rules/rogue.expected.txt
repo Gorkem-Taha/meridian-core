@@ -1,0 +1,10 @@
+error: compile rules: 9 violations; nothing was compiled
+  - [meridian/protect-variables] layer "node/rogue.yaml" (team) changes "variables.OrganizationName", which layer "common.yaml" (organization) set
+  - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.type", which layer "common.yaml" (organization) set
+  - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.user", which layer "common.yaml" (organization) set
+  - [meridian/protect-secrets] layer "node/rogue.yaml" (team) changes "secrets.database.path", which layer "common.yaml" (organization) set
+  - [secrets-belong-to-the-organization] layer "node/rogue.yaml" (team) sets "credentials", which only organization may set. Ask the platform team to add it to common.yaml
+  - [secrets-belong-to-the-organization] layer "node/rogue.yaml" (team) sets "secrets.database.path", which only organization may set. Ask the platform team to add it to common.yaml
+  - [region-is-final] layer "node/rogue.yaml" (team) sets "variables.Region", which is final once set, and layer "common.yaml" (organization) set it
+  - [team-layers-name-an-owner] layer "node/rogue.yaml" (team) does not set "variables.Owner", which every layer of team must set
+  - [no-floating-tags] layer "node/rogue.yaml" (team) sets "web.image" to a value the rule forbids (matches[0])

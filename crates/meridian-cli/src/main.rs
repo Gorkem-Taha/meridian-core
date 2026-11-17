@@ -59,6 +59,37 @@ enum Command {
         #[command(flatten)]
         plugins: PluginDirs,
     },
+    /// Work with compile rules: the policies layered data must keep
+    Rules {
+        #[command(subcommand)]
+        command: RulesCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum RulesCommand {
+    /// Load a hierarchy's layers and check them against its compile rules,
+    /// compiling nothing
+    Check {
+        /// The hierarchy file; its layers are found relative to it
+        #[arg(long, value_name = "FILE")]
+        hierarchy: PathBuf,
+        /// The rules file. Defaults to rules.yaml beside the hierarchy file
+        #[arg(long, value_name = "FILE")]
+        rules: Option<PathBuf>,
+        /// Fail when there is no rules file, so that removing it cannot
+        /// switch the rules off unnoticed
+        #[arg(long)]
+        require_rules: bool,
+        /// A variable the hierarchy's layer paths read as %{NAME}; may be
+        /// given more than once
+        #[arg(long = "set", value_name = "NAME=VALUE")]
+        set: Vec<String>,
+        /// A YAML or JSON file of values merged over the hierarchy, checked
+        /// as its most specific layer; may be given more than once
+        #[arg(long, value_name = "FILE")]
+        data: Vec<PathBuf>,
+    },
 }
 
 #[derive(Args)]
@@ -111,6 +142,24 @@ fn main() -> ExitCode {
         Command::Plan { workflow } => orchestrate(&workflow, Mode::Plan, None),
         Command::Apply { workflow } => orchestrate(&workflow, Mode::Apply, None),
         Command::Plugins { plugins } => list_plugins(&plugins),
+        Command::Rules {
+            command:
+                RulesCommand::Check {
+                    hierarchy,
+                    rules,
+                    require_rules,
+                    set,
+                    data,
+                },
+        } => check_rules(
+            meridian_rules::Files {
+                hierarchy,
+                rules,
+                require_rules,
+            },
+            &set,
+            &data,
+        ),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,
@@ -171,6 +220,64 @@ fn read_data(files: &[PathBuf]) -> Result<Data, Failure> {
         }
     }
     Ok(data)
+}
+
+/// `meridian rules check`: loads the layers, checks every rule, and says
+/// which layer belongs to whom. Every violation is printed, not only the
+/// first, and none of them shows a value.
+fn check_rules(
+    files: meridian_rules::Files,
+    set: &[String],
+    data_files: &[PathBuf],
+) -> Result<(), Failure> {
+    let mut scope = meridian_resolve::Scope::new();
+    for pair in set {
+        let (name, value) = pair
+            .split_once('=')
+            .filter(|(name, _)| !name.is_empty())
+            .ok_or_else(|| Failure::Message(format!("--set takes NAME=VALUE, and got {pair:?}")))?;
+        scope.insert(name.to_owned(), value.to_owned());
+    }
+    // Each --data file is a layer of its own, so a refusal can say which.
+    let mut command_line = Vec::new();
+    for file in data_files {
+        let data = read_data(std::slice::from_ref(file))?;
+        command_line.push(meridian_rules::Layer::command_line(
+            format!("--data {}", file.display()),
+            data,
+        ));
+    }
+    let checked = meridian_rules::check_files(&files, &scope, &command_line)
+        .map_err(|refusal| Failure::Message(refusal.to_string()))?;
+    let Some((path, rules)) = &checked.rules else {
+        println!(
+            "no rules file ({} beside {}): nothing was checked",
+            meridian_rules::RULES_FILE,
+            files.hierarchy.display()
+        );
+        return Ok(());
+    };
+    println!(
+        "rules: {} ({})",
+        path.display(),
+        count(rules.rules.len(), "rule")
+    );
+    println!("layers, least specific first:");
+    let width = checked
+        .groups
+        .iter()
+        .map(|(p, _)| p.len())
+        .max()
+        .unwrap_or(0);
+    for (layer, group) in &checked.groups {
+        if rules.groups.is_empty() {
+            println!("  {layer}");
+        } else {
+            println!("  {layer:width$}  {group}");
+        }
+    }
+    println!("no violations");
+    Ok(())
 }
 
 fn registry(plugins: &PluginDirs) -> Result<Registry, Failure> {
