@@ -61,7 +61,14 @@ having one meaning, and
 `a_condition_is_decided_as_the_documented_language_says` holds the evaluator to
 the grammar and the rules in [conditions](../reference/dsl/conditions.md) for
 three thousand generated expressions a run, with their precedence, their
-short-circuiting and their errors.
+short-circuiting and their errors. The model covers the core of the language:
+literals, paths into the data, `defined()`, `!`, `&&`, `||`, `==` and `!=`.
+The other operators and the functions are tested in `crates/meridian-expr`.
+
+An example that decides by `when` needs its data before it can be compiled,
+so the conformance and robustness tests, which build a tree straight from a
+file, pass over it. `examples.rs` compiles it through the command with its
+data files.
 
 When a property fails, the output ends with the smallest input that still
 fails:

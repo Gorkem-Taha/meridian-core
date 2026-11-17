@@ -39,6 +39,14 @@ fn examples() -> Vec<(String, String)> {
                 .lines()
                 .filter_map(|line| line.strip_prefix("  target: "))
                 .collect();
+            // A document that decides by `when` cannot become a tree
+            // without its data; `examples.rs` compiles those.
+            if text
+                .lines()
+                .any(|line| line.trim_start().starts_with("when:"))
+            {
+                continue;
+            }
             if let [target] = targets[..] {
                 let path = file.strip_prefix(&root).unwrap().to_str().unwrap();
                 found.push((path.to_owned(), target.trim().to_owned()));

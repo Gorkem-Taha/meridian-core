@@ -823,6 +823,12 @@ proptest! {
 
 /// A condition, as this file understands the language: the model the real
 /// parser and evaluator are compared with.
+///
+/// It models the core of the language and not all of it: literals, paths
+/// into the data, `defined()`, `!`, `&&`, `||`, `==` and `!=`. The
+/// expression engine behind `when` has more operators and a library of
+/// functions, which its own crate tests; what is held here is that the
+/// engine still decides this core the way it always has.
 #[derive(Clone, Debug)]
 enum Model {
     Literal(Value),

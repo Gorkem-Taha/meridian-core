@@ -929,6 +929,15 @@ fn examples() -> Vec<(String, String)> {
                 .lines()
                 .filter_map(|line| line.strip_prefix("  target: "))
                 .collect();
+            // A document that decides by `when` needs its data and the
+            // condition stage before a tree can be built; `examples.rs`
+            // compiles those through the command, with their data.
+            if text
+                .lines()
+                .any(|line| line.trim_start().starts_with("when:"))
+            {
+                continue;
+            }
             // A workflow of several documents is the orchestrator's to test.
             if let [target] = targets[..] {
                 let path = file.strip_prefix(&root).unwrap().to_str().unwrap();
