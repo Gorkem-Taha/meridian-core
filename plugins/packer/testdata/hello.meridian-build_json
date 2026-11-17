@@ -1,0 +1,14 @@
+{
+  "build": "hello",
+  "outputs": {
+    "artifact": "${box.artifact_id}",
+    "builder": "${box.builder_type}",
+    "summary": "built ${box.id} with ${box.builder_type}"
+  },
+  "sources": [
+    {
+      "id": "box",
+      "type": "null"
+    }
+  ]
+}

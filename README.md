@@ -14,6 +14,11 @@ quietly does less.
 Early, and moving quickly. The accepted specifications are in [`docs/`](docs/index.md);
 start with the [design plan](docs/plans/design-plan.md).
 
+The documentation is published from `docs/` on every merge, as a
+[site](https://zanattamichael.github.io/meridian-core/) and as this repository's
+[wiki](https://github.com/ZanattaMichael/meridian-core/wiki);
+[how the wiki is published](docs/contributing/documentation-site.md) says how.
+
 | Plugin | Category | Compiles to | Runs with |
 |---|---|---|---|
 | [`ansible`](docs/targets/ansible.md) | configuration management | a playbook and inventory | `ansible-playbook` |
@@ -25,6 +30,7 @@ start with the [design plan](docs/plans/design-plan.md).
 | [`terraform`](docs/targets/terraform.md) | infrastructure as code | `main.tf.json` | `terraform`, or `tofu` |
 | [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
+| [`packer`](docs/targets/packer.md) | infrastructure as code (image building) | `build.pkr.json` | `packer` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
 | [`podman`](docs/targets/podman.md) | containerization | Quadlet units | `systemctl` and `podman`, over `ssh` for another host |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |

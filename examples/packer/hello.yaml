@@ -1,0 +1,62 @@
+# A build that needs no cloud account and no Packer plugin: the null builder
+# builds nothing, and every step runs on the machine running Packer. It is the
+# quickest way to see a Meridian document become a Packer build and run.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: hello
+spec:
+  target: packer
+  resources:
+    - id: greeting
+      type: variable
+      params:
+        type: string
+        default: hello
+
+    - id: message
+      type: local
+      params:
+        value: ${greeting} from ${upper("packer")}
+
+    - id: box
+      type: source.null
+      params:
+        communicator: none
+
+    - id: second
+      type: provisioner.shell-local
+      params:
+        inline:
+          - echo "2 ${source.type}.${source.name}" >> steps.txt
+      # Declared first and run second: the dependency decides.
+      dependsOn:
+        - resource: first
+
+    - id: first
+      type: provisioner.shell-local
+      params:
+        inline:
+          - echo "1 ${message}" > steps.txt
+
+    - id: third
+      type: post-processor.shell-local
+      params:
+        inline:
+          - echo "3 post-processed" >> steps.txt
+
+    - id: fourth
+      type: post-processor.shell-local
+      params:
+        inline:
+          - echo "4 and again" >> steps.txt
+      dependsOn:
+        - resource: third
+
+  outputs:
+    - name: builder
+      value: ${box.builder_type}
+    - name: artifact
+      value: ${box.artifact_id}
+    - name: summary
+      value: built ${box.id} with ${box.builder_type}

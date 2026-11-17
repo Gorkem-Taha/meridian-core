@@ -76,7 +76,7 @@ fn a_dependency_between_services_is_composes_own() {
 #[test]
 fn what_the_author_wrote_about_a_dependency_is_kept() {
     let text = compose(&format!(
-        "{DB}    - id: app\n      type: service\n      params:\n        image: app:1\n        depends_on:\n          db:\n            condition: service_healthy\n      dependsOn:\n        - resource: db\n"
+        "{DB}        healthcheck: {{test: [CMD, pg_isready]}}\n    - id: app\n      type: service\n      params:\n        image: app:1\n        depends_on:\n          db:\n            condition: service_healthy\n      dependsOn:\n        - resource: db\n"
     ));
     assert!(text.contains("condition: service_healthy"), "{text}");
     assert!(!text.contains("service_started"), "{text}");
