@@ -1,0 +1,148 @@
+# A Linux virtual machine on Azure with a fixed public address, deployed to a
+# resource group as an ARM template.
+#
+# Every resource's type is the ARM type and its params are the resource as
+# Azure documents it. ${id} is the resource id of another resource of this
+# document, ${id.name} its name, and ${id.properties.<path>} reads its state.
+# A string in square brackets is an ARM expression, passed through as written.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: arm
+  resources:
+    # Not part of the template: how the template itself is deployed.
+    - id: deployment
+      type: deployment
+      params:
+        name: web-vm-prod
+        resourceGroup: web-rg
+
+    # A template parameter. Its value is given when deploying, so the secret
+    # is never written into the template.
+    - id: admin_password
+      type: parameter
+      params:
+        type: securestring
+        metadata:
+          description: The password of the ops account on the machine.
+
+    - id: web_nsg
+      type: Microsoft.Network/networkSecurityGroups
+      params:
+        apiVersion: "2023-09-01"
+        name: web-nsg
+        location: "[resourceGroup().location]"
+        properties:
+          securityRules:
+            - name: allow-http
+              properties:
+                priority: 100
+                direction: Inbound
+                access: Allow
+                protocol: Tcp
+                sourceAddressPrefix: "*"
+                sourcePortRange: "*"
+                destinationAddressPrefix: "*"
+                destinationPortRange: "80"
+
+    - id: web_vnet
+      type: Microsoft.Network/virtualNetworks
+      params:
+        apiVersion: "2023-09-01"
+        name: web-vnet
+        location: "[resourceGroup().location]"
+        properties:
+          addressSpace:
+            addressPrefixes: [10.0.0.0/16]
+          subnets:
+            - name: web
+              properties:
+                addressPrefix: 10.0.1.0/24
+                networkSecurityGroup:
+                  id: ${web_nsg}
+
+    - id: web_ip
+      type: Microsoft.Network/publicIPAddresses
+      params:
+        apiVersion: "2023-09-01"
+        name: web-ip
+        location: "[resourceGroup().location]"
+        sku:
+          name: Standard
+        properties:
+          publicIPAllocationMethod: Static
+          dnsSettings:
+            # An ARM expression of the author's own.
+            domainNameLabel: "[concat('web-', uniqueString(resourceGroup().id))]"
+
+    - id: web_nic
+      type: Microsoft.Network/networkInterfaces
+      params:
+        apiVersion: "2023-09-01"
+        name: web-nic
+        location: "[resourceGroup().location]"
+        properties:
+          ipConfigurations:
+            - name: primary
+              properties:
+                privateIPAllocationMethod: Dynamic
+                # A reference inside text becomes one format().
+                subnet:
+                  id: ${web_vnet}/subnets/web
+                publicIPAddress:
+                  id: ${web_ip}
+
+    - id: web_logs
+      type: Microsoft.Storage/storageAccounts
+      params:
+        apiVersion: "2023-01-01"
+        # A reference inside an ARM expression is put in place.
+        name: "[concat('weblogs', uniqueString(resourceGroup().id, ${web_vnet.name}))]"
+        location: "[resourceGroup().location]"
+        kind: StorageV2
+        sku:
+          name: Standard_LRS
+
+    - id: web_vm
+      type: Microsoft.Compute/virtualMachines
+      params:
+        apiVersion: "2023-09-01"
+        name: web-vm
+        location: "[resourceGroup().location]"
+        tags:
+          role: web
+        properties:
+          hardwareProfile:
+            vmSize: Standard_B2s
+          osProfile:
+            computerName: ${web_vm.name}
+            adminUsername: ops
+            adminPassword: ${admin_password}
+          storageProfile:
+            imageReference:
+              publisher: Canonical
+              offer: ubuntu-24_04-lts
+              sku: server
+              version: latest
+            osDisk:
+              createOption: FromImage
+          networkProfile:
+            networkInterfaces:
+              - id: ${web_nic}
+          diagnosticsProfile:
+            bootDiagnostics:
+              enabled: true
+              storageUri: ${web_logs.properties.primaryEndpoints.blob}
+      # Nothing in the params says so, so this is only in dependsOn.
+      dependsOn:
+        - resource: web_nsg
+
+  outputs:
+    - name: web_vm_ip
+      value: ${web_ip.properties.ipAddress}
+    - name: web_url
+      value: http://${web_ip.properties.dnsSettings.fqdn}/
+    - name: web_vm_id
+      value: ${web_vm}

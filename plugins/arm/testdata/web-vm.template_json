@@ -1,0 +1,183 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "description": "Compiled by Meridian from the document web-vm. Do not edit."
+  },
+  "outputs": {
+    "web_url": {
+      "type": "string",
+      "value": "[format('http://{0}/', reference(resourceId('Microsoft.Network/publicIPAddresses', 'web-ip'), '2023-09-01').dnsSettings.fqdn)]"
+    },
+    "web_vm_id": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Compute/virtualMachines', 'web-vm')]"
+    },
+    "web_vm_ip": {
+      "type": "string",
+      "value": "[string(reference(resourceId('Microsoft.Network/publicIPAddresses', 'web-ip'), '2023-09-01').ipAddress)]"
+    }
+  },
+  "parameters": {
+    "admin_password": {
+      "metadata": {
+        "description": "The password of the ops account on the machine."
+      },
+      "type": "securestring"
+    }
+  },
+  "resources": [
+    {
+      "apiVersion": "2023-09-01",
+      "location": "[resourceGroup().location]",
+      "name": "web-nsg",
+      "properties": {
+        "securityRules": [
+          {
+            "name": "allow-http",
+            "properties": {
+              "access": "Allow",
+              "destinationAddressPrefix": "*",
+              "destinationPortRange": "80",
+              "direction": "Inbound",
+              "priority": 100,
+              "protocol": "Tcp",
+              "sourceAddressPrefix": "*",
+              "sourcePortRange": "*"
+            }
+          }
+        ]
+      },
+      "type": "Microsoft.Network/networkSecurityGroups"
+    },
+    {
+      "apiVersion": "2023-09-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkSecurityGroups', 'web-nsg')]"
+      ],
+      "location": "[resourceGroup().location]",
+      "name": "web-vnet",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.0.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "web",
+            "properties": {
+              "addressPrefix": "10.0.1.0/24",
+              "networkSecurityGroup": {
+                "id": "[resourceId('Microsoft.Network/networkSecurityGroups', 'web-nsg')]"
+              }
+            }
+          }
+        ]
+      },
+      "type": "Microsoft.Network/virtualNetworks"
+    },
+    {
+      "apiVersion": "2023-09-01",
+      "location": "[resourceGroup().location]",
+      "name": "web-ip",
+      "properties": {
+        "dnsSettings": {
+          "domainNameLabel": "[concat('web-', uniqueString(resourceGroup().id))]"
+        },
+        "publicIPAllocationMethod": "Static"
+      },
+      "sku": {
+        "name": "Standard"
+      },
+      "type": "Microsoft.Network/publicIPAddresses"
+    },
+    {
+      "apiVersion": "2023-09-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/publicIPAddresses', 'web-ip')]",
+        "[resourceId('Microsoft.Network/virtualNetworks', 'web-vnet')]"
+      ],
+      "location": "[resourceGroup().location]",
+      "name": "web-nic",
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "primary",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', 'web-ip')]"
+              },
+              "subnet": {
+                "id": "[format('{0}/subnets/web', resourceId('Microsoft.Network/virtualNetworks', 'web-vnet'))]"
+              }
+            }
+          }
+        ]
+      },
+      "type": "Microsoft.Network/networkInterfaces"
+    },
+    {
+      "apiVersion": "2023-01-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', 'web-vnet')]"
+      ],
+      "kind": "StorageV2",
+      "location": "[resourceGroup().location]",
+      "name": "[concat('weblogs', uniqueString(resourceGroup().id, 'web-vnet'))]",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "type": "Microsoft.Storage/storageAccounts"
+    },
+    {
+      "apiVersion": "2023-09-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', concat('weblogs', uniqueString(resourceGroup().id, 'web-vnet')))]",
+        "[resourceId('Microsoft.Network/networkInterfaces', 'web-nic')]",
+        "[resourceId('Microsoft.Network/networkSecurityGroups', 'web-nsg')]"
+      ],
+      "location": "[resourceGroup().location]",
+      "name": "web-vm",
+      "properties": {
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts', concat('weblogs', uniqueString(resourceGroup().id, 'web-vnet'))), '2023-01-01').primaryEndpoints.blob]"
+          }
+        },
+        "hardwareProfile": {
+          "vmSize": "Standard_B2s"
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces', 'web-nic')]"
+            }
+          ]
+        },
+        "osProfile": {
+          "adminPassword": "[parameters('admin_password')]",
+          "adminUsername": "ops",
+          "computerName": "web-vm"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "offer": "ubuntu-24_04-lts",
+            "publisher": "Canonical",
+            "sku": "server",
+            "version": "latest"
+          },
+          "osDisk": {
+            "createOption": "FromImage"
+          }
+        }
+      },
+      "tags": {
+        "role": "web"
+      },
+      "type": "Microsoft.Compute/virtualMachines"
+    }
+  ]
+}

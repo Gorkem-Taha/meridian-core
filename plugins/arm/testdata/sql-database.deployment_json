@@ -1,0 +1,30 @@
+{
+  "location": "",
+  "mode": "Complete",
+  "name": "orders-db",
+  "parameters": {
+    "environment": "string",
+    "sql_admin_password": "securestring"
+  },
+  "resourceGroup": "orders-rg",
+  "resources": {
+    "database": {
+      "name": "[format('{0}/orders', format('orders-{0}-sql', parameters('environment')))]",
+      "type": "Microsoft.Sql/servers/databases"
+    },
+    "keep": {
+      "name": "keep-orders",
+      "type": "Microsoft.Authorization/locks"
+    },
+    "office": {
+      "name": "[format('{0}/office', format('orders-{0}-sql', parameters('environment')))]",
+      "type": "Microsoft.Sql/servers/firewallRules"
+    },
+    "server": {
+      "name": "[format('orders-{0}-sql', parameters('environment'))]",
+      "type": "Microsoft.Sql/servers"
+    }
+  },
+  "scope": "resourceGroup",
+  "subscription": ""
+}

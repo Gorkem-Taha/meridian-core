@@ -1,0 +1,25 @@
+{
+  "location": "australiaeast",
+  "mode": "Incremental",
+  "name": "landing-zone",
+  "parameters": {
+    "owner": "string"
+  },
+  "resourceGroup": "",
+  "resources": {
+    "budget": {
+      "name": "landing-zone-budget",
+      "type": "Microsoft.Consumption/budgets"
+    },
+    "network_rg": {
+      "name": "network-rg",
+      "type": "Microsoft.Resources/resourceGroups"
+    },
+    "workload_rg": {
+      "name": "workload-rg",
+      "type": "Microsoft.Resources/resourceGroups"
+    }
+  },
+  "scope": "subscription",
+  "subscription": ""
+}

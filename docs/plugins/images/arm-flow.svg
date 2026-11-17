@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 210" role="img" aria-label="How the ARM plugin compiles and deploys a document" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title>How the ARM plugin compiles and deploys a document</title>
+  <defs>
+    <marker id="tip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#6F9BFF"/></marker>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22357A"/><stop offset="1" stop-color="#0A112B"/></linearGradient>
+  </defs>
+  <rect width="760" height="210" rx="14" fill="url(#tile)"/>
+  <g fill="#16224F" stroke="#6F9BFF" stroke-width="1.5">
+    <rect x="24" y="52" width="150" height="76" rx="10"/>
+    <rect x="224" y="52" width="150" height="76" rx="10"/>
+    <rect x="424" y="24" width="150" height="56" rx="10"/>
+    <rect x="424" y="100" width="150" height="56" rx="10"/>
+    <rect x="624" y="52" width="112" height="76" rx="10"/>
+  </g>
+  <g fill="none" stroke="#6F9BFF" stroke-width="2" marker-end="url(#tip)">
+    <path d="M174 90H222"/>
+    <path d="M374 78L422 56"/>
+    <path d="M374 102L422 124"/>
+    <path d="M574 52L622 78"/>
+    <path d="M574 128L622 102"/>
+  </g>
+  <g fill="#FFFFFF" text-anchor="middle" font-size="14" font-weight="600">
+    <text x="99" y="86">Meridian document</text>
+    <text x="299" y="86">ARM plugin</text>
+    <text x="499" y="50">template.json</text>
+    <text x="499" y="126">deployment.json</text>
+    <text x="680" y="86">az CLI</text>
+  </g>
+  <g fill="#B9C6F2" text-anchor="middle" font-size="11.5">
+    <text x="99" y="106">target: arm</text>
+    <text x="299" y="106">compile, check</text>
+    <text x="499" y="67">the ARM template</text>
+    <text x="499" y="143">where and how to deploy</text>
+    <text x="680" y="106">what-if, create</text>
+    <text x="380" y="190">compile is pure and offline; plan and apply call Azure through az</text>
+  </g>
+</svg>

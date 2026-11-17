@@ -26,6 +26,12 @@ byte. The reasons, the layout and the order of work are in
 [design plan §11](plans/design-plan.md#11-system-architecture-rust) and
 [§12.1](plans/design-plan.md#121-rust-migration-sequencing).
 
+## Plugin guides
+
+| Plugin | What it covers |
+|---|---|
+| [ARM templates](plugins/arm.md) | Compiling a document to an Azure Resource Manager JSON template and deploying it with `az` |
+
 ## Planning documents
 
 | Document | What it settles |

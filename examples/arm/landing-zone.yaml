@@ -1,0 +1,67 @@
+# Two resource groups and a budget, deployed to a subscription and not to a
+# resource group.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: landing-zone
+spec:
+  target: arm
+  resources:
+    - id: deployment
+      type: deployment
+      params:
+        scope: subscription
+        # Where the record of the deployment is kept.
+        location: australiaeast
+
+    - id: owner
+      type: parameter
+      params:
+        type: string
+        defaultValue: platform-team
+
+    - id: network_rg
+      type: Microsoft.Resources/resourceGroups
+      params:
+        apiVersion: "2024-03-01"
+        name: network-rg
+        location: australiaeast
+        tags:
+          owner: ${owner}
+
+    - id: workload_rg
+      type: Microsoft.Resources/resourceGroups
+      params:
+        apiVersion: "2024-03-01"
+        name: workload-rg
+        location: australiaeast
+        tags:
+          owner: ${owner}
+          network: ${network_rg.name}
+      dependsOn:
+        - resource: network_rg
+
+    - id: budget
+      type: Microsoft.Consumption/budgets
+      params:
+        apiVersion: "2023-11-01"
+        name: landing-zone-budget
+        properties:
+          category: Cost
+          amount: 500
+          timeGrain: Monthly
+          timePeriod:
+            startDate: "2026-12-01"
+          filter:
+            dimensions:
+              name: ResourceGroupName
+              operator: In
+              values:
+                - ${network_rg.name}
+                - ${workload_rg.name}
+
+  outputs:
+    - name: network_rg_id
+      value: ${network_rg}
+    - name: workload_location
+      value: ${workload_rg.location}
