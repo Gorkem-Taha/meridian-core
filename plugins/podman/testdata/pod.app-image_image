@@ -1,0 +1,4 @@
+# Written by Meridian from the document "metrics-pod". The next apply overwrites any change made here.
+
+[Image]
+Image=quay.io/prometheus/prometheus:v3.1.0

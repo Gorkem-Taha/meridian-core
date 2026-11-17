@@ -1,0 +1,18 @@
+#cloud-config
+# Compiled by Meridian from the document "web". Change the document, not this file.
+write_files:
+  - path: /etc/nginx/conf.d/site.conf
+    content: |
+      server {
+        listen 80;
+        root /srv/www;
+      }
+    owner: root
+    permissions: "0644"
+    defer: true
+packages:
+  - nginx
+runcmd:
+  - set -e
+  - systemctl enable --now nginx
+  - systemctl reload nginx

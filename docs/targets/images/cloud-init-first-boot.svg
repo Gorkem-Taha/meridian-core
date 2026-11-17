@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 250" role="img" aria-labelledby="t d" font-family="system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+<title id="t">The order of a cloud-init first boot</title>
+<desc id="d">Five steps, left to right: files are written; groups and users are created; packages are installed; deferred files are written; commands run. A dependsOn has to point from an earlier step to a later one.</desc>
+<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22357A"/><stop offset="1" stop-color="#0A112B"/></linearGradient></defs>
+<rect width="980" height="250" rx="14" fill="url(#bg)"/>
+<text x="26" y="38" fill="#fff" font-size="18" font-weight="600">The order of a first boot</text>
+<text x="26" y="60" fill="#fff" opacity=".7" font-size="13">cloud-init decides it, not the document. A dependsOn must point from an earlier step to a later one.</text>
+<rect x="26" y="84" width="172" height="128" rx="10" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="48" cy="108" r="12" fill="#FF8A4C"/><text x="48" y="113" text-anchor="middle" fill="#0A112B" font-size="13" font-weight="700">1</text>
+<text x="38" y="144" fill="#FF8A4C" font-size="13" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">write_files</text>
+<text x="38" y="166" fill="#fff" font-size="12">file</text>
+<path d="M201 148.0H212M208 144.0L213 148.0L208 152.0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="216" y="84" width="172" height="128" rx="10" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="238" cy="108" r="12" fill="#FF8A4C"/><text x="238" y="113" text-anchor="middle" fill="#0A112B" font-size="13" font-weight="700">2</text>
+<text x="228" y="144" fill="#FF8A4C" font-size="13" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">groups, users</text>
+<text x="228" y="166" fill="#fff" font-size="12">group, user</text>
+<path d="M391 148.0H402M398 144.0L403 148.0L398 152.0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="406" y="84" width="172" height="128" rx="10" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="428" cy="108" r="12" fill="#FF8A4C"/><text x="428" y="113" text-anchor="middle" fill="#0A112B" font-size="13" font-weight="700">3</text>
+<text x="418" y="144" fill="#FF8A4C" font-size="13" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">packages</text>
+<text x="418" y="166" fill="#fff" font-size="12">package</text>
+<path d="M581 148.0H592M588 144.0L593 148.0L588 152.0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="596" y="84" width="172" height="128" rx="10" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="618" cy="108" r="12" fill="#FF8A4C"/><text x="618" y="113" text-anchor="middle" fill="#0A112B" font-size="13" font-weight="700">4</text>
+<text x="608" y="144" fill="#FF8A4C" font-size="13" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">write_files (defer)</text>
+<text x="608" y="166" fill="#fff" font-size="12">file that waits for a</text>
+<text x="608" y="183" fill="#fff" font-size="12">user, group or package</text>
+<path d="M771 148.0H782M778 144.0L783 148.0L778 152.0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="786" y="84" width="172" height="128" rx="10" fill="#fff" fill-opacity=".06" stroke="#fff" stroke-opacity=".35" stroke-width="1.5"/>
+<circle cx="808" cy="108" r="12" fill="#FF8A4C"/><text x="808" y="113" text-anchor="middle" fill="#0A112B" font-size="13" font-weight="700">5</text>
+<text x="798" y="144" fill="#FF8A4C" font-size="13" font-weight="600" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">runcmd</text>
+<text x="798" y="166" fill="#fff" font-size="12">exec, service, directory,</text>
+<text x="798" y="183" fill="#fff" font-size="12">removal, and then the</text>
+<text x="798" y="200" fill="#fff" font-size="12">notified actions</text>
+<text x="26" y="236" fill="#fff" opacity=".7" font-size="12.5">Step 5 runs top to bottom and stops at the first command that fails.</text>
+</svg>
