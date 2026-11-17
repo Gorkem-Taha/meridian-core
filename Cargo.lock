@@ -468,6 +468,7 @@ dependencies = [
  "meridian-ast",
  "meridian-ir",
  "meridian-sdk",
+ "meridian-target-fake",
  "tokio",
  "tonic",
 ]
@@ -491,6 +492,13 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+]
+
+[[package]]
+name = "meridian-target-fake"
+version = "0.1.0"
+dependencies = [
+ "meridian-sdk",
 ]
 
 [[package]]

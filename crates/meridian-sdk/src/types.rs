@@ -108,6 +108,22 @@ pub struct ResourceGraph {
     pub target: String,
     pub resources: Vec<Resource>,
     pub edges: Vec<Edge>,
+    /// What the document promises to later stages. Only a document that
+    /// provisions infrastructure declares any.
+    pub outputs: Vec<OutputDeclaration>,
+}
+
+/// A value a document promises to later stages, such as the address of a
+/// machine it provisions. A plugin compiles it into the tool's own output
+/// mechanism and reports its value under the same name when it applies.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OutputDeclaration {
+    pub name: String,
+    /// The expression the author wrote, for example `${web_vm.public_ip}`: a
+    /// reference to an attribute of a resource in this document, which only
+    /// the tool can resolve.
+    pub value: String,
+    pub pos: Position,
 }
 
 impl ResourceGraph {

@@ -1,7 +1,7 @@
 //! The Runner half of the protocol, and a plugin written in Rust.
 //!
 //! The Go plugins only compile, so these tests use `meridian-target-fake`, a
-//! plugin built from this crate against `meridian-sdk`. Its tool is a
+//! plugin written in Rust against `meridian-sdk`. Its tool is a
 //! directory, which makes plan and apply real: a plan is a comparison with
 //! what the last apply left behind.
 
@@ -17,10 +17,14 @@ use meridian_sdk::{
     Resource, ResourceGraph, RunContext, Value, PROTOCOL_VERSION, VERSION,
 };
 
-const FAKE: &str = env!("CARGO_BIN_EXE_meridian-target-fake");
+fn fake() -> String {
+    meridian_target_fake::plugin_path()
+        .to_string_lossy()
+        .into_owned()
+}
 
 fn start() -> Client {
-    Client::start(FAKE, &StartOptions::default()).expect("the fake plugin starts")
+    Client::start(&fake(), &StartOptions::default()).expect("the fake plugin starts")
 }
 
 fn start_offering(operations: &str) -> Client {
@@ -30,7 +34,7 @@ fn start_offering(operations: &str) -> Client {
         env: Some(env),
         ..StartOptions::default()
     };
-    Client::start(FAKE, &options).expect("the fake plugin starts")
+    Client::start(&fake(), &options).expect("the fake plugin starts")
 }
 
 /// A fresh work directory per test, so they can run side by side.
@@ -75,6 +79,7 @@ fn graph(resources: Vec<Resource>) -> ResourceGraph {
         target: "fake".to_owned(),
         resources,
         edges: Vec::new(),
+        outputs: Vec::new(),
     }
 }
 
@@ -431,7 +436,7 @@ fn a_plugin_is_never_asked_for_an_operation_it_did_not_declare() {
 fn a_rust_plugin_leaves_nothing_behind_when_it_exits() {
     // The plugin is given a temporary directory of its own, so what it leaves
     // there can be told apart from every other test's plugins.
-    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("runner-tmpdir");
+    let tmp = std::env::temp_dir().join(format!("meridian-test-{}", std::process::id()));
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&tmp).unwrap();
     let mut env: Vec<(String, String)> = std::env::vars().filter(|(k, _)| k != "TMPDIR").collect();
@@ -442,8 +447,28 @@ fn a_rust_plugin_leaves_nothing_behind_when_it_exits() {
     };
     let entries = || fs::read_dir(&tmp).unwrap().count();
 
-    let client = Client::start(FAKE, &options).expect("the fake plugin starts");
+    let client = Client::start(&fake(), &options).expect("the fake plugin starts");
     assert_eq!(entries(), 1, "a running plugin has one socket directory");
     client.close().expect("the plugin exits when asked");
     assert_eq!(entries(), 0, "the socket directory was not removed");
+    let _ = fs::remove_dir_all(&tmp);
+}
+
+/// A temporary directory can be too deep for a unix socket's path, which has
+/// a small fixed limit. The plugin has to serve anyway.
+#[test]
+fn a_rust_plugin_serves_when_the_temporary_directory_is_too_deep_for_a_socket() {
+    let deep = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join("a".repeat(60))
+        .join("b".repeat(60));
+    fs::create_dir_all(&deep).unwrap();
+    let mut env: Vec<(String, String)> = std::env::vars().filter(|(k, _)| k != "TMPDIR").collect();
+    env.push(("TMPDIR".to_owned(), deep.to_string_lossy().into_owned()));
+    let options = StartOptions {
+        env: Some(env),
+        ..StartOptions::default()
+    };
+    let client = Client::start(&fake(), &options).expect("the plugin falls back to a short path");
+    assert_eq!(client.name(), "fake");
+    client.close().unwrap();
 }

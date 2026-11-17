@@ -1,4 +1,4 @@
-//! A small, complete plugin for the host's tests.
+//! A small, complete plugin, for tests and as a worked example.
 //!
 //! Its "tool" is a directory. Compiling turns each `file` resource into one
 //! artifact file; applying copies the artifact into the work directory and
@@ -12,7 +12,9 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::OnceLock;
 
 use meridian_sdk::{
     canonical_map, decode_map, serve, Applied, Artifact, Capabilities, Category, Change,
@@ -20,7 +22,8 @@ use meridian_sdk::{
     ResourceGraph, RunContext, RunError, Runner, ServeError, Value, Warning,
 };
 
-struct Fake;
+/// The compiling half: each `file` resource becomes one artifact file.
+pub struct Fake;
 
 impl Emitter for Fake {
     fn name(&self) -> &str {
@@ -85,8 +88,9 @@ impl Emitter for Fake {
     }
 }
 
-struct FakeRunner {
-    operations: Operations,
+/// The running half. Its state is `state.json` in the work directory.
+pub struct FakeRunner {
+    pub operations: Operations,
 }
 
 /// What the last apply wrote, by artifact path.
@@ -246,9 +250,10 @@ impl Runner for FakeRunner {
     }
 }
 
-fn main() -> Result<(), ServeError> {
-    // The declared operations are chosen by the test, so the host can be
-    // checked against a plugin that offers only some of them.
+/// Serves the plugin, offering the operations `FAKE_OPERATIONS` names
+/// (`none`, `plan`, or anything else for all of them), so a host can be
+/// checked against a plugin that offers only some.
+pub fn serve_from_env() -> Result<(), ServeError> {
     let operations = match std::env::var("FAKE_OPERATIONS").as_deref() {
         Ok("none") => None,
         Ok("plan") => Some(Operations {
@@ -263,4 +268,52 @@ fn main() -> Result<(), ServeError> {
         Some(operations) => serve(plugin.with_runner(FakeRunner { operations })),
         None => serve(plugin),
     }
+}
+
+/// Builds the plugin binary and returns the directory holding it, for a test
+/// that needs the real process. The build is a no-op when it is up to date.
+///
+/// A test cannot ask Cargo for another package's binary, so it is built here,
+/// into the same target directory the test itself was built in.
+pub fn plugin_dir() -> PathBuf {
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    DIR.get_or_init(|| {
+        // target/<profile>/deps/<test binary> -> target/<profile>
+        let exe = std::env::current_exe().expect("the test binary has a path");
+        let profile_dir = exe
+            .parent()
+            .and_then(Path::parent)
+            .expect("the test binary is inside a target directory")
+            .to_path_buf();
+        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+        let mut build = Command::new(cargo);
+        build.args(["build", "--quiet", "--locked", "-p", "meridian-target-fake"]);
+        if profile_dir.file_name().is_some_and(|n| n == "release") {
+            build.arg("--release");
+        }
+        let output = build
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .output()
+            .expect("cargo runs");
+        assert!(
+            output.status.success(),
+            "building the fake plugin:\n{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        // Discovery loads everything named like a plugin, so the binary gets
+        // a directory to itself.
+        let dir = profile_dir.join("fake-plugin");
+        std::fs::create_dir_all(&dir).expect("creating the plugin directory");
+        let name = "meridian-target-fake";
+        let staged = dir.join(format!("{name}.{}", std::process::id()));
+        std::fs::copy(profile_dir.join(name), &staged).expect("copying the plugin binary");
+        std::fs::rename(&staged, dir.join(name)).expect("placing the plugin binary");
+        dir
+    })
+    .clone()
+}
+
+/// The plugin binary itself.
+pub fn plugin_path() -> PathBuf {
+    plugin_dir().join("meridian-target-fake")
 }

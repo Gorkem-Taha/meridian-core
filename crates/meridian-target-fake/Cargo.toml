@@ -1,0 +1,14 @@
+[package]
+name = "meridian-target-fake"
+description = "A small, complete Meridian plugin whose tool is a directory, for tests and as a worked example"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+meridian-sdk = { path = "../meridian-sdk" }
+
+[lints]
+workspace = true

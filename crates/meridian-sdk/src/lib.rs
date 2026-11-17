@@ -61,8 +61,8 @@ pub use run::{
 };
 pub use serve::{serve, Plugin, ServeError};
 pub use types::{
-    Artifact, Capabilities, CompileError, Data, Edge, EdgeKind, Emitted, Emitter, Position,
-    Resource, ResourceGraph, Warning,
+    Artifact, Capabilities, CompileError, Data, Edge, EdgeKind, Emitted, Emitter,
+    OutputDeclaration, Position, Resource, ResourceGraph, Warning,
 };
 
 /// The wire protocol this SDK speaks. A host refuses a plugin reporting a

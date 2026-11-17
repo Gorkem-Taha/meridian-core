@@ -70,6 +70,15 @@ pub fn graph_to_wire(g: &ResourceGraph) -> pb::ResourceGraph {
                 pos: Some(position_to_wire(&e.pos)),
             })
             .collect(),
+        outputs: g
+            .outputs
+            .iter()
+            .map(|o| pb::OutputDeclaration {
+                name: o.name.clone(),
+                value: o.value.clone(),
+                pos: Some(position_to_wire(&o.pos)),
+            })
+            .collect(),
     }
 }
 
@@ -83,6 +92,15 @@ pub fn graph_from_wire(g: pb::ResourceGraph) -> Result<ResourceGraph, String> {
         name: g.name,
         host: g.host,
         target: g.target,
+        outputs: g
+            .outputs
+            .into_iter()
+            .map(|o| OutputDeclaration {
+                name: o.name,
+                value: o.value,
+                pos: position_from_wire(o.pos),
+            })
+            .collect(),
         ..ResourceGraph::default()
     };
     for r in g.resources {

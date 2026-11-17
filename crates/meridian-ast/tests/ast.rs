@@ -345,3 +345,43 @@ fn error_formatting() {
     };
     assert_eq!(located.to_string(), "site.yaml:3: wrapped");
 }
+
+#[test]
+fn an_infrastructure_document_builds_a_tree_with_its_outputs_and_no_host() {
+    let docs = meridian_ir::parse(
+        "infra.yaml",
+        br#"apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: terraform
+  resources:
+    - id: web_vm
+      type: virtual_machine
+      params:
+        size: small
+      dependsOn:
+        - resource: web_net
+    - id: web_net
+      type: network
+  outputs:
+    - name: web_vm_ip
+      value: "${web_vm.public_ip}"
+"#,
+    )
+    .unwrap();
+    let Document::Infrastructure(doc) = &docs[0] else {
+        panic!("expected an Infrastructure document");
+    };
+    let g = ResourceGraph::build_infrastructure(doc).unwrap();
+    assert_eq!(
+        (g.name.as_str(), g.target.as_str(), g.host.as_str()),
+        ("web-vm", "terraform", "")
+    );
+    assert_eq!(g.order(), ["web_net", "web_vm"]);
+    assert_eq!(g.outputs.len(), 1);
+    assert_eq!(g.outputs[0].name, "web_vm_ip");
+    assert_eq!(g.outputs[0].value, "${web_vm.public_ip}");
+    assert_eq!(g.outputs[0].pos.line, 17);
+}

@@ -255,7 +255,7 @@ func (x LogLine_Stream) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use LogLine_Stream.Descriptor instead.
 func (LogLine_Stream) EnumDescriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{17, 0}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{18, 0}
 }
 
 // Position is a point in a source document, carried so a failure raised inside
@@ -511,22 +511,93 @@ func (x *Edge) GetPos() *Position {
 	return nil
 }
 
+// OutputDeclaration is a value a document promises to later stages, such as
+// the address of a machine it provisions. The plugin compiles it into the
+// tool's own output mechanism and reports its value, under the same name,
+// from Apply and Outputs.
+type OutputDeclaration struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// value is the expression the author wrote, for example
+	// "${web_vm.public_ip}": a reference to an attribute of a resource in this
+	// document, which only the tool can resolve.
+	Value         string    `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
+	Pos           *Position `protobuf:"bytes,3,opt,name=pos,proto3" json:"pos,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OutputDeclaration) Reset() {
+	*x = OutputDeclaration{}
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OutputDeclaration) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OutputDeclaration) ProtoMessage() {}
+
+func (x *OutputDeclaration) ProtoReflect() protoreflect.Message {
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OutputDeclaration.ProtoReflect.Descriptor instead.
+func (*OutputDeclaration) Descriptor() ([]byte, []int) {
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *OutputDeclaration) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *OutputDeclaration) GetValue() string {
+	if x != nil {
+		return x.Value
+	}
+	return ""
+}
+
+func (x *OutputDeclaration) GetPos() *Position {
+	if x != nil {
+		return x.Pos
+	}
+	return nil
+}
+
 // ResourceGraph is a whole compiled document: its resources in deterministic
 // apply order, the edges between them, and the host they configure.
 type ResourceGraph struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Host          string                 `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
-	Target        string                 `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
-	Resources     []*Resource            `protobuf:"bytes,4,rep,name=resources,proto3" json:"resources,omitempty"`
-	Edges         []*Edge                `protobuf:"bytes,5,rep,name=edges,proto3" json:"edges,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// host is the node a host-configuration document applies to. It is empty for
+	// a document that provisions infrastructure.
+	Host      string      `protobuf:"bytes,2,opt,name=host,proto3" json:"host,omitempty"`
+	Target    string      `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	Resources []*Resource `protobuf:"bytes,4,rep,name=resources,proto3" json:"resources,omitempty"`
+	Edges     []*Edge     `protobuf:"bytes,5,rep,name=edges,proto3" json:"edges,omitempty"`
+	// outputs is what the document promises to later stages.
+	Outputs       []*OutputDeclaration `protobuf:"bytes,6,rep,name=outputs,proto3" json:"outputs,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ResourceGraph) Reset() {
 	*x = ResourceGraph{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[3]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -538,7 +609,7 @@ func (x *ResourceGraph) String() string {
 func (*ResourceGraph) ProtoMessage() {}
 
 func (x *ResourceGraph) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[3]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -551,7 +622,7 @@ func (x *ResourceGraph) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResourceGraph.ProtoReflect.Descriptor instead.
 func (*ResourceGraph) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{3}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ResourceGraph) GetName() string {
@@ -589,6 +660,13 @@ func (x *ResourceGraph) GetEdges() []*Edge {
 	return nil
 }
 
+func (x *ResourceGraph) GetOutputs() []*OutputDeclaration {
+	if x != nil {
+		return x.Outputs
+	}
+	return nil
+}
+
 // Capabilities is a target's honest declaration of what it can express. It is
 // the mechanism behind the no-silent-capability-loss principle.
 type Capabilities struct {
@@ -602,7 +680,7 @@ type Capabilities struct {
 
 func (x *Capabilities) Reset() {
 	*x = Capabilities{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[4]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -614,7 +692,7 @@ func (x *Capabilities) String() string {
 func (*Capabilities) ProtoMessage() {}
 
 func (x *Capabilities) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[4]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -627,7 +705,7 @@ func (x *Capabilities) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Capabilities.ProtoReflect.Descriptor instead.
 func (*Capabilities) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{4}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Capabilities) GetNativeNotify() bool {
@@ -662,7 +740,7 @@ type Artifact struct {
 
 func (x *Artifact) Reset() {
 	*x = Artifact{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[5]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -674,7 +752,7 @@ func (x *Artifact) String() string {
 func (*Artifact) ProtoMessage() {}
 
 func (x *Artifact) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[5]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -687,7 +765,7 @@ func (x *Artifact) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Artifact.ProtoReflect.Descriptor instead.
 func (*Artifact) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{5}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Artifact) GetFiles() map[string]string {
@@ -710,7 +788,7 @@ type Warning struct {
 
 func (x *Warning) Reset() {
 	*x = Warning{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[6]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -722,7 +800,7 @@ func (x *Warning) String() string {
 func (*Warning) ProtoMessage() {}
 
 func (x *Warning) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[6]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -735,7 +813,7 @@ func (x *Warning) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Warning.ProtoReflect.Descriptor instead.
 func (*Warning) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{6}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Warning) GetTarget() string {
@@ -778,7 +856,7 @@ type CompileError struct {
 
 func (x *CompileError) Reset() {
 	*x = CompileError{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[7]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -790,7 +868,7 @@ func (x *CompileError) String() string {
 func (*CompileError) ProtoMessage() {}
 
 func (x *CompileError) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[7]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -803,7 +881,7 @@ func (x *CompileError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CompileError.ProtoReflect.Descriptor instead.
 func (*CompileError) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{7}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CompileError) GetResource() string {
@@ -851,7 +929,7 @@ type Operations struct {
 
 func (x *Operations) Reset() {
 	*x = Operations{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[8]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -863,7 +941,7 @@ func (x *Operations) String() string {
 func (*Operations) ProtoMessage() {}
 
 func (x *Operations) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[8]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -876,7 +954,7 @@ func (x *Operations) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Operations.ProtoReflect.Descriptor instead.
 func (*Operations) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{8}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Operations) GetPlan() bool {
@@ -908,7 +986,7 @@ type DescribeRequest struct {
 
 func (x *DescribeRequest) Reset() {
 	*x = DescribeRequest{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[9]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -920,7 +998,7 @@ func (x *DescribeRequest) String() string {
 func (*DescribeRequest) ProtoMessage() {}
 
 func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[9]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -933,7 +1011,7 @@ func (x *DescribeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeRequest.ProtoReflect.Descriptor instead.
 func (*DescribeRequest) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{9}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{10}
 }
 
 type DescribeResponse struct {
@@ -956,7 +1034,7 @@ type DescribeResponse struct {
 
 func (x *DescribeResponse) Reset() {
 	*x = DescribeResponse{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[10]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -968,7 +1046,7 @@ func (x *DescribeResponse) String() string {
 func (*DescribeResponse) ProtoMessage() {}
 
 func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[10]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -981,7 +1059,7 @@ func (x *DescribeResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DescribeResponse.ProtoReflect.Descriptor instead.
 func (*DescribeResponse) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{10}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *DescribeResponse) GetProtocolVersion() uint32 {
@@ -1045,7 +1123,7 @@ type EmitRequest struct {
 
 func (x *EmitRequest) Reset() {
 	*x = EmitRequest{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[11]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1057,7 +1135,7 @@ func (x *EmitRequest) String() string {
 func (*EmitRequest) ProtoMessage() {}
 
 func (x *EmitRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[11]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1070,7 +1148,7 @@ func (x *EmitRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmitRequest.ProtoReflect.Descriptor instead.
 func (*EmitRequest) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{11}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *EmitRequest) GetGraph() *ResourceGraph {
@@ -1100,7 +1178,7 @@ type EmitResponse struct {
 
 func (x *EmitResponse) Reset() {
 	*x = EmitResponse{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[12]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1112,7 +1190,7 @@ func (x *EmitResponse) String() string {
 func (*EmitResponse) ProtoMessage() {}
 
 func (x *EmitResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[12]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1125,7 +1203,7 @@ func (x *EmitResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EmitResponse.ProtoReflect.Descriptor instead.
 func (*EmitResponse) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{12}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *EmitResponse) GetArtifact() *Artifact {
@@ -1171,7 +1249,7 @@ type RunContext struct {
 
 func (x *RunContext) Reset() {
 	*x = RunContext{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[13]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1183,7 +1261,7 @@ func (x *RunContext) String() string {
 func (*RunContext) ProtoMessage() {}
 
 func (x *RunContext) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[13]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1196,7 +1274,7 @@ func (x *RunContext) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunContext.ProtoReflect.Descriptor instead.
 func (*RunContext) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{13}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *RunContext) GetDocument() string {
@@ -1242,7 +1320,7 @@ type Change struct {
 
 func (x *Change) Reset() {
 	*x = Change{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[14]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1254,7 +1332,7 @@ func (x *Change) String() string {
 func (*Change) ProtoMessage() {}
 
 func (x *Change) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[14]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1267,7 +1345,7 @@ func (x *Change) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Change.ProtoReflect.Descriptor instead.
 func (*Change) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{14}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Change) GetResource() string {
@@ -1307,7 +1385,7 @@ type Output struct {
 
 func (x *Output) Reset() {
 	*x = Output{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[15]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1319,7 +1397,7 @@ func (x *Output) String() string {
 func (*Output) ProtoMessage() {}
 
 func (x *Output) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[15]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1332,7 +1410,7 @@ func (x *Output) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Output.ProtoReflect.Descriptor instead.
 func (*Output) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{15}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Output) GetName() string {
@@ -1380,7 +1458,7 @@ type RunError struct {
 
 func (x *RunError) Reset() {
 	*x = RunError{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[16]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1392,7 +1470,7 @@ func (x *RunError) String() string {
 func (*RunError) ProtoMessage() {}
 
 func (x *RunError) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[16]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1405,7 +1483,7 @@ func (x *RunError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RunError.ProtoReflect.Descriptor instead.
 func (*RunError) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{16}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *RunError) GetMsg() string {
@@ -1454,7 +1532,7 @@ type LogLine struct {
 
 func (x *LogLine) Reset() {
 	*x = LogLine{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[17]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1466,7 +1544,7 @@ func (x *LogLine) String() string {
 func (*LogLine) ProtoMessage() {}
 
 func (x *LogLine) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[17]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1479,7 +1557,7 @@ func (x *LogLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogLine.ProtoReflect.Descriptor instead.
 func (*LogLine) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{17}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *LogLine) GetStream() LogLine_Stream {
@@ -1506,7 +1584,7 @@ type PlanRequest struct {
 
 func (x *PlanRequest) Reset() {
 	*x = PlanRequest{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[18]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1518,7 +1596,7 @@ func (x *PlanRequest) String() string {
 func (*PlanRequest) ProtoMessage() {}
 
 func (x *PlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[18]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1531,7 +1609,7 @@ func (x *PlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanRequest.ProtoReflect.Descriptor instead.
 func (*PlanRequest) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{18}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *PlanRequest) GetContext() *RunContext {
@@ -1564,7 +1642,7 @@ type PlanResult struct {
 
 func (x *PlanResult) Reset() {
 	*x = PlanResult{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[19]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1576,7 +1654,7 @@ func (x *PlanResult) String() string {
 func (*PlanResult) ProtoMessage() {}
 
 func (x *PlanResult) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[19]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1589,7 +1667,7 @@ func (x *PlanResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanResult.ProtoReflect.Descriptor instead.
 func (*PlanResult) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{19}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *PlanResult) GetChanges() []*Change {
@@ -1623,7 +1701,7 @@ type ApplyRequest struct {
 
 func (x *ApplyRequest) Reset() {
 	*x = ApplyRequest{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[20]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1635,7 +1713,7 @@ func (x *ApplyRequest) String() string {
 func (*ApplyRequest) ProtoMessage() {}
 
 func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[20]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1648,7 +1726,7 @@ func (x *ApplyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyRequest.ProtoReflect.Descriptor instead.
 func (*ApplyRequest) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{20}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ApplyRequest) GetContext() *RunContext {
@@ -1678,7 +1756,7 @@ type ApplyResult struct {
 
 func (x *ApplyResult) Reset() {
 	*x = ApplyResult{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[21]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1690,7 +1768,7 @@ func (x *ApplyResult) String() string {
 func (*ApplyResult) ProtoMessage() {}
 
 func (x *ApplyResult) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[21]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1703,7 +1781,7 @@ func (x *ApplyResult) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyResult.ProtoReflect.Descriptor instead.
 func (*ApplyResult) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{21}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ApplyResult) GetChanges() []*Change {
@@ -1743,7 +1821,7 @@ type PlanEvent struct {
 
 func (x *PlanEvent) Reset() {
 	*x = PlanEvent{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[22]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1755,7 +1833,7 @@ func (x *PlanEvent) String() string {
 func (*PlanEvent) ProtoMessage() {}
 
 func (x *PlanEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[22]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1768,7 +1846,7 @@ func (x *PlanEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PlanEvent.ProtoReflect.Descriptor instead.
 func (*PlanEvent) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{22}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *PlanEvent) GetEvent() isPlanEvent_Event {
@@ -1825,7 +1903,7 @@ type ApplyEvent struct {
 
 func (x *ApplyEvent) Reset() {
 	*x = ApplyEvent{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[23]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1837,7 +1915,7 @@ func (x *ApplyEvent) String() string {
 func (*ApplyEvent) ProtoMessage() {}
 
 func (x *ApplyEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[23]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1850,7 +1928,7 @@ func (x *ApplyEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyEvent.ProtoReflect.Descriptor instead.
 func (*ApplyEvent) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{23}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ApplyEvent) GetEvent() isApplyEvent_Event {
@@ -1903,7 +1981,7 @@ type OutputsRequest struct {
 
 func (x *OutputsRequest) Reset() {
 	*x = OutputsRequest{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[24]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1915,7 +1993,7 @@ func (x *OutputsRequest) String() string {
 func (*OutputsRequest) ProtoMessage() {}
 
 func (x *OutputsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[24]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1928,7 +2006,7 @@ func (x *OutputsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutputsRequest.ProtoReflect.Descriptor instead.
 func (*OutputsRequest) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{24}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *OutputsRequest) GetContext() *RunContext {
@@ -1948,7 +2026,7 @@ type OutputsResponse struct {
 
 func (x *OutputsResponse) Reset() {
 	*x = OutputsResponse{}
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[25]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1960,7 +2038,7 @@ func (x *OutputsResponse) String() string {
 func (*OutputsResponse) ProtoMessage() {}
 
 func (x *OutputsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[25]
+	mi := &file_meridian_plugin_v1_plugin_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1973,7 +2051,7 @@ func (x *OutputsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OutputsResponse.ProtoReflect.Descriptor instead.
 func (*OutputsResponse) Descriptor() ([]byte, []int) {
-	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{25}
+	return file_meridian_plugin_v1_plugin_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *OutputsResponse) GetOutputs() []*Output {
@@ -2014,13 +2092,18 @@ const file_meridian_plugin_v1_plugin_proto_rawDesc = "" +
 	"\x02to\x18\x02 \x01(\tR\x02to\x120\n" +
 	"\x04kind\x18\x03 \x01(\x0e2\x1c.meridian.plugin.v1.EdgeKindR\x04kind\x12\x16\n" +
 	"\x06action\x18\x04 \x01(\tR\x06action\x12.\n" +
-	"\x03pos\x18\x05 \x01(\v2\x1c.meridian.plugin.v1.PositionR\x03pos\"\xbb\x01\n" +
+	"\x03pos\x18\x05 \x01(\v2\x1c.meridian.plugin.v1.PositionR\x03pos\"m\n" +
+	"\x11OutputDeclaration\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value\x12.\n" +
+	"\x03pos\x18\x03 \x01(\v2\x1c.meridian.plugin.v1.PositionR\x03pos\"\xfc\x01\n" +
 	"\rResourceGraph\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04host\x18\x02 \x01(\tR\x04host\x12\x16\n" +
 	"\x06target\x18\x03 \x01(\tR\x06target\x12:\n" +
 	"\tresources\x18\x04 \x03(\v2\x1c.meridian.plugin.v1.ResourceR\tresources\x12.\n" +
-	"\x05edges\x18\x05 \x03(\v2\x18.meridian.plugin.v1.EdgeR\x05edges\"\x8b\x01\n" +
+	"\x05edges\x18\x05 \x03(\v2\x18.meridian.plugin.v1.EdgeR\x05edges\x12?\n" +
+	"\aoutputs\x18\x06 \x03(\v2%.meridian.plugin.v1.OutputDeclarationR\aoutputs\"\x8b\x01\n" +
 	"\fCapabilities\x12#\n" +
 	"\rnative_notify\x18\x01 \x01(\bR\fnativeNotify\x12)\n" +
 	"\x10synthetic_notify\x18\x02 \x01(\bR\x0fsyntheticNotify\x12+\n" +
@@ -2159,88 +2242,91 @@ func file_meridian_plugin_v1_plugin_proto_rawDescGZIP() []byte {
 }
 
 var file_meridian_plugin_v1_plugin_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_meridian_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
+var file_meridian_plugin_v1_plugin_proto_msgTypes = make([]protoimpl.MessageInfo, 28)
 var file_meridian_plugin_v1_plugin_proto_goTypes = []any{
-	(EdgeKind)(0),            // 0: meridian.plugin.v1.EdgeKind
-	(Category)(0),            // 1: meridian.plugin.v1.Category
-	(ChangeAction)(0),        // 2: meridian.plugin.v1.ChangeAction
-	(LogLine_Stream)(0),      // 3: meridian.plugin.v1.LogLine.Stream
-	(*Position)(nil),         // 4: meridian.plugin.v1.Position
-	(*Resource)(nil),         // 5: meridian.plugin.v1.Resource
-	(*Edge)(nil),             // 6: meridian.plugin.v1.Edge
-	(*ResourceGraph)(nil),    // 7: meridian.plugin.v1.ResourceGraph
-	(*Capabilities)(nil),     // 8: meridian.plugin.v1.Capabilities
-	(*Artifact)(nil),         // 9: meridian.plugin.v1.Artifact
-	(*Warning)(nil),          // 10: meridian.plugin.v1.Warning
-	(*CompileError)(nil),     // 11: meridian.plugin.v1.CompileError
-	(*Operations)(nil),       // 12: meridian.plugin.v1.Operations
-	(*DescribeRequest)(nil),  // 13: meridian.plugin.v1.DescribeRequest
-	(*DescribeResponse)(nil), // 14: meridian.plugin.v1.DescribeResponse
-	(*EmitRequest)(nil),      // 15: meridian.plugin.v1.EmitRequest
-	(*EmitResponse)(nil),     // 16: meridian.plugin.v1.EmitResponse
-	(*RunContext)(nil),       // 17: meridian.plugin.v1.RunContext
-	(*Change)(nil),           // 18: meridian.plugin.v1.Change
-	(*Output)(nil),           // 19: meridian.plugin.v1.Output
-	(*RunError)(nil),         // 20: meridian.plugin.v1.RunError
-	(*LogLine)(nil),          // 21: meridian.plugin.v1.LogLine
-	(*PlanRequest)(nil),      // 22: meridian.plugin.v1.PlanRequest
-	(*PlanResult)(nil),       // 23: meridian.plugin.v1.PlanResult
-	(*ApplyRequest)(nil),     // 24: meridian.plugin.v1.ApplyRequest
-	(*ApplyResult)(nil),      // 25: meridian.plugin.v1.ApplyResult
-	(*PlanEvent)(nil),        // 26: meridian.plugin.v1.PlanEvent
-	(*ApplyEvent)(nil),       // 27: meridian.plugin.v1.ApplyEvent
-	(*OutputsRequest)(nil),   // 28: meridian.plugin.v1.OutputsRequest
-	(*OutputsResponse)(nil),  // 29: meridian.plugin.v1.OutputsResponse
-	nil,                      // 30: meridian.plugin.v1.Artifact.FilesEntry
+	(EdgeKind)(0),             // 0: meridian.plugin.v1.EdgeKind
+	(Category)(0),             // 1: meridian.plugin.v1.Category
+	(ChangeAction)(0),         // 2: meridian.plugin.v1.ChangeAction
+	(LogLine_Stream)(0),       // 3: meridian.plugin.v1.LogLine.Stream
+	(*Position)(nil),          // 4: meridian.plugin.v1.Position
+	(*Resource)(nil),          // 5: meridian.plugin.v1.Resource
+	(*Edge)(nil),              // 6: meridian.plugin.v1.Edge
+	(*OutputDeclaration)(nil), // 7: meridian.plugin.v1.OutputDeclaration
+	(*ResourceGraph)(nil),     // 8: meridian.plugin.v1.ResourceGraph
+	(*Capabilities)(nil),      // 9: meridian.plugin.v1.Capabilities
+	(*Artifact)(nil),          // 10: meridian.plugin.v1.Artifact
+	(*Warning)(nil),           // 11: meridian.plugin.v1.Warning
+	(*CompileError)(nil),      // 12: meridian.plugin.v1.CompileError
+	(*Operations)(nil),        // 13: meridian.plugin.v1.Operations
+	(*DescribeRequest)(nil),   // 14: meridian.plugin.v1.DescribeRequest
+	(*DescribeResponse)(nil),  // 15: meridian.plugin.v1.DescribeResponse
+	(*EmitRequest)(nil),       // 16: meridian.plugin.v1.EmitRequest
+	(*EmitResponse)(nil),      // 17: meridian.plugin.v1.EmitResponse
+	(*RunContext)(nil),        // 18: meridian.plugin.v1.RunContext
+	(*Change)(nil),            // 19: meridian.plugin.v1.Change
+	(*Output)(nil),            // 20: meridian.plugin.v1.Output
+	(*RunError)(nil),          // 21: meridian.plugin.v1.RunError
+	(*LogLine)(nil),           // 22: meridian.plugin.v1.LogLine
+	(*PlanRequest)(nil),       // 23: meridian.plugin.v1.PlanRequest
+	(*PlanResult)(nil),        // 24: meridian.plugin.v1.PlanResult
+	(*ApplyRequest)(nil),      // 25: meridian.plugin.v1.ApplyRequest
+	(*ApplyResult)(nil),       // 26: meridian.plugin.v1.ApplyResult
+	(*PlanEvent)(nil),         // 27: meridian.plugin.v1.PlanEvent
+	(*ApplyEvent)(nil),        // 28: meridian.plugin.v1.ApplyEvent
+	(*OutputsRequest)(nil),    // 29: meridian.plugin.v1.OutputsRequest
+	(*OutputsResponse)(nil),   // 30: meridian.plugin.v1.OutputsResponse
+	nil,                       // 31: meridian.plugin.v1.Artifact.FilesEntry
 }
 var file_meridian_plugin_v1_plugin_proto_depIdxs = []int32{
 	4,  // 0: meridian.plugin.v1.Resource.pos:type_name -> meridian.plugin.v1.Position
 	0,  // 1: meridian.plugin.v1.Edge.kind:type_name -> meridian.plugin.v1.EdgeKind
 	4,  // 2: meridian.plugin.v1.Edge.pos:type_name -> meridian.plugin.v1.Position
-	5,  // 3: meridian.plugin.v1.ResourceGraph.resources:type_name -> meridian.plugin.v1.Resource
-	6,  // 4: meridian.plugin.v1.ResourceGraph.edges:type_name -> meridian.plugin.v1.Edge
-	30, // 5: meridian.plugin.v1.Artifact.files:type_name -> meridian.plugin.v1.Artifact.FilesEntry
-	4,  // 6: meridian.plugin.v1.CompileError.pos:type_name -> meridian.plugin.v1.Position
-	8,  // 7: meridian.plugin.v1.DescribeResponse.capabilities:type_name -> meridian.plugin.v1.Capabilities
-	1,  // 8: meridian.plugin.v1.DescribeResponse.category:type_name -> meridian.plugin.v1.Category
-	12, // 9: meridian.plugin.v1.DescribeResponse.operations:type_name -> meridian.plugin.v1.Operations
-	7,  // 10: meridian.plugin.v1.EmitRequest.graph:type_name -> meridian.plugin.v1.ResourceGraph
-	9,  // 11: meridian.plugin.v1.EmitResponse.artifact:type_name -> meridian.plugin.v1.Artifact
-	10, // 12: meridian.plugin.v1.EmitResponse.warnings:type_name -> meridian.plugin.v1.Warning
-	11, // 13: meridian.plugin.v1.EmitResponse.error:type_name -> meridian.plugin.v1.CompileError
-	2,  // 14: meridian.plugin.v1.Change.action:type_name -> meridian.plugin.v1.ChangeAction
-	3,  // 15: meridian.plugin.v1.LogLine.stream:type_name -> meridian.plugin.v1.LogLine.Stream
-	17, // 16: meridian.plugin.v1.PlanRequest.context:type_name -> meridian.plugin.v1.RunContext
-	9,  // 17: meridian.plugin.v1.PlanRequest.artifact:type_name -> meridian.plugin.v1.Artifact
-	18, // 18: meridian.plugin.v1.PlanResult.changes:type_name -> meridian.plugin.v1.Change
-	20, // 19: meridian.plugin.v1.PlanResult.error:type_name -> meridian.plugin.v1.RunError
-	17, // 20: meridian.plugin.v1.ApplyRequest.context:type_name -> meridian.plugin.v1.RunContext
-	9,  // 21: meridian.plugin.v1.ApplyRequest.artifact:type_name -> meridian.plugin.v1.Artifact
-	18, // 22: meridian.plugin.v1.ApplyResult.changes:type_name -> meridian.plugin.v1.Change
-	19, // 23: meridian.plugin.v1.ApplyResult.outputs:type_name -> meridian.plugin.v1.Output
-	20, // 24: meridian.plugin.v1.ApplyResult.error:type_name -> meridian.plugin.v1.RunError
-	21, // 25: meridian.plugin.v1.PlanEvent.log:type_name -> meridian.plugin.v1.LogLine
-	23, // 26: meridian.plugin.v1.PlanEvent.result:type_name -> meridian.plugin.v1.PlanResult
-	21, // 27: meridian.plugin.v1.ApplyEvent.log:type_name -> meridian.plugin.v1.LogLine
-	25, // 28: meridian.plugin.v1.ApplyEvent.result:type_name -> meridian.plugin.v1.ApplyResult
-	17, // 29: meridian.plugin.v1.OutputsRequest.context:type_name -> meridian.plugin.v1.RunContext
-	19, // 30: meridian.plugin.v1.OutputsResponse.outputs:type_name -> meridian.plugin.v1.Output
-	20, // 31: meridian.plugin.v1.OutputsResponse.error:type_name -> meridian.plugin.v1.RunError
-	13, // 32: meridian.plugin.v1.Emitter.Describe:input_type -> meridian.plugin.v1.DescribeRequest
-	15, // 33: meridian.plugin.v1.Emitter.Emit:input_type -> meridian.plugin.v1.EmitRequest
-	22, // 34: meridian.plugin.v1.Runner.Plan:input_type -> meridian.plugin.v1.PlanRequest
-	24, // 35: meridian.plugin.v1.Runner.Apply:input_type -> meridian.plugin.v1.ApplyRequest
-	28, // 36: meridian.plugin.v1.Runner.Outputs:input_type -> meridian.plugin.v1.OutputsRequest
-	14, // 37: meridian.plugin.v1.Emitter.Describe:output_type -> meridian.plugin.v1.DescribeResponse
-	16, // 38: meridian.plugin.v1.Emitter.Emit:output_type -> meridian.plugin.v1.EmitResponse
-	26, // 39: meridian.plugin.v1.Runner.Plan:output_type -> meridian.plugin.v1.PlanEvent
-	27, // 40: meridian.plugin.v1.Runner.Apply:output_type -> meridian.plugin.v1.ApplyEvent
-	29, // 41: meridian.plugin.v1.Runner.Outputs:output_type -> meridian.plugin.v1.OutputsResponse
-	37, // [37:42] is the sub-list for method output_type
-	32, // [32:37] is the sub-list for method input_type
-	32, // [32:32] is the sub-list for extension type_name
-	32, // [32:32] is the sub-list for extension extendee
-	0,  // [0:32] is the sub-list for field type_name
+	4,  // 3: meridian.plugin.v1.OutputDeclaration.pos:type_name -> meridian.plugin.v1.Position
+	5,  // 4: meridian.plugin.v1.ResourceGraph.resources:type_name -> meridian.plugin.v1.Resource
+	6,  // 5: meridian.plugin.v1.ResourceGraph.edges:type_name -> meridian.plugin.v1.Edge
+	7,  // 6: meridian.plugin.v1.ResourceGraph.outputs:type_name -> meridian.plugin.v1.OutputDeclaration
+	31, // 7: meridian.plugin.v1.Artifact.files:type_name -> meridian.plugin.v1.Artifact.FilesEntry
+	4,  // 8: meridian.plugin.v1.CompileError.pos:type_name -> meridian.plugin.v1.Position
+	9,  // 9: meridian.plugin.v1.DescribeResponse.capabilities:type_name -> meridian.plugin.v1.Capabilities
+	1,  // 10: meridian.plugin.v1.DescribeResponse.category:type_name -> meridian.plugin.v1.Category
+	13, // 11: meridian.plugin.v1.DescribeResponse.operations:type_name -> meridian.plugin.v1.Operations
+	8,  // 12: meridian.plugin.v1.EmitRequest.graph:type_name -> meridian.plugin.v1.ResourceGraph
+	10, // 13: meridian.plugin.v1.EmitResponse.artifact:type_name -> meridian.plugin.v1.Artifact
+	11, // 14: meridian.plugin.v1.EmitResponse.warnings:type_name -> meridian.plugin.v1.Warning
+	12, // 15: meridian.plugin.v1.EmitResponse.error:type_name -> meridian.plugin.v1.CompileError
+	2,  // 16: meridian.plugin.v1.Change.action:type_name -> meridian.plugin.v1.ChangeAction
+	3,  // 17: meridian.plugin.v1.LogLine.stream:type_name -> meridian.plugin.v1.LogLine.Stream
+	18, // 18: meridian.plugin.v1.PlanRequest.context:type_name -> meridian.plugin.v1.RunContext
+	10, // 19: meridian.plugin.v1.PlanRequest.artifact:type_name -> meridian.plugin.v1.Artifact
+	19, // 20: meridian.plugin.v1.PlanResult.changes:type_name -> meridian.plugin.v1.Change
+	21, // 21: meridian.plugin.v1.PlanResult.error:type_name -> meridian.plugin.v1.RunError
+	18, // 22: meridian.plugin.v1.ApplyRequest.context:type_name -> meridian.plugin.v1.RunContext
+	10, // 23: meridian.plugin.v1.ApplyRequest.artifact:type_name -> meridian.plugin.v1.Artifact
+	19, // 24: meridian.plugin.v1.ApplyResult.changes:type_name -> meridian.plugin.v1.Change
+	20, // 25: meridian.plugin.v1.ApplyResult.outputs:type_name -> meridian.plugin.v1.Output
+	21, // 26: meridian.plugin.v1.ApplyResult.error:type_name -> meridian.plugin.v1.RunError
+	22, // 27: meridian.plugin.v1.PlanEvent.log:type_name -> meridian.plugin.v1.LogLine
+	24, // 28: meridian.plugin.v1.PlanEvent.result:type_name -> meridian.plugin.v1.PlanResult
+	22, // 29: meridian.plugin.v1.ApplyEvent.log:type_name -> meridian.plugin.v1.LogLine
+	26, // 30: meridian.plugin.v1.ApplyEvent.result:type_name -> meridian.plugin.v1.ApplyResult
+	18, // 31: meridian.plugin.v1.OutputsRequest.context:type_name -> meridian.plugin.v1.RunContext
+	20, // 32: meridian.plugin.v1.OutputsResponse.outputs:type_name -> meridian.plugin.v1.Output
+	21, // 33: meridian.plugin.v1.OutputsResponse.error:type_name -> meridian.plugin.v1.RunError
+	14, // 34: meridian.plugin.v1.Emitter.Describe:input_type -> meridian.plugin.v1.DescribeRequest
+	16, // 35: meridian.plugin.v1.Emitter.Emit:input_type -> meridian.plugin.v1.EmitRequest
+	23, // 36: meridian.plugin.v1.Runner.Plan:input_type -> meridian.plugin.v1.PlanRequest
+	25, // 37: meridian.plugin.v1.Runner.Apply:input_type -> meridian.plugin.v1.ApplyRequest
+	29, // 38: meridian.plugin.v1.Runner.Outputs:input_type -> meridian.plugin.v1.OutputsRequest
+	15, // 39: meridian.plugin.v1.Emitter.Describe:output_type -> meridian.plugin.v1.DescribeResponse
+	17, // 40: meridian.plugin.v1.Emitter.Emit:output_type -> meridian.plugin.v1.EmitResponse
+	27, // 41: meridian.plugin.v1.Runner.Plan:output_type -> meridian.plugin.v1.PlanEvent
+	28, // 42: meridian.plugin.v1.Runner.Apply:output_type -> meridian.plugin.v1.ApplyEvent
+	30, // 43: meridian.plugin.v1.Runner.Outputs:output_type -> meridian.plugin.v1.OutputsResponse
+	39, // [39:44] is the sub-list for method output_type
+	34, // [34:39] is the sub-list for method input_type
+	34, // [34:34] is the sub-list for extension type_name
+	34, // [34:34] is the sub-list for extension extendee
+	0,  // [0:34] is the sub-list for field type_name
 }
 
 func init() { file_meridian_plugin_v1_plugin_proto_init() }
@@ -2248,11 +2334,11 @@ func file_meridian_plugin_v1_plugin_proto_init() {
 	if File_meridian_plugin_v1_plugin_proto != nil {
 		return
 	}
-	file_meridian_plugin_v1_plugin_proto_msgTypes[22].OneofWrappers = []any{
+	file_meridian_plugin_v1_plugin_proto_msgTypes[23].OneofWrappers = []any{
 		(*PlanEvent_Log)(nil),
 		(*PlanEvent_Result)(nil),
 	}
-	file_meridian_plugin_v1_plugin_proto_msgTypes[23].OneofWrappers = []any{
+	file_meridian_plugin_v1_plugin_proto_msgTypes[24].OneofWrappers = []any{
 		(*ApplyEvent_Log)(nil),
 		(*ApplyEvent_Result)(nil),
 	}
@@ -2262,7 +2348,7 @@ func file_meridian_plugin_v1_plugin_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_meridian_plugin_v1_plugin_proto_rawDesc), len(file_meridian_plugin_v1_plugin_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   27,
+			NumMessages:   28,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

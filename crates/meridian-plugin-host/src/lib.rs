@@ -183,5 +183,14 @@ pub fn to_sdk(graph: &meridian_ast::ResourceGraph) -> meridian_sdk::ResourceGrap
                 pos: position(&e.pos),
             })
             .collect(),
+        outputs: graph
+            .outputs
+            .iter()
+            .map(|o| meridian_sdk::OutputDeclaration {
+                name: o.name.clone(),
+                value: o.value.clone(),
+                pos: position(&o.pos),
+            })
+            .collect(),
     }
 }

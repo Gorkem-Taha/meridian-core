@@ -74,14 +74,31 @@ message Edge {
   Position pos = 5;
 }
 
+// OutputDeclaration is a value a document promises to later stages, such as
+// the address of a machine it provisions. The plugin compiles it into the
+// tool's own output mechanism and reports its value, under the same name,
+// from Apply and Outputs.
+message OutputDeclaration {
+  string name = 1;
+  // value is the expression the author wrote, for example
+  // "${web_vm.public_ip}": a reference to an attribute of a resource in this
+  // document, which only the tool can resolve.
+  string value = 2;
+  Position pos = 3;
+}
+
 // ResourceGraph is a whole compiled document: its resources in deterministic
 // apply order, the edges between them, and the host they configure.
 message ResourceGraph {
   string name = 1;
+  // host is the node a host-configuration document applies to. It is empty for
+  // a document that provisions infrastructure.
   string host = 2;
   string target = 3;
   repeated Resource resources = 4;
   repeated Edge edges = 5;
+  // outputs is what the document promises to later stages.
+  repeated OutputDeclaration outputs = 6;
 }
 
 // Capabilities is a target's honest declaration of what it can express. It is
