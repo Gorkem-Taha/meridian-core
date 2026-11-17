@@ -1531,7 +1531,7 @@ secret is secret, and so is the result of any function given one.
 | A `when` may read one; the report shows the answer, never the operand | branching on a secret is legitimate |
 | It cannot be used in an `id`, `metadata`, a label, a `forEach`, `spec.target` or an output not marked `sensitive` | those are shown, stored or shape the document |
 | A secret that cannot be fetched is an error naming the secret and the provider, never the path's contents; `optional: true` makes it null | a run must not half-apply without a credential |
-| A fetched value lives in memory for the run and is wiped after | [security plan, section 1](security.md) |
+| A fetched value lives in locked memory only while a stage needs it, and is wiped after | [11.5](#115-holding-a-secret-in-memory) |
 
 ### 11.4 How a secret reaches the tool
 
@@ -1543,10 +1543,10 @@ the value at apply time by the route its tool has:
 
 | Target | Route | Encrypted at rest by the tool |
 |---|---|---|
-| `terraform`, `opentofu` | a `sensitive` variable, passed in the environment | no: plaintext in state. `plan` warns; `--strict-secrets` refuses ([security plan, section 5](security.md#5-terraforms-plaintext-in-state-problem)) |
+| `terraform`, `opentofu` | a `sensitive` variable, passed in a variables file only the user can read ([11.6](#116-handing-a-secret-to-a-tool)) | no: plaintext in state. `plan` warns; `--strict-secrets` refuses ([security plan, section 5](security.md#5-terraforms-plaintext-in-state-problem)) |
 | `pulumi` | a Pulumi secret | yes |
 | `cloudformation`, `bicep`, `arm` | a `NoEcho` or `@secure()` parameter | not stored in the template |
-| `ansible` | an extra var passed in memory, `no_log` on the task | yes |
+| `ansible` | an extra var passed in a file only the user can read, `no_log` on the task | yes |
 | `puppet`, `openvox` | a `Sensitive` value | masked in reports |
 | `chef` | a `sensitive` resource property | masked |
 | `salt` | pillar, passed for the run | not stored on the master |
@@ -1570,6 +1570,224 @@ may override that, in the open:
 
 `literal` writes the value into the compiled file for the apply only, is
 reported by every `plan` as a warning, and is refused under `--strict-secrets`.
+
+### 11.5 Holding a secret in memory
+
+**Decision N.** A secret value has one home in the process: a type that
+cannot print itself, wipes its bytes when it is dropped, and is kept out of
+swap and out of core dumps. Every other representation is a reference to it.
+
+The honest limit first. The [security plan, section 1.3](security.md#13-adversaries-assumed)
+does not claim to protect plaintext from an adversary with live access to the
+process's memory, and this section does not change that: a debugger attached
+as the same user, or root, can read a secret while it is in use. What this
+section does is make sure a secret is in memory **only while it is being used,
+in one place, and nowhere afterwards**: not in a swap file, a core dump, a
+crash report, a log, a panic message, a freed buffer or another process's
+environment.
+
+```mermaid
+flowchart LR
+    P["provider<br/>env, file, exec,<br/>keychain, vault..."] -->|"read into locked,<br/>wiped-on-drop memory"| S["SecretValue<br/>(one home)"]
+    S -->|"a handle,<br/>never the bytes"| X["expressions, plan,<br/>events, run record"]
+    S -->|"exposed once, at delivery"| D["delivery channel<br/>stdin, fd, 0600 file"]
+    D --> T["the tool"]
+    S -->|"dropped: zeroed,<br/>unlocked"| Z["gone"]
+    style X fill:#eee,stroke:#999
+```
+
+A new crate, `meridian-secret`, owns all of it. Nothing else in the workspace
+may hold secret bytes, and a lint in CI enforces that (below).
+
+| Property | How | Limit, stated plainly |
+|---|---|---|
+| Wiped when dropped | the value lives in a `secrecy::SecretBox` over a fixed buffer; `zeroize` overwrites it with a write the compiler cannot remove | a copy made before the value reached this type (a provider's own buffer, a parser's) is wiped only if that code wipes it; so providers read straight into the buffer, see below |
+| Never moved or grown | the buffer is allocated once at its final size and never reallocated; a `String` or `Vec` that grows leaves its old contents behind in freed memory, so neither is used | |
+| Kept out of swap | the buffer's pages are locked with `mlock` (Linux, macOS) or `VirtualLock` (Windows) | the limit on locked memory is small by default (`RLIMIT_MEMLOCK`, often 64 KiB to 8 MiB). When locking fails the run goes on and says so once: `warning: secrets could not be locked in memory (RLIMIT_MEMLOCK); they may reach swap`. `--strict-secrets` makes it an error |
+| Kept out of core dumps | at start, before any secret is read: `setrlimit(RLIMIT_CORE, 0)` and `prctl(PR_SET_DUMPABLE, 0)` on Linux, `PT_DENY_ATTACH` on macOS; the buffer's pages are also marked `MADV_DONTDUMP` | `PR_SET_DUMPABLE` also stops another process of the same user attaching a debugger or reading `/proc/<pid>/mem`. Root still can |
+| Guarded | a locked buffer sits between two inaccessible guard pages, so an overrun in either direction faults instead of reading a neighbour | costs two pages per secret; secrets under a page share a locked arena |
+| Not inherited | the buffer's pages are marked `MADV_WIPEONFORK` (Linux), so a child created by `fork` sees zeroes; every file descriptor Meridian opens is close-on-exec | |
+| Cannot print | `SecretValue` implements `Debug` and `Display` as `(sensitive)` and does not implement `Serialize`, `Clone`, `PartialEq`, `Hash` or `Deref` | comparison is a named, constant-time function; a copy is a named function that allocates a second locked buffer |
+| Exposed by name | the bytes are reached only through `expose(|bytes| ...)`, which lends them to a closure and gives nothing back that outlives it | every call site is one of a short, reviewed list; CI fails if `expose(` appears outside `meridian-secret` and the delivery module |
+| Short-lived | a secret is fetched just before the first stage that needs it and dropped when the last stage that needs it ends, not at the end of the run | a workflow that needs a database password only in its last step does not hold it through the first hour |
+| Never cached | a fetched value is not written anywhere to save a second fetch; a retry fetches again | |
+
+**How the mark travels.** [Section 11.3](#113-reading-a-secret) says a secret
+is a value with a mark and the mark spreads. In memory that works without ever
+copying the bytes into an ordinary value:
+
+- An expression never holds secret bytes. `secret.db_password` evaluates to a
+  **handle**: a number naming a slot in the run's secret table. `Value` gains
+  one variant for it, and that variant prints, compares, hashes and serializes
+  as `(sensitive)`.
+- A function given a handle (`urlEncode(secret.db_password)`, or text with a
+  secret inside it) does its work inside `meridian-secret`, on locked memory,
+  and returns a new handle to the new locked buffer. Text built from literal
+  parts and handles is kept as its parts, and joined only inside the delivery
+  channel.
+- So a plan, an event, an error, a `Debug` dump of any structure and the run
+  record can only ever contain `(sensitive)`: the bytes were never in the
+  structures those are made from. This is stronger than masking output after
+  the fact, which fails the first time someone forgets.
+- The existing output filter stays as the second line: every line a tool
+  prints is searched for the bytes of every secret in the run (and their
+  base64 and URL-encoded forms) and masked before it is shown, logged or sent
+  to a sink. The search runs inside `meridian-secret`, against locked memory.
+
+**Reading from a provider.** The three built-in providers read straight into
+a locked buffer, with no intermediate `String`:
+
+| Provider | Read | What is left behind |
+|---|---|---|
+| `env` | copied from the process environment into a locked buffer, then the variable is removed from Meridian's own environment so no child inherits it | the kernel's copy of the initial environment (`/proc/<pid>/environ`) is not ours to wipe. This is why `env` is the weakest provider, and the documentation says so |
+| `file` | `read` into a locked buffer from a file descriptor opened with `O_CLOEXEC`; refused when the file is readable by group or others, unless `allowWideMode: true` | the page cache holds the file as it always did |
+| `exec` | the command's standard output is read through a pipe into a locked buffer; its arguments never carry a secret; its standard error is shown masked | |
+| a provider plugin | see [11.8](#118-plugins-and-the-process-boundary) | |
+
+**Panics and crashes.** A panic message is built from `Debug` and `Display`,
+which a secret does not have, so a panic cannot print one. The binary is built
+to abort on a panic inside `meridian-secret` after wiping the secret table,
+and installs a panic hook that wipes it before unwinding anywhere else. With
+core dumps disabled, an abort leaves nothing on disk. `SIGINT` and `SIGTERM`
+wipe the table before exiting.
+
+### 11.6 Handing a secret to a tool
+
+A secret leaves Meridian's memory at exactly one moment: when a plugin
+delivers it to its tool. The channel is chosen from this list, in this order,
+and a plugin states which it uses so that it can be reviewed and tested.
+
+| Rank | Channel | Why it is in this place |
+|---|---|---|
+| 1 | the tool's standard input, or a pipe on a file descriptor the tool is told to read | nothing touches a disk; nothing is visible to another process |
+| 2 | a file on a memory-backed filesystem (`$XDG_RUNTIME_DIR`, `/dev/shm`, `/run/user/<uid>`), created with `O_EXCL` and mode `0600` inside a directory of mode `0700`, wiped and unlinked when the tool exits and again by a guard on any exit path | for tools that only read a file. Never swapped to a real disk on Linux tmpfs when the pages are locked by the tool; visible only to the same user |
+| 3 | the same file in the stage's work directory, when no memory-backed filesystem exists (Windows uses the user's profile temp with an ACL for the user only) | a real disk, so it is overwritten before it is unlinked; `plan` says which stages do this |
+| 4 | an environment variable of the tool's process only | readable by the same user through `/proc/<pid>/environ` and inherited by everything the tool starts. Allowed only where the tool has no other way to take the value, listed in the table below, and reported by `plan` |
+| never | a command-line argument | visible to every user of the machine in `ps`. A plugin that puts a secret in `argv` fails the contract suite |
+| never | a compiled file, unless the document says `secretDelivery: literal` ([11.4](#114-how-a-secret-reaches-the-tool)) | |
+
+What each target uses. Where the table in 11.4 said "in the environment", this
+replaces it:
+
+| Target | Channel |
+|---|---|
+| `terraform`, `opentofu` | rank 2: a `*.auto.tfvars.json` on a memory-backed filesystem, passed with `-var-file`; the variable is declared `sensitive`. Provider credentials: rank 4, because the providers read only the environment or their own files |
+| `pulumi` | rank 1: `pulumi config set --secret` reading the value from standard input; the passphrase by rank 2 (`PULUMI_CONFIG_PASSPHRASE_FILE`) |
+| `cloudformation`, `bicep`, `arm` | rank 2: a parameters file |
+| `ansible` | rank 2: an extra-vars file passed as `-e @file`; connection passwords by rank 2 (`--connection-password-file`); the vault password by rank 1 or 2 |
+| `puppet`, `openvox`, `chef`, `salt` | rank 2: a data file the run reads (hiera, attributes JSON, pillar) |
+| `dsc` | rank 1: a `PSCredential` built from a secure string read from standard input |
+| `kubernetes`, `helm` | rank 1: the `Secret` manifest is piped to `kubectl apply -f -`; `helm` takes `--values -` from standard input |
+| `docker`, `podman` | rank 1: `docker secret create name -` and `podman secret create name -` read standard input; registry logins use `--password-stdin` |
+| `packer` | rank 2: a `-var-file` |
+| SSH keys, for any target | the agent: the key is added to an agent Meridian starts for the run (`ssh-add -` from standard input, with a lifetime) and the tool is given only the agent's socket |
+
+A temporary file is created by `meridian-secret`, not by each plugin, so the
+mode, the directory, the wipe and the cleanup guard are written once and
+tested once. A crash that skips the guard leaves a file in a `0700` directory
+on a filesystem that does not survive a reboot; the next run removes any such
+directory it finds whose owning process is gone.
+
+### 11.7 The operating system's own stores
+
+The best place for a long-lived credential on a workstation is the store the
+operating system already protects, and the best on a server is a secret
+manager. Both are providers, so nothing about the model changes; three are
+added to the built-in and shipped lists of [11.2](#112-providers-and-stores).
+
+| Provider | Store | Notes |
+|---|---|---|
+| `keychain` | macOS Keychain | read through the Security framework; the user is prompted the first time, and the item can be limited to the `meridian` binary |
+| `credential-manager` | Windows Credential Manager, protected by DPAPI | per user; nothing for Meridian to store |
+| `secret-service` | the freedesktop Secret Service (GNOME Keyring, KWallet) | needs a session bus; not present on most servers, and the provider says so instead of hanging |
+| `keyring` | the Linux kernel keyring (`keyctl`), session or user keyring | never touches a disk, expires on its own; the right store for a value that should live for one login |
+| `systemd-creds` | a credential passed to a unit (`LoadCredentialEncrypted=`), read from `$CREDENTIALS_DIRECTORY` | for Meridian run as a service or timer; encrypted at rest with the machine's TPM or host key |
+| `tpm` | a value sealed to the machine's TPM | plugin; for unattended machines |
+
+```yaml
+spec:
+  secrets:
+    - name: deploy_key
+      from: keychain                # macOS; the same document may give others
+      service: meridian
+      account: deploy
+    - name: registry_password
+      from: keyring
+      key: user:meridian:registry
+```
+
+A secret may list several sources, tried in order, so one document works on a
+laptop and in CI:
+
+```yaml
+    - name: api_token
+      from:
+        - {provider: keychain, service: meridian, account: api}
+        - {provider: secret-service, attributes: {app: meridian, name: api}}
+        - {provider: env, key: API_TOKEN}
+```
+
+`meridian secret set <name>` stores a value in the first writable store a
+secret names, reading it from standard input or a prompt with echo off, never
+from an argument. `meridian secret check` says, for every secret a project
+declares, which store would answer, without fetching the value.
+
+Meridian itself stores no credential, ever. There is no Meridian vault, no
+encrypted file of its own and no cache: every scheme of that kind ends with a
+key that has to be kept somewhere, and the stores above are that somewhere.
+
+**Credentials outside a run.** Some work needs a credential when nothing is
+being compiled: installing a module from a private registry, for one. The
+same model answers it. `meridian-secret` gives a small function for it,
+`resolve_credential(project, name)`, which returns the credential's fields
+with every secret field as a `SecretValue`, fetched at that moment and dropped
+by the caller. The module installer uses it with a `registry`,
+`usernamePassword` or `token` credential, and hands the value to its HTTP
+client through `expose`, never through a formatted header string that could be
+logged.
+
+### 11.8 Plugins and the process boundary
+
+A plugin is a separate program. A secret that crosses to it has left the
+memory this section protects, so the boundary is where the design must be
+most exact.
+
+| Threat | What stops it |
+|---|---|
+| A plugin is handed secrets it does not need | a target plugin is sent a secret only when a resource it compiles uses it, and only at `plan` or `apply`, never at `compile`. At `compile` it gets a sealed reference: a name and a random id, which is all it needs to lay out the tool's files |
+| The value is read off the wire | the plugin protocol runs over a Unix socket in a `0700` directory owned by the user (a named pipe with a user-only ACL on Windows). The TCP fallback in the handshake is refused for any run that carries a secret. The socket's peer is checked to be the child Meridian started (`SO_PEERCRED`) |
+| The value lingers in protocol buffers | a secret is not a field of the ordinary request message. It is sent in its own message on its own stream, into a buffer the SDK allocates locked, and both ends wipe their encode and decode buffers. The SDK's generated types for it carry no `Debug` |
+| The plugin logs it | the SDK gives a plugin the same `SecretValue` type, with the same missing `Debug` and `Display`, so the easy mistakes do not compile. Everything a plugin logs or returns still passes through the host's output filter |
+| The plugin puts it in `argv` or a world-readable file | the contract suite runs each plugin against a recording tool that captures its arguments, environment, standard input and every file it is shown with its mode, and fails on a secret in `argv`, in a file wider than `0600`, or in the environment of a target not listed for rank 4 |
+| The plugin keeps it | the SDK drops and wipes the value when the stage ends; a plugin process does not outlive its run. Plugin processes are started with core dumps disabled and are not dumpable, the same as the host |
+| A malicious or compromised plugin | not stopped by any of the above: a plugin given a secret can do anything with it. The defences are the ones for any code you run: a plugin is a signed release from a named publisher ([governance](governance.md)), a document's `requires` pins it, and a plugin is given only the secrets of the resources it compiles. A plugin that should never see secrets can be told so in the project's settings: `plugins: {<name>: {secrets: deny}}` |
+| A secret provider plugin returns a value over the same wire | the same stream, in the other direction; the provider's settings are sent to it and never echoed back in an error |
+| A notification sink receives a secret | it cannot: events are built from structures that hold handles, and a sink is never sent a secret stream. A sink's own credential reaches it by the same stream as any plugin's |
+
+### 11.9 What is tested
+
+Each claim above has a test that fails when the claim stops being true. The
+fixture secret is a long random value generated per test run, so finding it
+anywhere is never a coincidence.
+
+| Claim | Test |
+|---|---|
+| A secret is in no output | every command (`validate`, `compile`, `plan`, `apply`, `status`, `events`, `explain`, `describe`) is run over fixtures that use the secret in every allowed place, on every target, and standard output, standard error, `--events json`, the run record, the state directory and every compiled file are searched for the value and its base64, hex and URL-encoded forms |
+| Nor in a failure | the same, with a failure injected at each stage (provider error, expression error, plugin crash, tool exit 1, tool that echoes its input) |
+| Nor in a panic | a build with a test-only switch that panics while a secret is held, at each point it is held; the panic output is searched, and the process is checked to have exited without a core file |
+| It has no text form | `format!("{:?}")`, `format!("{}")`, `serde_json::to_string` and `to_string()` of a secret, of a `Value` holding a handle, and of every structure that can contain one give `(sensitive)`; a compile-fail test asserts `SecretValue` is not `Clone`, `Serialize` or `Deref` |
+| It is wiped | after a secret is dropped, the bytes at its buffer's address are read through a test-only raw pointer and are zero; under Miri and AddressSanitizer in CI |
+| It is not in the process's memory afterwards | on Linux, a test reads its own `/proc/self/mem` across every writable mapping after a full run has ended (and the tool has exited) and does not find the value |
+| It is locked and undumpable | `/proc/self/smaps` shows the buffer's pages `Locked` and `dd` (`VM_DONTDUMP`); `/proc/self/status` shows the process not dumpable; `RLIMIT_CORE` is 0 |
+| It is not in `argv` or the environment | the recording tool of 11.8, for every target; and `/proc/<pid>/cmdline` and `environ` of the tool process are read while it runs |
+| Files are tight and removed | the mode of every delivery file and its directory is checked while the tool runs; after the run, and after a run killed with `SIGKILL` followed by another run, none remain |
+| Children inherit nothing | a child process started during a run lists its open file descriptors and its environment; no secret, no descriptor it was not given |
+| The mark spreads | a property test builds random expressions over secrets and plain values and asserts the result is a handle whenever any input was |
+| `expose` is rare | CI greps the workspace for `expose(` and fails on any call outside the two allowed modules |
+
+These run on Linux and macOS in CI, and the wipe, format and argument tests on
+Windows. What cannot be tested from inside the process (that root cannot read
+the memory) is not claimed.
 
 ## 12. Credentials
 
@@ -1653,8 +1871,10 @@ and not an authentication failure an hour later. A plugin can add a type.
   the whole of it, and a `final` one cannot be replaced
   ([9.5](#95-overriding-and-final)).
 - A credential is delivered to the tool by the plugin, by the tool's own
-  route: environment variables for the life of the process, an agent, or a
-  file readable only by the user and removed after the run. It is never in a
+  route, chosen in the order of [11.6](#116-handing-a-secret-to-a-tool):
+  standard input or a file descriptor, an agent, a file readable only by the
+  user and removed after the run, and the tool's environment only where the
+  tool takes it no other way. Never a command-line argument. It is never in a
   compiled file, a plan, a log, an event or the run record.
 - `plan` names the credential each instance will use, so "which identity
   touches production" can be reviewed:
@@ -2052,6 +2272,7 @@ kept here as the record of what was weighed.
 | K | Overriding | allowed by default and reported; `final` forbids it, on variables, conditions, secrets, credentials and data keys | forbidden by default, with an explicit `overridable` |
 | L | Run state | an append-only event stream and a run record; state backends as plugins | keep the single last-apply file |
 | M | Notifications | sinks as plugins, configured per workflow, credentials from the credential model | built-in webhook only |
+| N | Secrets in memory | one locked, wiped-on-drop home per secret; handles everywhere else; delivery by standard input or a user-only file, never argv; the operating system's stores as providers; Meridian stores no credential itself ([11.5](#115-holding-a-secret-in-memory) to [11.9](#119-what-is-tested)) | mask output only |
 
 ## 18. Delivery in phases
 
@@ -2068,7 +2289,8 @@ green before the next starts.
 | 5a | `Data`: layers per endpoint on the existing merge engine, the strategies, `final` keys, the in-data directives, `meridian explain`; the compile-rules hook after layers load | 5 |
 | 5b | `Composite`, `include`, `extends`, the configuration type (`segment`, `targets`) | 5 |
 | 6 | `Inventory`, endpoint types, `spec.endpoints`, one instance per endpoint, `--endpoint`, sources from outputs | 4, 5 |
-| 7 | secrets and credentials: declaration, built-in providers, credential types, marking and masking, sealed references in the protocol, delivery on every target | 2, 6 |
+| 6a | `meridian-secret`: the locked, wiped-on-drop value, process hardening, the secret handle in `Value` and how the mark spreads, the output filter, the delivery helpers (standard input, user-only files), `spec.secrets` with the `env`, `file`, `exec` and operating-system store providers, `meridian secret set` and `check`, `resolve_credential`, and the tests of [11.9](#119-what-is-tested) | 2 |
+| 7 | secrets and credentials on targets: credential types, sealed references and the secret stream in the protocol, delivery on every target by its channel of [11.6](#116-handing-a-secret-to-a-tool), the plugin contract suite with the recording tool | 6, 6a |
 | 7a | events and the run record: the event stream, `status`, `runs`, `events`, locking, `--events json` | 4 |
 | 8 | `Workflow`: steps, order from needs, `with`, `assign` from data, fan-out strategies, gates, failure handling, resume | 5a, 6, 7a |
 | 8a | notification sinks: the sink protocol, `webhook` and `command` built in, then `slack`, `teams`, `email`, `opentelemetry` | 7, 7a |
@@ -2084,7 +2306,7 @@ green before the next starts.
 | Same across targets | one fixture set of conditions, interpolations and `forEach` run against all targets through the plugin test kit, asserting each plugin received identical resources. This is the test that makes "the same on every target" a fact, not a promise |
 | Parsing | every place an expression is allowed, and every place it is refused, with the message and position |
 | Compatibility | every existing example compiles to byte-identical output after each phase |
-| Secrets | the secret fixture's value appears in no compiled file, log line, plan, error or state file for any target; the tool-output filter; every `(sensitive)` rendering |
+| Secrets | the secret fixture's value appears in no compiled file, log line, plan, error or state file for any target; the tool-output filter; every `(sensitive)` rendering; and every claim of [11.9](#119-what-is-tested): wiped, locked, undumpable, never in `argv`, files user-only and removed |
 | Data and merging | every strategy against every pair of value shapes; path patterns and which is most specific; the directives; `final` keys; layers chosen per endpoint; missing and optional layers; `explain` output |
 | Declarations | every type and check of a parameter, with all problems reported at once; each source and their order; scopes and shadowing; `final`; cycles among variables; every key of `requires` |
 | Composites | expansion and id prefixing; edges to, from and into an instance; nesting; self-use refused; sealing; `forEach` of a composite; variants per target |
