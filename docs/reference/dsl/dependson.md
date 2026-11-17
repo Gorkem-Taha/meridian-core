@@ -118,7 +118,7 @@ thinks about order:
 flowchart TD
     D["dependsOn in the document"] --> S["Meridian sorts the resources"]
     S --> F["Tool runs a file top to bottom<br/>ansible, chef"]
-    S --> R["Tool orders by declared relationships<br/>puppet, dsc, terraform, cloudformation, bicep, podman"]
+    S --> R["Tool orders by declared relationships<br/>puppet, openvox, salt, dsc, terraform, opentofu, pulumi,<br/>cloudformation, bicep, arm, podman"]
     S --> O["Tool has its own rules<br/>docker"]
     S --> N["Tool does not order<br/>kubernetes"]
     F --> F2["nothing is written:<br/>the resources are emitted in order"]
@@ -130,10 +130,12 @@ flowchart TD
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep`, `podman` | the tool's own keyword |
+| declared relationships | `puppet`, `openvox`, `salt`, `dsc`, `terraform`, `opentofu`, `pulumi`, `cloudformation`, `bicep`, `arm`, `podman` | the tool's own keyword |
 | its own rules | `docker` | `depends_on` between services |
+| the fixed shape of a build | `packer` | the order of the provisioners and the chain of post-processors; a dependency that contradicts the shape is refused |
 | the stages of a first boot | `cloud-init` | nothing written; a dependency that points backwards through the stages is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning |
+| the kind of each object | `helm` | nothing written where Helm's own install order already agrees; refused where it does not |
 
 Two consequences worth knowing:
 
@@ -147,8 +149,8 @@ Two consequences worth knowing:
   The result is the same; only the time differs.
 
 - **Where a reference already implies the order, the keyword is not written
-  twice.** On Terraform, CloudFormation and Bicep, `${web_sg.id}` inside `web`
-  already puts `web_sg` first, so an explicit `dependsOn` between the two adds
+  twice.** On Terraform, OpenTofu, Pulumi, CloudFormation and Bicep, `${web_sg.id}`
+  inside `web` already puts `web_sg` first, so an explicit `dependsOn` between the two adds
   nothing to the tool's file. Write `dependsOn` for an order the tool cannot
   see from the data: an IAM role that must exist before an instance starts,
   though nothing in the instance mentions it.

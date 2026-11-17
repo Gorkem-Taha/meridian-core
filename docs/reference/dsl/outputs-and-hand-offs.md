@@ -52,11 +52,14 @@ before the apply and an output is read after it:
 
 | Target | An output can read |
 |---|---|
-| `terraform` | any attribute of a resource or data source |
+| `terraform`, `opentofu` | any attribute of a resource or data source |
 | `cloudformation` | `Ref` and `GetAtt` attributes |
 | `bicep` | any property; always reported as text |
+| `arm` | a resource's id, name and properties; always reported as text |
+| `pulumi` | any property of a resource, with its type kept; a secret is reported as sensitive |
+| `packer` | what the build's manifest records for a source: `id`, `artifact_id`, `builder_type`, `build_time`, `files` |
 | `docker` | a published port (`${app.port.8080}`), or a path into the container's inspection |
-| `kubernetes` | any path into the live object, such as `${svc.status.loadBalancer.ingress[0].ip}` |
+| `kubernetes`, `helm` | any path into the live object, such as `${svc.status.loadBalancer.ingress[0].ip}`; `helm` also anything a template can read |
 
 **Strictness.**
 
@@ -135,7 +138,8 @@ machine its own way, with its own credentials:
 | Target | The host becomes |
 |---|---|
 | `ansible` | the play's `hosts`, and the entry in `inventory.ini` |
-| `puppet` | the node statement in `site.pp`; another machine is reached with Bolt |
+| `puppet`, `openvox` | the node statement in `site.pp`; another machine is reached with Bolt |
+| `salt` | the entry in the top file; another machine is reached with `salt-ssh` |
 | `chef` | the machine `chef-run` is pointed at |
 | `cloud-init` | the machine's name in `meta-data`, and where an apply can wait for the first boot |
 | `dsc` | the machine the runner reaches over WinRM or SSH, as its `runner` resource says |

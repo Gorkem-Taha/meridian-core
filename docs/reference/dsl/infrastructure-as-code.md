@@ -87,7 +87,8 @@ its params and says whether it is required.
 
 Left out. These tools have one idea of state: what the document declares exists,
 and what it no longer declares is removed (or, on a Bicep resource group
-deployment, left alone). `state: absent` is refused on every target in the
+or ARM deployment, left alone; on Packer, nothing is ever removed, because a
+build only creates images). `state: absent` is refused on every target in the
 segment, with the instruction to remove the resource from the document.
 
 ## References
@@ -101,6 +102,15 @@ This is the flavour where `${...}` does the most.
 | a reference inside longer text | interpolation | `Fn::Sub` | interpolation |
 | something that is not a path | Terraform's expression language | pseudo parameters such as `${AWS::Region}` | Bicep's expression language, such as `${resourceGroup().location}` |
 
+The other targets of the segment follow the same idea in their tool's spelling:
+
+| Target | A reference becomes |
+|---|---|
+| `opentofu` | the same as Terraform |
+| `pulumi` | Pulumi YAML's own `${web.property}`, carried over unchanged. Nothing computed is accepted inside `${}`; use Pulumi's `fn::` functions |
+| `arm` | `resourceId(...)` for the resource, `reference(...)` for its state, and `format(...)` inside longer text. ARM's own expressions are written in square brackets |
+| `packer` | a read of a `variable`, a `local` or a `data.<type>`. A source's results are read only by an output |
+
 The first name of a path must be a resource of the document, or the document
 does not compile. What can be read after it is whatever the tool exposes for
 that type.
@@ -110,7 +120,12 @@ that type.
 `dependsOn` becomes the tool's own keyword (`depends_on`, `DependsOn`,
 `dependsOn`). These tools also derive order from references, so where a
 reference already puts one resource after another, the dependency is not written
-a second time.
+a second time. Two targets differ:
+
+| Target | Difference |
+|---|---|
+| `arm` | Resource Manager infers no order from a resource id, so every reference is also written as a `dependsOn` |
+| `packer` | a build has a fixed shape. `dependsOn` orders provisioners and chains post-processors inside it, and a dependency that contradicts the shape is refused |
 
 ## `notifies`
 
@@ -118,9 +133,10 @@ These tools have no handlers. What each can be made to do instead:
 
 | Target | Notify |
 |---|---|
-| `terraform` | synthetic: the action `replace` only, aimed at a managed resource. It becomes `replace_triggered_by`, so the notified resource is destroyed and created again. The compile warns |
+| `terraform`, `opentofu` | synthetic: the action `replace` only, aimed at a managed resource. It becomes `replace_triggered_by`, so the notified resource is destroyed and created again. The compile warns |
 | `cloudformation` | refused. There is no way to react to a change in another resource |
-| `bicep` | refused, for the same reason |
+| `bicep`, `arm`, `pulumi` | refused, for the same reason |
+| `packer` | refused. A build runs each step once on a machine it then discards |
 
 ## `runtimeWhen`
 
@@ -149,7 +165,9 @@ targetHost:
 ```
 
 A value the tool marks sensitive is reported as `(sensitive)` and never printed.
-Bicep reports every output as text.
+Bicep and ARM report every output as text. Pulumi keeps each output's type and
+marks a secret as sensitive. A Packer output reads what the build's manifest
+records for a source, such as `${image.id}`.
 
 ## Plan and apply
 

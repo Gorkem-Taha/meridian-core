@@ -30,7 +30,7 @@ in the tool's own spelling, and elements find each other by `id`.
 | Params are spelt | as the Compose specification has them: `image`, `ports` | as Quadlet has them: `Image`, `PublishPort` |
 | `dependsOn` | `depends_on` between services | `Requires=` and `After=` |
 | `notifies` | `restart`, native or synthetic | `restart`, native: systemd's `PartOf=` |
-| Another machine | the `project` resource names a daemon | a ResourceSet's `targetHost`, over `ssh` |
+| Another machine | the `project` resource, or a ResourceSet's `targetHost` | a ResourceSet's `targetHost`, over `ssh` |
 
 The rest of this page uses Docker for its examples. Podman's own page has the
 same sections for Quadlet.
@@ -88,9 +88,19 @@ A longer one: [`examples/docker/web.yaml`](../../../examples/docker/web.yaml).
 
 ## The settings resource
 
-One optional resource of type `project` says where the project runs: its name,
-and the daemon to use (a host reached over SSH, an address, or a Docker
-context). It is not part of the compiled file.
+One optional resource of type `project` says where and how the project runs. It
+is not part of the compiled file.
+
+| Param | Meaning |
+|---|---|
+| `name` | the project's name; the document's name when left out |
+| `host`, `context` | the daemon to use: a host reached over SSH, an address, or a Docker context |
+| `directory` | an absolute path that Compose resolves relative paths against |
+| `profiles` | a list of Compose profiles to enable |
+| `wait` | whether an apply waits for services to be running or healthy. On by default |
+| `wait_timeout` | how long that wait may take, in seconds |
+
+A ResourceSet's `targetHost` also selects the daemon, over SSH.
 
 ## `state`
 
@@ -116,9 +126,17 @@ environment of whoever runs it.
 
 ## Order
 
-Between two services, `dependsOn` becomes the tool's own `depends_on`. Networks,
-volumes, configs and secrets are created before any service starts whatever the
-document says, so a dependency on one of those adds nothing.
+Between two services, `dependsOn` becomes the tool's own `depends_on`. It waits
+for the other service to be healthy when that service declares a healthcheck,
+and to have started otherwise. Networks, volumes, configs and secrets are
+created before any service starts whatever the document says, so a dependency on
+one of those adds nothing, and the compile warns that it does.
+
+## What is checked at compile time
+
+The compile refuses an attribute Compose does not know, a network, volume,
+config or secret that a service uses and the document does not declare, and
+services that depend on each other in a circle.
 
 ## `notifies`
 
@@ -135,9 +153,13 @@ Refused. There is nothing to check a condition against while a project comes up.
 
 ## Plan and apply
 
-`meridian plan` is the tool's own dry run, and `meridian apply` brings the
-project up and then reads the outputs. The exact commands are on the target's
-page.
+On `docker`, `meridian plan` compares Compose's own configuration hash of each
+service with the hash recorded on the running containers, and reports what would
+be created, replaced, updated and deleted. It is uncertain for a service that is
+built from source. `meridian apply` brings the project up, removes services the
+document no longer declares, waits for the services by default, and then reads
+the outputs. On `podman` the plan is an exact comparison of unit files. The
+exact commands are on each target's page.
 
 ## How this differs from container orchestration
 

@@ -29,11 +29,11 @@ flowchart TD
     CORE --> IAC["Infrastructure as code<br/>kind: Infrastructure"]
     CORE --> CON["Containerization<br/>kind: Infrastructure"]
     CORE --> ORC["Container orchestration<br/>kind: Infrastructure"]
-    CM --> CM1["shared dialect: six types<br/>ansible, puppet, chef, cloud-init"]
+    CM --> CM1["shared dialect: six types<br/>ansible, puppet, openvox, chef, salt, cloud-init"]
     CM --> CM2["native dialect<br/>dsc"]
-    IAC --> IAC1["the tool's own types<br/>terraform, cloudformation, bicep"]
+    IAC --> IAC1["the tool's own types<br/>terraform, opentofu, pulumi, cloudformation, bicep, arm, packer"]
     CON --> CON1["elements of a project<br/>docker, podman"]
-    ORC --> ORC1["API objects<br/>kubernetes"]
+    ORC --> ORC1["API objects<br/>kubernetes, helm"]
 ```
 
 ## The pages of this reference

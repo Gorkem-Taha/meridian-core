@@ -42,6 +42,7 @@ not move between tools.
 | Target | It becomes | Written in | Example |
 |---|---|---|---|
 | `ansible` | the task's `when:` | a Jinja2 expression over Ansible facts and variables | `"ansible_facts['os_family'] == 'Debian'"` |
+| `salt` | a Jinja `if` around the state, evaluated when the minion renders the file | a Jinja expression over grains and pillar, written without `{{ }}` | `"grains['os_family'] == 'RedHat'"` |
 | `chef` | an `only_if` guard | Ruby, with node attributes | `"node['platform_family'] == 'debian'"` |
 | `dsc` | a `preCondition` | the DSC runner's function language | `"equals (nodeName) 'web'"` |
 
@@ -54,10 +55,11 @@ rw.yaml:8:7: puppet: resource "a" [unsupported-runtime-condition]: resource carr
 
 | Target | Why not |
 |---|---|
-| `puppet` | a catalog is compiled before it reaches the node |
+| `puppet`, `openvox` | a catalog is compiled before it reaches the node |
 | `cloud-init` | it evaluates nothing per resource; the machine applies its user-data once |
-| `terraform`, `cloudformation`, `bicep` | there is no node; the tool talks to an API |
-| `docker`, `kubernetes` | nothing to check a condition against while a project or a set of objects is submitted |
+| `terraform`, `opentofu`, `pulumi`, `cloudformation`, `bicep`, `arm` | there is no node; the tool talks to an API |
+| `packer` | refused; a step's own `only` or `except` param does this job |
+| `docker`, `kubernetes`, `helm` | nothing to check a condition against while a project or a set of objects is submitted |
 | `podman` | refused; systemd's own `Condition*=` settings under `unit` do this job |
 
 The [capability matrix](../capability-matrix.md) has the `runtimeWhen` column.
@@ -180,7 +182,7 @@ Also:
 
 | The condition depends on | Use |
 |---|---|
-| something only known on the machine at that moment (a file exists, a fact, a node attribute) | `runtimeWhen`, on `ansible`, `chef` or `dsc` |
+| something only known on the machine at that moment (a file exists, a fact, a node attribute) | `runtimeWhen`, on `ansible`, `chef`, `salt` or `dsc` |
 | which environment or kind of machine the document is for, as far as you can say it in a data file | `when`, on any target |
 | which documents of a workflow to run at all | not a condition: [labels and a selector](index.md#labels-and-selectors) |
 | whether another resource changed | not a condition: [`notifies`](notifies.md) |

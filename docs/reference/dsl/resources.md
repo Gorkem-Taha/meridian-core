@@ -43,7 +43,7 @@ target derives it and keeps reporting the id you wrote:
 |---|---|
 | `cloudformation` | a logical id of letters and digits: `web_vm` is written `WebVm` |
 | `kubernetes` | the object's name when `metadata.name` is not given, with underscores as hyphens: `web_config` is `web-config` |
-| `terraform`, `bicep`, `docker` | used as written |
+| `terraform`, `opentofu`, `pulumi`, `bicep`, `arm`, `docker` | used as written |
 
 An id is local to its document. Two documents may both have a resource called
 `web`; nothing connects them.
@@ -79,9 +79,11 @@ Terraform type that no provider has is refused by Terraform when it plans.
 
 **Settings resources.** Most passthrough targets reserve one or two type names
 for a resource that is not a thing to create but says where and how the rest is
-deployed: `provider` and `backend` (Terraform), `stack` (CloudFormation),
-`deployment` (Bicep), `project` (Docker), `cluster` (Kubernetes), `runner`
-(DSC). It is written in the same list so that a document stays one list. Each
+deployed: `provider` and `backend` (Terraform), `stack` (CloudFormation), `provider`, `backend` and `encryption` (OpenTofu),
+`stack` and `config` (Pulumi), `deployment` and `parameter` (ARM), `variable`,
+`local` and `plugin` (Packer),
+`deployment` (Bicep), `project` (Docker), `cluster` (Kubernetes), `values`,
+`chart`, `release` and `kustomization` (Helm), `runner` (DSC). It is written in the same list so that a document stays one list. Each
 target's page gives its params and whether it is required.
 
 ## `state`
@@ -112,8 +114,9 @@ message says what to do instead:
 | Target | Why there is no `state` |
 |---|---|
 | `dsc` | a DSC resource carries its desired state in its own properties (`Ensure`, `_exist`); set it in `params` |
-| `terraform`, `cloudformation`, `docker`, `podman` | the tool removes what the document no longer declares; remove the resource |
-| `bicep`, `kubernetes` | the tool never deletes; remove the resource from the document and delete it with the tool |
+| `terraform`, `opentofu`, `pulumi`, `cloudformation`, `docker`, `podman`, `helm` | the tool removes what the document no longer declares; remove the resource |
+| `bicep`, `arm`, `kubernetes` | the tool never deletes; remove the resource from the document and delete it with the tool |
+| `packer` | a build only creates images; remove the resource |
 
 ## `params`
 
