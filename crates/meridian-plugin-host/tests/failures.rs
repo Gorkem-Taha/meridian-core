@@ -132,8 +132,11 @@ fn a_plugin_that_accepts_but_never_answers_is_given_up_on() {
     let _ = fs::remove_file(&socket);
     let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
     std::thread::spawn(move || {
-        let held: Vec<_> = listener.incoming().collect();
-        drop(held);
+        // Every accepted connection is kept open and never written to.
+        let mut held = Vec::new();
+        for connection in listener.incoming() {
+            held.push(connection);
+        }
     });
 
     let path = script(
