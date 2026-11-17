@@ -162,10 +162,36 @@ belongs to whoever runs the pipeline, not to a group of layers.
 Rules come after capabilities and are independent of them: being allowed to
 set `variables` does not make a team allowed to change the organization's.
 
-Three sets ship with Meridian and are switched on by name with `use:`:
-`protect-variables`, `protect-secrets` and `protect-all`. They are ordinary
-`no-override` rules, and nothing is in force that the rules file does not ask
-for.
+## A deny list by default
+
+A rules file is a deny list out of the box: everything is allowed except what
+it forbids. That keeps adoption easy, because adding a rules file to an
+existing hierarchy does not require listing everything every layer already
+sets.
+
+A deny list that forbids nothing is not much of a default, so three rule sets
+are in force in every rules file that does not say otherwise:
+
+| Set | Forbids |
+|---|---|
+| `protect-variables` | changing a variable a less specific layer set |
+| `protect-secrets` | changing a secret or a credential a less specific layer set |
+| `no-placeholder-secrets` | a secret or a credential that is empty, or a placeholder such as `changeme` |
+
+```mermaid
+flowchart LR
+    A["no rules file"] -->|"add rules.yaml"| B["<b>deny list</b><br/>everything allowed, except:<br/>overriding variables and secrets,<br/>placeholder secrets"]
+    B -->|"add rules of your own"| C["deny list<br/>with your rules"]
+    B -->|"default: deny<br/>+ capabilities"| D["<b>allow list</b><br/>a layer may set only<br/>what its group lists"]
+    B -->|"use: [ ]"| E["only what<br/>the file writes"]
+    style B fill:#e8f0fe,stroke:#1a56db,color:#000
+```
+
+Each step is opt-in. `use:` chooses the shipped sets explicitly, and
+`use: []` switches them off for a file that wants only its own rules.
+`default: deny` with `capabilities` turns the file into an allow list, which
+is what `Policy.yml` recommends for DscPipelineRunner. With no rules file at
+all nothing is checked, and `--require-rules` makes that an error.
 
 ## Rules follow the merge
 

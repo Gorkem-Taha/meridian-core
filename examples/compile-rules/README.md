@@ -21,7 +21,7 @@ A node that keeps the rules:
 
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=web01
-rules: config/rules.yaml (8 rules)
+rules: config/rules.yaml (9 rules)
 layers, least specific first:
   common.yaml            organization
   environment/prod.yaml  environment
@@ -38,7 +38,7 @@ and no value is shown; the full text is in
 
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=rogue
-error: compile rules: 9 violations; nothing was compiled
+error: compile rules: 10 violations; nothing was compiled
   - [meridian/capabilities] layer "node/rogue.yaml" (team) sets "credentials", which team is not allowed to set: it may set only variables, packages, web
   ...
 ```

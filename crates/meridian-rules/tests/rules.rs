@@ -15,7 +15,19 @@ fn data(yaml: &str) -> Data {
     }
 }
 
+/// Parses a rules file for a test of one thing. The sets that are on by
+/// default are switched off unless the test asks for sets itself, so each
+/// test sees only the rule it is about; `defaults` is for the tests of the
+/// defaults.
 fn rules(yaml: &str) -> Rules {
+    if yaml.lines().any(|line| line.starts_with("use:")) {
+        defaults(yaml)
+    } else {
+        defaults(&format!("{yaml}use: []\n"))
+    }
+}
+
+fn defaults(yaml: &str) -> Rules {
     Rules::parse("rules.yaml", yaml.as_bytes()).unwrap_or_else(|e| panic!("{e}"))
 }
 
@@ -276,6 +288,155 @@ fn the_author_s_message_is_added() {
         ["[region] layer \"node/x.yaml\" (team) changes \"variables.Region\", which layer \"common.yaml\" \
           (organization) set. Ask the platform team"]
     );
+}
+
+// ---------------------------------------------------------------------------
+// The deny list a rules file has out of the box
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_rules_file_that_does_not_say_use_gets_the_default_deny_list() {
+    let r = defaults("rulesVersion: 1\n");
+    let ids: Vec<&str> = r.rules.iter().map(|rule| rule.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "meridian/protect-variables",
+            "meridian/protect-secrets",
+            "meridian/no-placeholder-secrets"
+        ]
+    );
+    assert_eq!(r.default, DefaultAccess::Allow);
+
+    let got = deep(
+        &r,
+        &[
+            ("common.yaml", "variables: {Region: eu}\nsecrets: {db: {path: kv/org}}\nmotd: hello"),
+            ("node/x.yaml", "variables: {Region: us}\nsecrets: {db: {path: kv/mine}, api: {token: changeme}}\nmotd: bye"),
+        ],
+    );
+    assert_eq!(
+        got,
+        [
+            "[meridian/protect-variables] layer \"node/x.yaml\" changes \"variables.Region\", which layer \
+             \"common.yaml\" set",
+            "[meridian/protect-secrets] layer \"node/x.yaml\" changes \"secrets.db.path\", which layer \
+             \"common.yaml\" set",
+            "[meridian/no-placeholder-secrets] layer \"node/x.yaml\" sets \"secrets.api.token\" to a value the \
+             rule forbids (matches[0])",
+        ]
+    );
+    // It is a deny list: everything it does not forbid is allowed. The
+    // unprotected `motd` changed above and nothing was said about it, and a
+    // layer may add variables and secrets of its own.
+    let got = deep(
+        &r,
+        &[
+            ("common.yaml", "variables: {Region: eu}"),
+            (
+                "node/x.yaml",
+                "variables: {Owner: me}\nsecrets: {api: {from: vault}}\nanything: 1",
+            ),
+        ],
+    );
+    assert_eq!(got, Vec::<String>::new());
+}
+
+#[test]
+fn the_default_deny_list_is_replaced_by_what_use_lists() {
+    let layers = [
+        ("common.yaml", "variables: {Region: eu}"),
+        ("node/x.yaml", "variables: {Region: us}\nsecrets: {a: \"\"}"),
+    ];
+    // Switched off, explicitly.
+    assert_eq!(
+        deep(&defaults("rulesVersion: 1\nuse: []\n"), &layers),
+        Vec::<String>::new()
+    );
+    // One set chosen: only that one holds.
+    let got = deep(
+        &defaults("rulesVersion: 1\nuse: [no-placeholder-secrets]\n"),
+        &layers,
+    );
+    assert_eq!(
+        got,
+        ["[meridian/no-placeholder-secrets] layer \"node/x.yaml\" sets \"secrets.a\" to a value the rule forbids (values[1])"]
+    );
+    // The defaults stay on beside a file's own rules and its capabilities.
+    let r = defaults("rulesVersion: 1\ndefault: deny\nlayers:\n  - {name: all, paths: [\"**\"], capabilities: {keys: [\"**\"]}}\nrules:\n  - {id: mine, rule: final, keys: [motd]}\n");
+    assert_eq!(r.rules.len(), 4);
+    assert_eq!(deep(&r, &layers).len(), 2);
+}
+
+#[test]
+fn empty_and_placeholder_secrets_are_refused() {
+    let r = defaults("rulesVersion: 1\nuse: [no-placeholder-secrets]\n");
+    for bad in [
+        "\"\"",
+        "null",
+        "~",
+        "changeme",
+        "ChangeMe",
+        "CHANGE-ME",
+        "change_me",
+        "replace-me",
+        "TODO",
+        "tbd",
+        "FIXME",
+        "placeholder",
+        "xxx",
+        "XXXXXXXX",
+        "\"<your token here>\"",
+    ] {
+        for place in [
+            "secrets: {api: {token: V}}",
+            "credentials: {deploy: {password: V}}",
+            "secrets: {api: V}",
+            "secrets: {list: [fine, V]}",
+        ] {
+            let layer = place.replace('V', bad);
+            let got = deep(&r, &[("common.yaml", &layer)]);
+            assert_eq!(got.len(), 1, "{layer}: {got:?}");
+            assert!(
+                got[0].starts_with("[meridian/no-placeholder-secrets]"),
+                "{got:?}"
+            );
+        }
+    }
+    for fine in [
+        "kv/platform/database",
+        "vault",
+        "s3cr3t",
+        "todo-list-service",
+        "my-xxx",
+        "0",
+        "false",
+    ] {
+        let layer = format!("secrets: {{api: {{from: {fine}}}}}");
+        assert_eq!(
+            deep(&r, &[("common.yaml", &layer)]),
+            Vec::<String>::new(),
+            "{fine}"
+        );
+    }
+    // Only secrets and credentials are looked at.
+    assert_eq!(
+        deep(
+            &r,
+            &[("common.yaml", "variables: {note: todo}\nmotd: \"\"")]
+        ),
+        Vec::<String>::new()
+    );
+    // A secret emptied by a more specific layer is caught there.
+    let got = deep(
+        &r,
+        &[
+            ("common.yaml", "secrets: {api: {token: real}}"),
+            ("node/x.yaml", "secrets: {api: {token: \"\"}}"),
+        ],
+    );
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(got[0].contains("layer \"node/x.yaml\""), "{got:?}");
 }
 
 // ---------------------------------------------------------------------------
@@ -1217,7 +1378,7 @@ fn a_rules_file_that_does_not_mean_something_is_refused() {
         ("rulesVersion: 1\nlayers: [{name: a, paths: [x], capabilities: {targets: [ssh]}}]", "rules.yaml: layers[0].capabilities: unknown field \"targets\""),
         ("rulesVersion: 1\nlayers: [{name: a, paths: [x], capabilities: {keys: [\"a*\"]}}]", "rules.yaml: layers[0].capabilities.keys: the key pattern \"a*\" mixes `*` with other characters in the segment \"a*\"; a segment is a key, `*` or `**` (quote a key that contains a star)"),
         ("rulesVersion: 1\nrule: []", "rules.yaml: rules file: unknown field \"rule\""),
-        ("rulesVersion: 1\nuse: [protect-everything]", "rules.yaml: use[0]: there is no shipped rule set \"protect-everything\" (there are: protect-variables, protect-secrets, protect-all)"),
+        ("rulesVersion: 1\nuse: [protect-everything]", "rules.yaml: use[0]: there is no shipped rule set \"protect-everything\" (there are: protect-variables, protect-secrets, no-placeholder-secrets, protect-all)"),
         ("rulesVersion: 1\nuse: [protect-all, protect-all]", "rules.yaml: use[1]: \"protect-all\" is listed twice"),
         ("rulesVersion: 1\nlayers: [{name: a, paths: [x]}, {name: a, paths: [y]}]", "rules.yaml: layers[1].name: the group \"a\" is declared twice"),
         ("rulesVersion: 1\nlayers: [{name: a}]", "rules.yaml: layers[0].paths: the group \"a\" claims no layers"),

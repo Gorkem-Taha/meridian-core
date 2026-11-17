@@ -5,7 +5,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::model::{
-    shipped, Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED,
+    shipped, Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, DEFAULT_USE, SHIPPED,
+    UNCLAIMED,
 };
 use crate::pattern::{KeyPattern, PathGlob};
 use crate::Error;
@@ -105,7 +106,13 @@ fn from_value(value: &Value) -> Result<Rules, String> {
         );
     }
 
-    for (i, name) in strings(top.get("use"), "use")?.iter().enumerate() {
+    // `use:` left out is the default deny list. Written, even as an empty
+    // list, it is exactly the sets in force.
+    let used = match top.get("use") {
+        None => DEFAULT_USE.iter().map(|n| (*n).to_owned()).collect(),
+        value => strings(value, "use")?,
+    };
+    for (i, name) in used.iter().enumerate() {
         let rule = shipped(name).ok_or_else(|| {
             format!(
                 "use[{i}]: there is no shipped rule set {name:?} (there are: {})",

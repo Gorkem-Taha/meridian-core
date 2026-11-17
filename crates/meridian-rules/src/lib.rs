@@ -4,8 +4,10 @@
 //! A hierarchy says how layers merge. Compile rules say what a layer is
 //! *allowed* to do in that merge: that a more specific layer may not change a
 //! value a less specific one set, that only some layers may set a key, that a
-//! key must be set, that a value is forbidden. A rules file is a file of its
-//! own beside the hierarchy. It is never a layer and never merged, so nothing
+//! key must be set, that a value is forbidden. A rules file is a deny list
+//! out of the box: everything is allowed except what it forbids, and the
+//! sets in [`DEFAULT_USE`] are in force unless it says otherwise. It is a file
+//! of its own beside the hierarchy. It is never a layer and never merged, so nothing
 //! the rules constrain can rewrite them.
 //!
 //! The rules are evaluated over a [`Stack`]: an ordered list of layers, a
@@ -52,7 +54,10 @@ pub use eval::{
     UNCLAIMED_RULE,
 };
 pub use files::{check_files, Checked, Files, RULES_FILE};
-pub use model::{Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, SHIPPED, UNCLAIMED};
+pub use model::{
+    Check, DefaultAccess, Group, Rule, Rules, COMMAND_LINE, DEFAULT_USE, PLACEHOLDERS, SHIPPED,
+    UNCLAIMED,
+};
 pub use parse::RULES_VERSION;
 pub use pattern::{KeyPattern, PathGlob};
 

@@ -30,12 +30,15 @@ layers:
     capabilities:
       keys: [variables, packages, web]
 
-# The rule sets that ship with Meridian. These two are the rule
-# DscPipelineRunner is known for: a more specific layer may not change a
-# variable, a secret or a credential that a less specific layer set.
+# The rule sets that ship with Meridian. These three are in force in any
+# rules file that does not say `use:` at all; they are written out here so
+# the file says everything it enforces. A more specific layer may not change
+# a variable, a secret or a credential that a less specific layer set, and no
+# secret or credential may be empty or a placeholder such as `changeme`.
 use:
   - protect-variables
   - protect-secrets
+  - no-placeholder-secrets
 
 rules:
   # The region is decided once. Not even repeating it is allowed, so a copy

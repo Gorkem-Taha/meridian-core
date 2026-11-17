@@ -119,6 +119,7 @@ layers:
 use:
   - protect-variables
   - protect-secrets
+  - no-placeholder-secrets
 
 rules:
   - id: region-is-final
@@ -131,13 +132,32 @@ rules:
 | `rulesVersion` | yes | `1` |
 | `default` | no | `allow` or `deny`: what a group may do with a [capability](#capabilities) it does not list. Left out: `allow`. Use `deny` |
 | `layers` | no | the [groups](#groups): who owns which layer, and what each may set |
-| `use` | no | names of [shipped rule sets](#shipped-rule-sets) to switch on |
+| `use` | no | the [shipped rule sets](#shipped-rule-sets) in force. Left out: the three default ones. `use: []`: none |
 | `rules` | no | your own [rules](#rules) |
 
-Nothing is in force that the file does not ask for. A rules file with only
-`rulesVersion: 1` checks nothing. The file has two parts that work together:
-**groups with capabilities** say what each layer may set at all, and **rules**
-say what a layer may do to a value another layer set.
+**A rules file is a deny list out of the box.** Everything is allowed
+except what the file forbids, and a file that says nothing else already
+forbids three things, through the [default rule sets](#shipped-rule-sets):
+
+- changing a variable a less specific layer set;
+- changing a secret or a credential a less specific layer set;
+- a secret or a credential that is empty or a placeholder.
+
+So `rulesVersion: 1` alone is a working policy. From there the file has two
+parts that work together: **groups with capabilities** say what each layer
+may set at all (and with `default: deny` turn the file into an allow list),
+and **rules** say what a layer may do to a value another layer set.
+
+| You want | Write |
+|---|---|
+| the default deny list | nothing: leave `use` out |
+| the default deny list and rules of your own | `rules:`, and leave `use` out |
+| to choose the shipped sets yourself | `use: [protect-secrets]`: exactly the sets listed are in force |
+| no shipped set at all | `use: []` |
+| an allow list: a layer may set only what its group lists | `default: deny`, and `capabilities` on each group |
+
+With no rules file at all, nothing is checked; `--require-rules` makes that
+an error.
 
 Every rule has these fields, and then its own:
 
@@ -277,23 +297,45 @@ a rule.
 
 ## Shipped rule sets
 
-Switched on by name under `use:`. Each is a [`no-override`](#no-override) rule
-over every layer.
+| Name | On by default | Rule id in a refusal | Says |
+|---|---|---|---|
+| `protect-variables` | yes | `meridian/protect-variables` | a more specific layer may not change anything under `variables` that a less specific layer set |
+| `protect-secrets` | yes | `meridian/protect-secrets` | the same for everything under `secrets` and under `credentials` |
+| `no-placeholder-secrets` | yes | `meridian/no-placeholder-secrets` | nothing under `secrets` or `credentials` may be empty or a placeholder |
+| `protect-all` | no | `meridian/protect-all` | a more specific layer may not change any key a less specific layer set |
 
-| Name | Rule id in a refusal | Protects |
-|---|---|---|
-| `protect-variables` | `meridian/protect-variables` | everything under `variables` |
-| `protect-secrets` | `meridian/protect-secrets` | everything under `secrets` and under `credentials` |
-| `protect-all` | `meridian/protect-all` | every key |
+**The three default sets are in force in every rules file that leaves `use`
+out.** Writing `use` replaces them: exactly the sets it lists are in force,
+and `use: []` switches all of them off. A file's own `rules` and its
+`capabilities` do not affect which sets are on.
 
 ```yaml
-use: [protect-variables, protect-secrets]
+use: [protect-variables, protect-secrets, no-placeholder-secrets]   # the same as leaving `use` out
 ```
 
-With these two, a layer may add a variable or a secret nobody has set, and may
-repeat one unchanged, and may not change or remove one a less specific layer
-set. To protect only what one group set, or to constrain only some groups,
-write the rule yourself with [`setBy` and `appliesTo`](#no-override).
+`protect-variables`, `protect-secrets` and `protect-all` are
+[`no-override`](#no-override) rules over every layer. A layer may add a
+variable or a secret nobody has set, and may repeat one unchanged, and may
+not change or remove one a less specific layer set. To protect only what one
+group set, or to constrain only some groups, switch the set off and write the
+rule yourself with [`setBy` and `appliesTo`](#no-override).
+
+`no-placeholder-secrets` is a [`forbidden-value`](#forbidden-value) rule over
+every layer. It refuses, anywhere under `secrets` or `credentials`:
+
+| Value | Examples |
+|---|---|
+| nothing | `null`, `~`, `""` |
+| a placeholder, in any case | `changeme`, `change-me`, `change_me`, `replaceme`, `replace-me`, `replace_me`, `placeholder`, `todo`, `tbd`, `fixme` |
+| a run of x | `xxx`, `XXXXXXXX` |
+| anything in angle brackets | `<your token here>` |
+
+```
+[meridian/no-placeholder-secrets] layer "node/web01.yaml" (team) sets "secrets.api.token" to a value the rule forbids (matches[0])
+```
+
+The whole value has to be the placeholder: `todo-list-service` is fine. To
+forbid other values, add a `forbidden-value` rule of your own beside it.
 
 ## Rules
 
@@ -538,7 +580,7 @@ your pipeline compiles:
 
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=web01
-rules: config/rules.yaml (8 rules)
+rules: config/rules.yaml (9 rules)
 layers, least specific first:
   common.yaml            organization
   environment/prod.yaml  environment
@@ -564,13 +606,14 @@ the rules by themselves; run `rules check` before them in a pipeline. See
 
 ```
 $ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set role=web --set node=rogue
-error: compile rules: 9 violations; nothing was compiled
+error: compile rules: 10 violations; nothing was compiled
   - [meridian/capabilities] layer "node/rogue.yaml" (team) sets "credentials", which team is not allowed to set: it may set only variables, packages, web
   - [meridian/capabilities] layer "node/rogue.yaml" (team) sets "secrets.database.path", which team is not allowed to set: it may set only variables, packages, web
   - [meridian/protect-variables] layer "node/rogue.yaml" (team) changes "variables.OrganizationName", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.type", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) sets "credentials", replacing "credentials.deploy.user", which layer "common.yaml" (organization) set
   - [meridian/protect-secrets] layer "node/rogue.yaml" (team) changes "secrets.database.path", which layer "common.yaml" (organization) set
+  - [meridian/no-placeholder-secrets] layer "node/rogue.yaml" (team) sets "credentials" to a value the rule forbids (values[0])
   - [region-is-final] layer "node/rogue.yaml" (team) sets "variables.Region", which is final once set, and layer "common.yaml" (organization) set it
   - [team-layers-name-an-owner] layer "node/rogue.yaml" (team) does not set "variables.Owner", which every layer of team must set
   - [no-floating-tags] layer "node/rogue.yaml" (team) sets "web.image" to a value the rule forbids (matches[0])
@@ -682,7 +725,7 @@ layers:
     capabilities:
       keys: [variables, packages]
 
-use: [protect-variables]
+
 ```
 
 </td></tr>
@@ -692,7 +735,7 @@ use: [protect-variables]
 |---|---|---|
 | A file of its own beside `Datum.yml`, never merged | a file of its own beside `hierarchy.yaml`, never merged; a hierarchy that lists it as a layer is refused | yes |
 | `PolicyVersion: 1` | `rulesVersion: 1` | yes |
-| `Default: Deny` or `Allow`, for a capability a layer does not list | `default: deny` or `allow` | yes, written in lower case. Left out, it is `allow` |
+| `Default: Deny` or `Allow`, for a capability a layer does not list | `default: deny` or `allow` | yes, written in lower case. Left out, it is `allow`: a rules file is a deny list unless it says `default: deny` |
 | `Layers`, ordered; the first whose `Paths` match a file owns it | `layers`, ordered; the first whose `paths` match owns the layer | yes |
 | `Paths` have no file extension, are not case-sensitive, and `*` crosses folders | `paths` include the extension, are case-sensitive, and only `**` crosses folders | no: write `Projects/**`, or `Projects/*.yaml` |
 | A file no layer claims may do nothing, whatever `Default` says | the same | yes |
@@ -715,8 +758,9 @@ in `capabilities` beside `keys` when documents can be layered.
 
 `Policy.yml` does not stop a team's file from changing a variable the
 platform set: DscPipelineRunner merges `variables` deeply and the most
-specific file wins. In Meridian that is a rule, and
-`use: [protect-variables]` in the file above adds it.
+specific file wins. In Meridian that is a rule, `protect-variables`, and it
+is in force in the file above because it is one of the
+[default sets](#shipped-rule-sets).
 
 The hierarchy file for the same configuration:
 

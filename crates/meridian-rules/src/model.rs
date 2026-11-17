@@ -128,16 +128,54 @@ pub const SHIPPED: &[(&str, &str)] = &[
         "a more specific layer may not change a value under `secrets` or `credentials` that a less specific layer set",
     ),
     (
+        "no-placeholder-secrets",
+        "no value under `secrets` or `credentials` may be empty or a placeholder such as `changeme`",
+    ),
+    (
         "protect-all",
         "a more specific layer may not change any value a less specific layer set",
     ),
 ];
 
+/// The shipped sets in force when a rules file does not say `use:` at all.
+/// A rules file is a deny list out of the box: these hold unless the file
+/// lists the sets it wants instead, and `use: []` switches them all off.
+pub const DEFAULT_USE: &[&str] = &[
+    "protect-variables",
+    "protect-secrets",
+    "no-placeholder-secrets",
+];
+
+/// What `no-placeholder-secrets` takes for a value nobody filled in.
+/// Compared without regard to case.
+pub const PLACEHOLDERS: &[&str] = &[
+    "changeme",
+    "change-me",
+    "change_me",
+    "replaceme",
+    "replace-me",
+    "replace_me",
+    "placeholder",
+    "todo",
+    "tbd",
+    "fixme",
+    "xxx*",
+    "<*>",
+];
+
 pub(crate) fn shipped(name: &str) -> Option<Rule> {
-    let keys: &[&str] = match name {
-        "protect-variables" => &["variables"],
-        "protect-secrets" => &["secrets", "credentials"],
-        "protect-all" => &["**"],
+    let (keys, check): (&[&str], Check) = match name {
+        "protect-variables" => (&["variables"], Check::NoOverride),
+        "protect-secrets" => (&["secrets", "credentials"], Check::NoOverride),
+        "protect-all" => (&["**"], Check::NoOverride),
+        "no-placeholder-secrets" => (
+            &["secrets", "credentials"],
+            Check::ForbiddenValue {
+                values: vec![Value::Null, Value::String(String::new())],
+                matches: PLACEHOLDERS.iter().map(|p| (*p).to_owned()).collect(),
+                ignore_case: true,
+            },
+        ),
         _ => return None,
     };
     Some(Rule {
@@ -146,7 +184,7 @@ pub(crate) fn shipped(name: &str) -> Option<Rule> {
             .iter()
             .map(|k| KeyPattern::parse(k).expect("a shipped pattern parses"))
             .collect(),
-        check: Check::NoOverride,
+        check,
         set_by: None,
         applies_to: None,
         message: String::new(),
