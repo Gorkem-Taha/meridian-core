@@ -1,6 +1,9 @@
 # Meridian
 
-<img src="branding/logos/meridian-core.svg" width="96" alt="Meridian logo">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="branding/banner/meridian-banner-dark.svg">
+  <img src="branding/banner/meridian-banner-light.svg" alt="Meridian: one DSL for everything" width="100%">
+</picture>
 
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
 cloud-init, Terraform, CloudFormation, Bicep, ARM templates, Pulumi, Docker Compose, Kubernetes and Helm, and then drives

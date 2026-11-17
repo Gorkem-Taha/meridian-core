@@ -83,8 +83,8 @@ that somebody else's server being down cannot stop a merge.
 | Names each page | Keeps the path; a directory's `README.md` is served as its `index.html` | Flattens the path: `docs/targets/ansible.md` is the page `Targets-Ansible`, `docs/index.md` is `Home` |
 | Rewrites links between pages | Relative links, unchanged | Links to the flattened page names |
 | Rewrites links that leave `docs/` | Links to the file on GitHub | The same |
-| Draws the graphics | `generated/meridian-hero.svg` and `generated/meridian-plugin-map.svg` | The same two files |
-| Adds the graphics to pages | The banner and the plugin map on the home page, each target's logo on its page | The same |
+| Draws the plugin map | `generated/meridian-plugin-map.svg` | The same file |
+| Adds the graphics to pages | The plugin map on the home page, each target's logo on its page | The same |
 
 Sections appear in a fixed reading order (quickstart, concepts, reference, targets, and
 so on, with the planning documents and branding last). A new top-level directory is
@@ -93,11 +93,14 @@ directory is shown under, are the short tables at the top of `build.py`.
 
 ### The graphics
 
-Both graphics are drawn by `build.py` each time, not kept as files, so they are never
-out of date:
+The home page carries two graphics:
 
-- **The banner** is the core mark, the name, and the four category colours.
-- **The plugin map** shows one document going through the core to every plugin, in a
+- **The banner** is a pair of files kept in
+  [`docs/branding/banner/`](../branding/README.md#banner), one for light and one for dark
+  colour schemes. `docs/index.md` and the repository README both show it, so it is the
+  same on GitHub, the site and the Wiki.
+- **The plugin map** is drawn by `build.py` each time, not kept as a file, so it is never
+  out of date. It shows one document going through the core to every plugin, in a
   column for each category. Its columns and its plugins come from the capability
   matrix and `docs/targets/`, and each tile uses the plugin's own logo. A plugin that
   has no logo yet gets a lettered tile.

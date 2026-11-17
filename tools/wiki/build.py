@@ -7,8 +7,8 @@
 
 docs/ is the only source. Nothing here is hand-kept per page: the navigation is
 read from the directory tree and each page's first heading, the targets are
-grouped by the category the generated capability matrix gives them, and the two
-graphics are drawn from the same data. A page added under docs/ by any pull
+grouped by the category the generated capability matrix gives them, and the plugin
+map is drawn from the same data. A page added under docs/ by any pull
 request is therefore in the navigation, and a new plugin is in the plugin map,
 the next time the pipeline runs.
 
@@ -260,36 +260,6 @@ def svg_document(width: int, height: int, label: str, body: str) -> str:
     )
 
 
-def hero_svg() -> str:
-    """The banner at the top of the home page."""
-    width, height = 1200, 300
-    colours = [c for _, c in CATEGORIES.values()]
-    # Four faint meridians on the right: the core mark, opened out.
-    arcs = "".join(
-        f'<path d="M1060 -40A{rx} 190 0 0 {sweep} 1060 340" stroke="{colour}" stroke-width="5" '
-        'fill="none" opacity=".22" stroke-linecap="round"/>'
-        for rx, sweep, colour in zip((170, 62, 62, 170), (0, 0, 1, 1), colours)
-    )
-    legend, x = "", 300
-    for label, colour in CATEGORIES.values():
-        legend += (
-            f'<circle cx="{x}" cy="238" r="7" fill="{colour}"/>'
-            f'<text x="{x + 16}" y="244" font-family="{FONT}" font-size="18" fill="#E6EBFF">'
-            f"{html.escape(label)}</text>"
-        )
-        x += 46 + int(len(label) * 9.6)
-    body = (
-        arcs
-        + logo_at("core", 60, 50, 200)
-        + f'<text x="300" y="132" font-family="{FONT}" font-size="84" font-weight="700" '
-        'fill="#FFFFFF" letter-spacing="-1">Meridian</text>'
-        + f'<text x="302" y="182" font-family="{FONT}" font-size="26" fill="#C9D4FF">'
-        "One declarative language, compiled to the tools you already run</text>"
-        + legend
-    )
-    return svg_document(width, height, "Meridian: one declarative language, compiled to the tools you already run", body)
-
-
 def plugin_map_svg() -> str:
     """One document, the core, and every plugin under its category."""
     groups = grouped_targets() or [("Plugins", OTHER_COLOUR, [])]
@@ -348,7 +318,6 @@ def plugin_map_svg() -> str:
 def write_graphics(dest: Path) -> None:
     out = dest / GENERATED
     out.mkdir(parents=True, exist_ok=True)
-    (out / "meridian-hero.svg").write_text(hero_svg(), encoding="utf-8")
     (out / "meridian-plugin-map.svg").write_text(plugin_map_svg(), encoding="utf-8")
 
 
@@ -357,7 +326,7 @@ def write_graphics(dest: Path) -> None:
 # ---------------------------------------------------------------------------
 
 MD_LINK = re.compile(r"(!?\[[^\]]*\]\()([^)\s]+)(\s+\"[^\"]*\")?(\))")
-HTML_ATTR = re.compile(r"(\b(?:src|href)=\")([^\"]+)(\")")
+HTML_ATTR = re.compile(r"(\b(?:src|srcset|href)=\")([^\"]+)(\")")
 # Fenced blocks only: a link's own text is often in code ticks.
 CODE = re.compile(r"(^|\n)(```|~~~).*?\n\2[^\n]*", re.DOTALL)
 EXTERNAL = ("http://", "https://", "mailto:", "#")
@@ -404,7 +373,6 @@ def decorate(rel: Path, text: str, image) -> str:
     `image(docs-relative path)` returns the address to use on this page.
     """
     if rel == Path("index.md"):
-        hero = f'<p align="center"><img src="{image(Path(GENERATED) / "meridian-hero.svg")}" alt="Meridian" width="100%"></p>\n\n'
         plugin_map = (
             f'<p align="center"><img src="{image(Path(GENERATED) / "meridian-plugin-map.svg")}" '
             'alt="One Meridian document goes through the core to a plugin for each tool, grouped by category" '
@@ -412,7 +380,7 @@ def decorate(rel: Path, text: str, image) -> str:
         )
         first_section = re.search(r"^## ", text, flags=re.MULTILINE)
         cut = first_section.start() if first_section else len(text)
-        return hero + text[:cut] + plugin_map + text[cut:]
+        return text[:cut] + plugin_map + text[cut:]
     if rel.parts[0] == "targets" and len(rel.parts) == 2:
         logo = Path("branding") / "logos" / f"meridian-{rel.stem}.svg"
         if (DOCS / logo).exists():

@@ -1,5 +1,10 @@
 # meridian-core
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/branding/banner/meridian-banner-dark.svg">
+  <img src="docs/branding/banner/meridian-banner-light.svg" alt="Meridian: one DSL for everything" width="100%">
+</picture>
+
 Meridian is one declarative language for infrastructure and configuration. You describe
 what you want once; Meridian compiles it into the native files of the tool you choose and
 then drives that tool to plan and apply it.
