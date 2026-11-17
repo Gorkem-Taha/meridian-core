@@ -1,0 +1,3 @@
+present	/etc/meridian/managed	0600	content/marker
+present	/etc/motd	0644	content/motd
+absent	/etc/issue.net

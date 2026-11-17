@@ -1,0 +1,58 @@
+name: Bug report
+description: Meridian did something wrong, or something different from what the documentation says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting this. The most serious kind of bug in Meridian is output that quietly does less than the document asked for. If that is what you found, please say so in the title.
+
+        Do not report a security problem here. See [SECURITY.md](https://github.com/ZanattaMichael/meridian-core/blob/main/SECURITY.md).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where is the problem?
+      options:
+        - The meridian command or the core
+        - A plugin (name it below)
+        - The documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target
+      description: The plugin involved, as written in spec.target, if any.
+      placeholder: ansible
+  - type: textarea
+    id: document
+    attributes:
+      label: The document
+      description: The smallest Meridian document that shows the problem. Remove anything secret.
+      render: yaml
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: What you ran, and what it printed
+      description: The full command and its output.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: For a compile problem, the output you expected the tool to be given.
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: The Meridian commit (git rev-parse --short HEAD), your operating system, and the tool's own version if a tool was run.
+      render: text
+    validations:
+      required: true

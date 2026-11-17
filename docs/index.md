@@ -78,9 +78,13 @@ plugins.
 
 ## Contributing
 
-The merge bar for a target plugin, and the changes that need a second reviewer, are in
-[`CONTRIBUTING.md`](../CONTRIBUTING.md). Security reports go through
-[`SECURITY.md`](../SECURITY.md), not the issue tracker.
+| | |
+|---|---|
+| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | from a fresh clone to a merged pull request: set up, the checks, review, and the changes that need a second reviewer |
+| [Writing a plugin](contributing/writing-a-plugin.md) | add a tool to Meridian, step by step, starting from a template that already works |
+| [Code of Conduct](../CODE_OF_CONDUCT.md) | how we treat each other |
+
+Security reports go through [`SECURITY.md`](../SECURITY.md), not the issue tracker.
 
 These pages are published as a site and as the repository's wiki by a pipeline;
 [how the wiki is published](contributing/documentation-site.md) describes it and what a

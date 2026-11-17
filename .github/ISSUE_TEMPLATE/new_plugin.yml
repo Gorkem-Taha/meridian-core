@@ -1,0 +1,51 @@
+name: New plugin
+description: Propose support for a tool Meridian does not speak yet, or say that you are writing it
+labels: ["plugin-request"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A plugin teaches Meridian one tool. Anyone can write one: see [Writing a plugin](https://github.com/ZanattaMichael/meridian-core/blob/main/docs/contributing/writing-a-plugin.md). Opening this issue first means two people do not write the same plugin.
+  - type: input
+    id: tool
+    attributes:
+      label: The tool
+      description: Its name and a link to its documentation.
+    validations:
+      required: true
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      options:
+        - Infrastructure as code (it creates infrastructure)
+        - Configuration management (it configures a machine that exists)
+        - Containerization (containers on one host)
+        - Container orchestration (containers across a cluster)
+        - None of these fits
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: What Meridian would compile to, and run
+      description: The files the tool reads, and the commands that plan and apply them.
+    validations:
+      required: true
+  - type: textarea
+    id: example
+    attributes:
+      label: An example
+      description: A Meridian document you would like to write for this tool, and the tool's own file you would expect from it. A sketch is enough.
+      render: yaml
+  - type: textarea
+    id: limits
+    attributes:
+      label: What the tool cannot do
+      description: Can it preview a change? React when something changes? Report values such as an address? Whatever it cannot do, the plugin will refuse.
+  - type: checkboxes
+    id: help
+    attributes:
+      label: Who writes it?
+      options:
+        - label: I am writing this plugin, or would like to

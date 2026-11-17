@@ -1,0 +1,62 @@
+name: scaffold
+
+# The path a new contributor takes: scaffold a plugin from the template and
+# check that what they are handed builds, passes its tests and compiles its
+# example through the real command. The rust workflow already tests the
+# template itself; this one tests the copy tools/new_plugin.py makes of it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'crates/meridian-plugin-template/**'
+      - 'crates/meridian-plugin-testkit/**'
+      - 'crates/meridian-sdk/**'
+      - 'crates/meridian-cli/tests/examples.rs'
+      - 'crates/meridian-orchestrator/**'
+      - 'tools/new_plugin.py'
+      - 'Cargo.toml'
+      - '.github/workflows/scaffold.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  scaffold:
+    name: a scaffolded ${{ matrix.category }} plugin works untouched
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # One category whose documents are ResourceSets and one whose
+        # documents are Infrastructure: the script writes a different example
+        # for each, and the core refuses the wrong kind.
+        category: [configuration-management, container-orchestration]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --component clippy,rustfmt --no-self-update && rustup default stable
+
+      - name: Scaffold a plugin
+        run: python3 tools/new_plugin.py scaffold-check --category ${{ matrix.category }}
+
+      # No --locked from here on: the new crate is not in Cargo.lock yet,
+      # exactly as on a contributor's machine.
+      - name: It is formatted
+        run: cargo fmt --all --check
+
+      - name: It passes clippy
+        run: cargo clippy -p meridian-target-scaffold-check --all-targets -- -D warnings
+
+      - name: Its own tests pass
+        run: cargo test -p meridian-target-scaffold-check
+
+      - name: Its example compiles through the real command
+        run: |
+          cargo build -p meridian-cli -p meridian-target-scaffold-check
+          target/debug/meridian compile examples/scaffold-check/site.yaml --out build
+          test -s build/site/manifest.tsv
+
+      - name: Its documentation stub has no broken links
+        run: python3 tools/check_links.py

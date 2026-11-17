@@ -84,6 +84,7 @@ The core is a Cargo workspace under `crates/`:
 - `meridian-target-fake` — a small, complete plugin whose tool is a directory, used by the tests
   and readable as a worked example of the SDK
 - `meridian-plugin-testkit` — what the first-party plugins' tests share
+- `meridian-plugin-template` — a small working plugin that `tools/new_plugin.py` copies to start a new one
 
 The plugins are under `plugins/`, one crate each, built as a binary named
 `meridian-target-<name>`. A plugin's library depends on `meridian-sdk` and nothing else of
@@ -114,3 +115,22 @@ compare the output byte for byte with the golden files in `plugins/<name>/testda
 Refusals are golden files too, because the wording an operator reads is output like any
 other. Set `UPDATE_GOLDEN=1` to record them after a deliberate change. The runners are
 tested against stand-ins for the tools, so the suite needs nothing installed but Rust.
+
+## Contributing
+
+Meridian gets better with every tool it speaks well, so contributions from
+outside are welcome, and a first one can be small.
+
+1. Read [`CONTRIBUTING.md`](CONTRIBUTING.md): set up, find your way around, and what a
+   pull request needs.
+2. Pick something: an issue labelled
+   [`good first issue`](https://github.com/ZanattaMichael/meridian-core/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+   or [`help wanted`](https://github.com/ZanattaMichael/meridian-core/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22),
+   or a tool Meridian does not support yet.
+3. To add a tool, run `python3 tools/new_plugin.py <name>` and follow
+   [Writing a plugin](docs/contributing/writing-a-plugin.md). You start from a plugin
+   that already builds and passes its tests.
+4. Open a pull request. A draft is fine.
+
+Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+Security reports go through [`SECURITY.md`](SECURITY.md), not the issue tracker.

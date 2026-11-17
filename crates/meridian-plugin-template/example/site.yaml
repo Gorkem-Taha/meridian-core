@@ -1,0 +1,34 @@
+# Two files kept in place, and one removed, with the template plugin.
+#
+# The message of the day depends on the directory's marker file, so it comes
+# second in the manifest whatever order the document lists them in.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: site
+spec:
+  target: template
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: motd
+      type: file
+      params:
+        path: /etc/motd
+        content: |
+          Managed by Meridian.
+      dependsOn:
+        - resource: marker
+
+    - id: marker
+      type: file
+      params:
+        path: /etc/meridian/managed
+        mode: "0600"
+
+    - id: old_banner
+      type: file
+      state: absent
+      params:
+        path: /etc/issue.net
