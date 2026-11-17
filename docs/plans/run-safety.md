@@ -1,4 +1,4 @@
-# Run safety: state, locking, resume, rollback, drift, policy and inputs
+# Run safety: state, locking, resume, rollback, drift, policy and imports
 
 Status: design note, written before the code. It amends
 [design plan §11.5](design-plan.md) and the "What this does not do" section of
@@ -27,7 +27,7 @@ stage cannot hand a value to the stage that creates a machine.
 6. [Rollback](#6-rollback)
 7. [Drift](#7-drift)
 8. [Policy checks before apply](#8-policy-checks-before-apply)
-9. [Inputs: handing a value to any stage](#9-inputs-handing-a-value-to-any-stage)
+9. [Imports: handing a value to any stage](#9-imports-handing-a-value-to-any-stage)
 10. [Where this differs from the language expansion](#10-where-this-differs-from-the-language-expansion)
 11. [Decisions for the owner](#11-decisions-for-the-owner)
 12. [Delivery](#12-delivery)
@@ -65,7 +65,7 @@ Every change of state is one event, and events are the only way state is
 recorded, so the terminal, the record and (later) notification sinks agree.
 
 ```json
-{"run": "2026-11-17T09-14-03Z-7f3a", "seq": 7, "time": "2026-11-17T09:15:11.204Z",
+{"run": "2026-11-17T09-14-03Z-0cc7", "seq": 7, "time": "2026-11-17T09:15:11.204Z",
  "type": "step.failed", "step": "web", "instance": "web", "target": "ansible",
  "endpoint": "203.0.113.10", "attempt": 1,
  "detail": {"kind": "ResourceSet", "reason": "tool-failed", "changed": 2}}
@@ -84,17 +84,18 @@ The envelope is the language expansion's: `run`, `seq` (strictly increasing),
 | `step.started` | a stage begins | `kind` |
 | `step.succeeded` | a stage did what was asked | `kind`, `artifact` (hash), `changes` (count) |
 | `step.failed` | a stage failed | `kind`, `reason`, `changes` (what was done before failing) |
-| `step.skipped` | resume found it already applied from the same artifact | `kind`, `artifact`, `appliedIn` (run id) |
+| `step.skipped` | it was not run: resume found it already applied from the same artifact, or an earlier step failed | `kind`, `reason` (`already-applied` with `artifact` and `appliedIn`, or `earlier-step-failed` with `becauseOf`) |
 | `step.deferred` | it needs a value that does not exist yet | `waitingOn`, `output` |
 | `resource.planned`, `resource.changed` | one line of a plan or an apply | `resource`, `action` |
-| `output.produced` | an output exists | `name`, `sensitive`; `value` only when not sensitive |
+| `output.produced` | an output exists | `name`, `sensitive`; never the value |
 | `drift.detected`, `drift.none` | `meridian drift` compared a stage | `changes`, `pending` |
 | `policy.passed`, `policy.warned`, `policy.denied` | a policy engine answered for a stage | `engine`, `messages` |
 | `rollback.started`, `rollback.succeeded`, `rollback.failed`, `rollback.unavailable` | a stage is put back | `to` (artifact hash), `reason` |
 | `lock.acquired`, `lock.released` | the lock changes hands | `id` |
 
 `reason` is a fixed word (`tool-failed`, `plugin-failed`, `compile-refused`,
-`policy-denied`, `not-run`), never the tool's text: a tool's error can quote a
+`not-supported`, `no-plugin`, `state-failed`, `policy-denied`), never the
+tool's text: a tool's error can quote a
 value. The text is shown on the terminal, masked, and not persisted.
 
 The record, under the state:
@@ -119,15 +120,18 @@ for CI.
 ## 3. Where state lives: backends
 
 The record is small and its operations are few, so a backend is five verbs
-over named blobs, plus a lock:
+over named blobs:
 
 | Verb | Does |
 |---|---|
 | `get <key>` | the blob, or "not there" |
 | `put <key>` | stores the blob, replacing it whole |
+| `create <key>` | stores the blob only if the key is not there, atomically |
 | `delete <key>` | removes it |
 | `list <prefix>` | the keys under a prefix |
-| `lock` / `unlock` | takes or releases the one lock, atomically |
+
+The lock is the key `lock`, taken with `create` and released with `delete`,
+so the one thing a backend has to get right is an atomic `create`.
 
 `local` is built in: files under the state directory, written by rename so a
 crash never leaves half a file, mode `0600`.
@@ -136,7 +140,7 @@ Any other backend is a program named `meridian-backend-<name>`, found in the
 plugin directories like a target. Meridian runs it once per verb, with the
 verb and key as arguments, the blob on standard input or output, the backend's
 settings as `MERIDIAN_BACKEND_<SETTING>` environment variables, and the exit
-status as the answer (0 done, 3 not there, 4 the lock is held, anything else a
+status as the answer (0 done, 3 not there, 4 already there, anything else a
 failure with the reason on standard error).
 
 ```mermaid
@@ -144,7 +148,7 @@ sequenceDiagram
     participant M as meridian
     participant B as meridian-backend-s3
     participant S as the store
-    M->>B: lock (holder on stdin)
+    M->>B: create lock (holder on stdin)
     B->>S: create the lock object only if absent
     S-->>B: created
     B-->>M: exit 0
@@ -153,7 +157,7 @@ sequenceDiagram
     Note over M: the run
     M->>B: put runs/<id>/run.json
     M->>B: put state.json
-    M->>B: unlock <lock id>
+    M->>B: delete lock
 ```
 
 Why a program per verb and not the gRPC plugin protocol: a backend has no
@@ -308,22 +312,24 @@ the document holds. It is handed to the engine on standard input, never
 written to disk and never recorded; only the decision messages are, and they
 are masked.
 
-## 9. Inputs: handing a value to any stage
+## 9. Imports: handing a value to any stage
 
 [Issue 47](https://github.com/ZanattaMichael/meridian-core/issues/47): values
 flow only from an Infrastructure stage to a ResourceSet's host. A cloud-init
 document compiles to user-data, and the Terraform document that creates the
 machine cannot receive it.
 
-Any document may declare `spec.inputs`, beside `targetHost`, in the same
-`from` / `ref` style:
+Any document may declare `spec.imports`, beside `targetHost`, in the same
+`from` / `ref` style. The name is `imports` and not `inputs` so that it is
+not read as the language expansion's `spec.parameters`, which are values a
+caller gives; an import is a value another document produces.
 
 ```yaml
 kind: Infrastructure
 metadata: {name: machine}
 spec:
   target: terraform
-  inputs:
+  imports:
     - name: user_data          # arrives as the tool's variable of this name
       from: artifact           # a file another document compiles to
       ref: bootstrap           # that document
@@ -349,21 +355,23 @@ spec:
 | Needs | `ref` to compile | `ref` to have been applied, in this run or before |
 | Before it is known | never deferred, unless `ref` itself is | the stage is deferred, as a ResourceSet waiting on a host is |
 
-- **Delivery.** Inputs arrive in `RunContext.inputs`, which already exists and
+- **Delivery.** Imports arrive in `RunContext.inputs`, which already exists and
   which Terraform, OpenTofu, Pulumi, Packer and ARM already hand to their tool
   as variables or parameters. No value is spliced into text by the core.
 - **Order.** Stages are ordered by what they need: a stage runs after every
-  stage whose output it reads or whose host it is given. With no inputs this
+  stage whose output it reads or whose host it is given. With no imports this
   is exactly today's order. A cycle is refused by `validate`, naming both
   documents.
 - **Secrets.** `sensitive: true`, or a sensitive output, masks the value
   wherever Meridian prints, as outputs are masked today.
-- **Refusal.** A target declares whether it accepts inputs. A document that
-  declares inputs for one that does not is refused when it is compiled.
+- **Refusal.** A target declares whether it accepts imports. A document that
+  declares imports for one that does not is refused when it is compiled.
 
 This is deliberately the declared, tool-variable half of the problem. Reading
-`outputs.<document>.<name>` inside any param is the language expansion's
-phase 4 and will sit on the same ordering.
+`${{ outputs.<document>.<name> }}` inside any value is the language
+expansion's phases 2 and 4. It will resolve through this same mechanism and
+ordering, after which an import `from: output` is the long spelling of the
+same thing.
 
 ## 10. Where this differs from the language expansion
 
@@ -373,6 +381,8 @@ phase 4 and will sit on the same ordering.
 | state backends are plugins | programs named `meridian-backend-<name>`, one run per verb | [section 3](#3-where-state-lives-backends) |
 | `meridian drift` reports what differs from the documents | also separates `drifted` from `pending` using the last applied artifact hash | a changed document is not drift |
 | no events for policy, rollback or the lock | `policy.*`, `rollback.*`, `lock.*` added | new state changes need events |
+| `output.produced` carries the value when it is not sensitive | never the value | a tool does not always know which of its values are secret |
+| `step.failed` carries the tool's reason | a fixed word | a tool can quote a value in an error |
 | `plan/<instance>.json`, gates, retries, instances, `cancel`, `approve` | not built here | they belong to the `Workflow` kind |
 
 ## 11. Decisions for the owner
@@ -385,7 +395,7 @@ phase 4 and will sit on the same ordering.
 | R4 | Rollback snapshots | on the machine only, two per stage | in the backend, so any machine can roll back, at the cost of artifacts leaving the machine |
 | R5 | Policy engine failure | fail closed | warn and continue |
 | R6 | Policy timing | preflight before the first apply, deferred stages at their turn | only per stage, at its turn |
-| R7 | Inputs | declared `spec.inputs`, delivered as the tool's variables | wait for `outputs.<doc>.<name>` in params |
+| R7 | Imports | declared `spec.imports`, delivered as the tool's variables | wait for `outputs.<doc>.<name>` in params |
 
 Work proceeds on the recommended column; any of these can be turned without
 redoing the rest.
@@ -401,4 +411,4 @@ before the next.
 | 2 | events, the run record, the `local` backend, the backend protocol, locking, `unlock`, `status`, `runs`, `events`, `--events json`, `apply --resume` |
 | 3 | snapshots, `--on-failure rollback`, `meridian rollback`, `meridian drift` |
 | 4 | policy checks, `meridian-policy-opa`, a CI job against real OPA |
-| 5 | `spec.inputs`, ordering by need, the cloud-init to Terraform example |
+| 5 | `spec.imports`, ordering by need, the cloud-init to Terraform example |

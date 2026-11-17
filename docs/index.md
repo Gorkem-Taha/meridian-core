@@ -45,10 +45,12 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+| [Running safely](concepts/run-safety.md) | one run at a time, the record of every run, resuming a failed run, sharing state |
 
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
+| [State, runs and backends](reference/state.md) | what Meridian keeps about its runs, the events, and how to write a state backend |
 | [The Meridian language](reference/dsl/index.md) | every field of a document, what it must hold, and which check happens when |
 | [How it fits together](reference/dsl/how-it-fits-together.md) | a document's path from file to running tool, with diagrams and a worked example |
 | The language item by item | [resources](reference/dsl/resources.md), [`dependsOn`](reference/dsl/dependson.md), [`notifies`](reference/dsl/notifies.md), [conditions](reference/dsl/conditions.md), [references](reference/dsl/references.md), [outputs and hand-offs](reference/dsl/outputs-and-hand-offs.md) |
@@ -78,6 +80,7 @@ plugins.
 | [Observability, logging & diagnostics](plans/observability.md) | Log schema, plan output, fact provenance, telemetry, audit |
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
+| [Run safety](plans/run-safety.md) | State and locking, resume, rollback, drift, policy checks, values handed between stages |
 
 ## Contributing
 

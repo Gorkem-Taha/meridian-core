@@ -4,7 +4,11 @@
 meridian validate <files>...
 meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
 meridian plan     <files>... [-l SELECTOR] [--data FILE]
-meridian apply    <files>... [-l SELECTOR] [--data FILE]
+meridian apply    <files>... [-l SELECTOR] [--data FILE] [--resume [RUN]]
+meridian status
+meridian runs
+meridian events   [RUN] [--type TYPE]
+meridian unlock   <ID>
 meridian plugins
 ```
 
@@ -67,11 +71,80 @@ tool's own preview. Changes are listed by the ids the document uses:
 When a tool cannot say what would change, the plan is reported as unknown
 instead of empty.
 
+A plan runs each tool, so it takes the [state lock](../concepts/run-safety.md#one-run-at-a-time)
+and is recorded like an apply.
+
 ### `apply`
 
 Compiles and applies each document in order, stopping at the first failure. A
-stage's outputs are shown, kept, and handed to the stages that asked for them.
+stage's outputs are shown and handed to the stages that asked for them.
 Values a tool marks sensitive are shown as `(sensitive)`.
+
+An apply holds the [state lock](../concepts/run-safety.md#one-run-at-a-time)
+while it runs, so a second one against the same state is refused, and it is
+[recorded](../concepts/run-safety.md#the-record) step by step.
+
+When a stage fails, what its tool had already changed is listed above the
+failure, the stages after it are not run, and the command says how to
+continue:
+
+```
+web (ResourceSet, target ansible on 203.0.113.10)
+  ~ update nginx_conf
+  FAILED: the play failed (ran `ansible-playbook ...`, exit status 2)
+run 2026-11-17T09-14-03Z-0cc7 failed. Once the cause is fixed, `meridian apply --resume` with the same documents continues from the stage that failed
+```
+
+`--resume` continues the last apply that failed or was interrupted, and
+`--resume <run>` a named one. Stages that run already applied, from documents
+that still compile to the same artifact, are left alone; the rest are applied.
+[Picking up where a run stopped](../concepts/run-safety.md#picking-up-where-a-run-stopped)
+has the rules.
+
+### `status`
+
+Shows the current or last run: what was asked, who ran it, how each step
+stands, and whether the state is locked and by whom.
+
+```
+run 2026-11-17T09-14-03Z-0cc7: apply, failed
+  command:  meridian apply site.yaml
+  started:  2026-11-17T09:14:03.204Z by mike@build-07
+  finished: 2026-11-17T09:15:11.910Z
+  network (Infrastructure, target terraform): succeeded, 4 changes
+  web (ResourceSet, target ansible on 203.0.113.10): failed (tool-failed), 2 changes
+not locked
+```
+
+A run that was killed is shown as `interrupted`.
+
+### `runs`
+
+Lists every recorded run, oldest first: its id, whether it was a plan or an
+apply, how it ended, and which run it resumed.
+
+```
+2026-11-17T09-14-03Z-0cc7  apply    failed     2 steps, 1 failed
+2026-11-17T09-21-40Z-1f42  apply    succeeded  2 steps, resumes 2026-11-17T09-14-03Z-0cc7
+```
+
+### `events`
+
+Prints a run's [events](state.md#events), one JSON object per line; the last
+run's when no run is named. `--type` keeps only events of that type, takes a
+family as `'step.*'`, and may be repeated.
+
+```
+meridian events --type step.failed --type 'resource.*'
+```
+
+### `unlock`
+
+Removes the state lock a run left behind when it was killed. It takes the
+lock's id, as `status` and the refused run show it, and refuses any other, so
+the lock removed is the one you looked at. Make sure the run that held it is
+really gone first: removing the lock of a run that is still going lets a
+second one collide with it.
 
 ### `plugins`
 
@@ -97,7 +170,13 @@ versions decide which `targetVersion` a document may ask it for.
 | Option | Environment | Default | Meaning |
 |---|---|---|---|
 | `--plugin-dir DIR` | `MERIDIAN_PLUGIN_DIR` (separated by `:`) | the directory `meridian` is in | where to look for plugins; may be repeated |
-| `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and the outputs of applied stages |
+| `--state-dir DIR` | `MERIDIAN_STATE_DIR` | `.meridian` | each tool's working files, and with the local backend Meridian's own record |
+| `--backend NAME` | `MERIDIAN_BACKEND` | `local` | where Meridian's own record (the lock, the run-state, the runs) is kept: `local`, or a [backend program](state.md#writing-a-backend) |
+| `--backend-config KEY=VALUE` | | | a setting for the backend; may be repeated |
+| `--lock-timeout DURATION` | | `0s` | `plan`, `apply`: how long to wait for another run to release the lock, as in `30s`, `5m`, `1h`. By default a locked state is refused at once |
+| `--resume [RUN]` | | | `apply` only: continue the last apply, or the run named |
+| `--events json` | | | `compile`, `plan`, `apply`: write every [event](state.md#events) to standard output as it happens, one JSON object per line. The report for people moves to standard error |
+| `--keep-runs N` | | `50` | `plan`, `apply`: how many runs' records to keep |
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
 | `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
@@ -125,7 +204,9 @@ an error; nothing is guessed.
 ## Exit status
 
 `0` when everything asked for succeeded. `1` when a document was invalid, did
-not compile, or a tool failed. `2` for a mistake in the command line itself.
+not compile, a tool failed, or the run was refused because the state is
+locked or there was nothing to resume. `2` for a mistake in the command line
+itself.
 
 ## Plugins and their tools
 
