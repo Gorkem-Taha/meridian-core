@@ -207,3 +207,23 @@ fn a_param_with_no_value_is_refused() {
     first.pos = Position::default();
     assert_eq!(emit(&graph).unwrap_err().rule, "empty-param");
 }
+
+#[test]
+fn a_reference_is_settled_from_the_document_or_refused() {
+    let emitted = compile(
+        "    - id: root\n      type: file\n      state: directory\n      params:\n        path: /srv/app\n    - id: page\n      type: file\n      params:\n        path: ${root.path}/index.html\n        content: \"costs $${PRICE}\"\n",
+    )
+    .unwrap();
+    let all: String = emitted.artifact.files.values().cloned().collect();
+    assert!(all.contains("/srv/app/index.html"), "{all}");
+    assert!(all.contains("costs ${PRICE}"), "{all}");
+    assert!(!all.contains("${root"), "{all}");
+    assert!(!all.contains("$${"), "{all}");
+
+    let err = refusal(
+        "    - id: page\n      type: file\n      params:\n        path: ${nowhere.path}/index.html\n        content: x\n",
+    );
+    assert_eq!(err.rule, "invalid-reference");
+    assert_eq!(err.resource, "page");
+    assert!(err.msg.contains("does not declare"), "{}", err.msg);
+}
