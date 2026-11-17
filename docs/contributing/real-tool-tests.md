@@ -110,7 +110,12 @@ Resource Manager. So the Bicep and ARM plugins are tested in two parts.
   nearest real tool is the Bicep compiler's ARM reader (`az bicep decompile`), which has
   to parse the whole template to convert it: schema and scope, every resource, every
   template expression, every reference to a parameter. Each template the plugin compiles
-  is put through it, and a deliberately broken one is checked to be refused.
+  is put through it, and a deliberately broken one is checked to be refused. One thing
+  the reader cannot convert: the `scope` of an extension resource such as a lock, which
+  in a template is the id of the resource it extends and in Bicep must be a resource
+  symbol. The example with a lock is read without it, and with it the scope must be the
+  reader's only complaint. Whether Azure accepts that scope is for a subscription to
+  prove.
 
 That proves what Meridian writes is valid. **It does not prove anything about the
 runner**: `az deployment group what-if`, `create` and `show`, and reading their output,

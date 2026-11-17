@@ -31,7 +31,7 @@
 use std::fs;
 use std::path::Path;
 
-use meridian_plugin_testkit::{graph_from_file, graph_from_text, scratch, KeptLog};
+use meridian_plugin_testkit::{graph_from_file, graph_from_text, repo_root, scratch, KeptLog};
 use meridian_sdk::tool::{write_artifact, Tool};
 use meridian_sdk::{
     Applied, Artifact, Change, ChangeAction, Data, Emitter, NoLog, Output, Plan, ResourceGraph,
@@ -103,14 +103,6 @@ fn every_example_is_a_template_real_tooling_reads() {
             ],
         ),
         (
-            "sql-database",
-            vec![
-                "@secure()",
-                "'Microsoft.Sql/servers/databases@",
-                "'Microsoft.Authorization/locks@",
-            ],
-        ),
-        (
             "landing-zone",
             vec![
                 "targetScope = 'subscription'",
@@ -134,6 +126,61 @@ fn every_example_is_a_template_real_tooling_reads() {
         for piece in expected {
             assert!(bicep.contains(piece), "{name}: no {piece:?} in\n{bicep}");
         }
+    }
+}
+
+/// The Bicep compiler's own complaints about what it converted a template
+/// to, by their codes.
+fn error_codes(output: &str) -> Vec<&str> {
+    output
+        .lines()
+        .filter_map(|line| line.split_once(": Error ")?.1.split(':').next())
+        .collect()
+}
+
+#[test]
+fn child_resources_are_read_and_a_scope_is_the_one_thing_the_reader_cannot_convert() {
+    if !asked_for_the_reader() {
+        return;
+    }
+    let example = fs::read_to_string(repo_root().join("examples/arm/sql-database.yaml")).unwrap();
+
+    // Without its lock, the example is read whole: child resources, names
+    // made from a parameter, a secure parameter and a condition.
+    let lock = example.find("    # An extension resource").unwrap();
+    let outputs = example.find("  outputs:").unwrap();
+    let lock_output = example.find("    - name: lock_id").unwrap();
+    let without_lock = format!("{}{}", &example[..lock], &example[outputs..lock_output]);
+    let dir = scratch(TMP, "real-read-sql-database");
+    let artifact = compile(&graph_from_text("sql-database.yaml", &without_lock, "arm"));
+    let bicep = read_back(&dir, &artifact).unwrap_or_else(|why| {
+        panic!(
+            "the template could not be read:\n{why}\n--- {TEMPLATE_PATH} ---\n{}",
+            artifact.files[TEMPLATE_PATH]
+        )
+    });
+    for piece in [
+        "@secure()",
+        "'Microsoft.Sql/servers/databases@2023-05-01-preview'",
+        "'Microsoft.Sql/servers/firewallRules@2023-05-01-preview'",
+    ] {
+        assert!(bicep.contains(piece), "no {piece:?} in\n{bicep}");
+    }
+
+    // With the lock, the reader parses the template and converts every
+    // resource, then stops at the lock's `scope`. In a template that is the
+    // id of the resource the lock extends, which is what Resource Manager
+    // expects; Bicep wants a resource symbol there and the converter cannot
+    // make one from an id built by an expression. Those two complaints, about
+    // the scope and the dependency on the same id, are the only ones allowed.
+    // Whether Azure accepts the scope is for the subscription test to prove.
+    let dir = scratch(TMP, "real-read-sql-database-lock");
+    let artifact = compile(&graph_from_file("examples/arm/sql-database.yaml", "arm"));
+    if let Err(why) = read_back(&dir, &artifact) {
+        let mut codes = error_codes(&why);
+        codes.sort_unstable();
+        assert_eq!(codes, ["BCP034", "BCP036"], "{why}");
+        assert!(why.contains("The property \"scope\""), "{why}");
     }
 }
 
