@@ -619,6 +619,7 @@ name = "meridian-ir"
 version = "0.1.0"
 dependencies = [
  "meridian-value",
+ "meridian-yaml",
  "saphyr-parser",
  "serde_json",
 ]
@@ -677,6 +678,13 @@ dependencies = [
 
 [[package]]
 name = "meridian-value"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "meridian-yaml"
 version = "0.1.0"
 dependencies = [
  "serde_json",

@@ -11,10 +11,10 @@
 //! reached a target rewritten as `2001-12-14T00:00:00Z`. Here it stays the
 //! string the author wrote.
 
-/// What a scalar resolved to. `Str` carries no payload: the text is the node's
-/// own raw value.
+/// What a scalar resolved to. `Str` carries no payload: the text is the
+/// scalar's own raw value.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) enum Scalar {
+pub enum Scalar {
     Null,
     Bool(bool),
     Int(i64),
@@ -23,7 +23,7 @@ pub(crate) enum Scalar {
     Str,
 }
 
-pub(crate) fn resolve_plain(s: &str) -> Scalar {
+pub fn resolve_plain(s: &str) -> Scalar {
     match s {
         "" | "~" | "null" | "Null" | "NULL" => return Scalar::Null,
         "true" | "True" | "TRUE" => return Scalar::Bool(true),

@@ -1,0 +1,2095 @@
+- v: ""
+  l:
+    - ""
+
+"": x
+
+""
+
+- v: ' '
+  l:
+    - ' '
+
+' ': x
+
+' '
+
+- v: plain
+  l:
+    - plain
+
+plain: x
+
+plain
+
+- v: two words
+  l:
+    - two words
+
+two words: x
+
+two words
+
+- v: nginx
+  l:
+    - nginx
+
+nginx: x
+
+nginx
+
+- v: "0644"
+  l:
+    - "0644"
+
+"0644": x
+
+"0644"
+
+- v: "0o17"
+  l:
+    - "0o17"
+
+"0o17": x
+
+"0o17"
+
+- v: "0x1F"
+  l:
+    - "0x1F"
+
+"0x1F": x
+
+"0x1F"
+
+- v: "0b11"
+  l:
+    - "0b11"
+
+"0b11": x
+
+"0b11"
+
+- v: "1_000"
+  l:
+    - "1_000"
+
+"1_000": x
+
+"1_000"
+
+- v: "8080"
+  l:
+    - "8080"
+
+"8080": x
+
+"8080"
+
+- v: "-3"
+  l:
+    - "-3"
+
+"-3": x
+
+"-3"
+
+- v: "+7"
+  l:
+    - "+7"
+
+"+7": x
+
+"+7"
+
+- v: "3.14"
+  l:
+    - "3.14"
+
+"3.14": x
+
+"3.14"
+
+- v: ".5"
+  l:
+    - ".5"
+
+".5": x
+
+".5"
+
+- v: "5."
+  l:
+    - "5."
+
+"5.": x
+
+"5."
+
+- v: "1e3"
+  l:
+    - "1e3"
+
+"1e3": x
+
+"1e3"
+
+- v: "1E-3"
+  l:
+    - "1E-3"
+
+"1E-3": x
+
+"1E-3"
+
+- v: "-.inf"
+  l:
+    - "-.inf"
+
+"-.inf": x
+
+"-.inf"
+
+- v: ".inf"
+  l:
+    - ".inf"
+
+".inf": x
+
+".inf"
+
+- v: ".NaN"
+  l:
+    - ".NaN"
+
+".NaN": x
+
+".NaN"
+
+- v: ".nan"
+  l:
+    - ".nan"
+
+".nan": x
+
+".nan"
+
+- v: "true"
+  l:
+    - "true"
+
+"true": x
+
+"true"
+
+- v: "True"
+  l:
+    - "True"
+
+"True": x
+
+"True"
+
+- v: "TRUE"
+  l:
+    - "TRUE"
+
+"TRUE": x
+
+"TRUE"
+
+- v: "false"
+  l:
+    - "false"
+
+"false": x
+
+"false"
+
+- v: "yes"
+  l:
+    - "yes"
+
+"yes": x
+
+"yes"
+
+- v: "Yes"
+  l:
+    - "Yes"
+
+"Yes": x
+
+"Yes"
+
+- v: "no"
+  l:
+    - "no"
+
+"no": x
+
+"no"
+
+- v: "on"
+  l:
+    - "on"
+
+"on": x
+
+"on"
+
+- v: "off"
+  l:
+    - "off"
+
+"off": x
+
+"off"
+
+- v: "y"
+  l:
+    - "y"
+
+"y": x
+
+"y"
+
+- v: "n"
+  l:
+    - "n"
+
+"n": x
+
+"n"
+
+- v: "Y"
+  l:
+    - "Y"
+
+"Y": x
+
+"Y"
+
+- v: "N"
+  l:
+    - "N"
+
+"N": x
+
+"N"
+
+- v: "null"
+  l:
+    - "null"
+
+"null": x
+
+"null"
+
+- v: "Null"
+  l:
+    - "Null"
+
+"Null": x
+
+"Null"
+
+- v: "~"
+  l:
+    - "~"
+
+"~": x
+
+"~"
+
+- v: "NULL"
+  l:
+    - "NULL"
+
+"NULL": x
+
+"NULL"
+
+- v: nil
+  l:
+    - nil
+
+nil: x
+
+nil
+
+- v: truthy
+  l:
+    - truthy
+
+truthy: x
+
+truthy
+
+- v: "2001-12-14"
+  l:
+    - "2001-12-14"
+
+"2001-12-14": x
+
+"2001-12-14"
+
+- v: "2001-1-2"
+  l:
+    - "2001-1-2"
+
+"2001-1-2": x
+
+"2001-1-2"
+
+- v: 2001-13-14
+  l:
+    - 2001-13-14
+
+2001-13-14: x
+
+2001-13-14
+
+- v: 2001-02-30
+  l:
+    - 2001-02-30
+
+2001-02-30: x
+
+2001-02-30
+
+- v: "2000-02-29"
+  l:
+    - "2000-02-29"
+
+"2000-02-29": x
+
+"2000-02-29"
+
+- v: 1900-02-29
+  l:
+    - 1900-02-29
+
+1900-02-29: x
+
+1900-02-29
+
+- v: "2001-12-14T21:59:43Z"
+  l:
+    - "2001-12-14T21:59:43Z"
+
+"2001-12-14T21:59:43Z": x
+
+"2001-12-14T21:59:43Z"
+
+- v: "2001-12-14t21:59:43.10-05:00"
+  l:
+    - "2001-12-14t21:59:43.10-05:00"
+
+"2001-12-14t21:59:43.10-05:00": x
+
+"2001-12-14t21:59:43.10-05:00"
+
+- v: "2001-12-14 21:59:43.10"
+  l:
+    - "2001-12-14 21:59:43.10"
+
+"2001-12-14 21:59:43.10": x
+
+"2001-12-14 21:59:43.10"
+
+- v: 2001-12-14 21:59:43.10 -5
+  l:
+    - 2001-12-14 21:59:43.10 -5
+
+2001-12-14 21:59:43.10 -5: x
+
+2001-12-14 21:59:43.10 -5
+
+- v: 2001-12-14T21:59:43
+  l:
+    - 2001-12-14T21:59:43
+
+2001-12-14T21:59:43: x
+
+2001-12-14T21:59:43
+
+- v: "2001-12-14T1:2:3Z"
+  l:
+    - "2001-12-14T1:2:3Z"
+
+"2001-12-14T1:2:3Z": x
+
+"2001-12-14T1:2:3Z"
+
+- v: 2001-12-14 25:00:00
+  l:
+    - 2001-12-14 25:00:00
+
+2001-12-14 25:00:00: x
+
+2001-12-14 25:00:00
+
+- v: 20011-12-14
+  l:
+    - 20011-12-14
+
+20011-12-14: x
+
+20011-12-14
+
+- v: 2001-12-14x
+  l:
+    - 2001-12-14x
+
+2001-12-14x: x
+
+2001-12-14x
+
+- v: 2001-12
+  l:
+    - 2001-12
+
+2001-12: x
+
+2001-12
+
+- v: "2001-12-14T21:59:43+05:30"
+  l:
+    - "2001-12-14T21:59:43+05:30"
+
+"2001-12-14T21:59:43+05:30": x
+
+"2001-12-14T21:59:43+05:30"
+
+- v: "2001-12-14 21:59:43,5"
+  l:
+    - "2001-12-14 21:59:43,5"
+
+"2001-12-14 21:59:43,5": x
+
+"2001-12-14 21:59:43,5"
+
+- v: 2001-12-14T21:59:43.Z
+  l:
+    - 2001-12-14T21:59:43.Z
+
+2001-12-14T21:59:43.Z: x
+
+2001-12-14T21:59:43.Z
+
+- v: "1:30"
+  l:
+    - "1:30"
+
+"1:30": x
+
+"1:30"
+
+- v: "1:30:45"
+  l:
+    - "1:30:45"
+
+"1:30:45": x
+
+"1:30:45"
+
+- v: "-1:30"
+  l:
+    - "-1:30"
+
+"-1:30": x
+
+"-1:30"
+
+- v: 1:60
+  l:
+    - 1:60
+
+1:60: x
+
+1:60
+
+- v: "190:20:30.15"
+  l:
+    - "190:20:30.15"
+
+"190:20:30.15": x
+
+"190:20:30.15"
+
+- v: "1:3"
+  l:
+    - "1:3"
+
+"1:3": x
+
+"1:3"
+
+- v: a:b
+  l:
+    - a:b
+
+a:b: x
+
+a:b
+
+- v: 12:5x
+  l:
+    - 12:5x
+
+12:5x: x
+
+12:5x
+
+- v: "1_0:30"
+  l:
+    - "1_0:30"
+
+"1_0:30": x
+
+"1_0:30"
+
+- v: "+1:05.5_5"
+  l:
+    - "+1:05.5_5"
+
+"+1:05.5_5": x
+
+"+1:05.5_5"
+
+- v: 'a: b'
+  l:
+    - 'a: b'
+
+'a: b': x
+
+'a: b'
+
+- v: a:b
+  l:
+    - a:b
+
+a:b: x
+
+a:b
+
+- v: a :b
+  l:
+    - a :b
+
+a :b: x
+
+a :b
+
+- v: ':'
+  l:
+    - ':'
+
+':': x
+
+':'
+
+- v: ': x'
+  l:
+    - ': x'
+
+': x': x
+
+': x'
+
+- v: :x
+  l:
+    - :x
+
+:x: x
+
+:x
+
+- v: 'a:'
+  l:
+    - 'a:'
+
+'a:': x
+
+'a:'
+
+- v: 'x #y'
+  l:
+    - 'x #y'
+
+'x #y': x
+
+'x #y'
+
+- v: x#y
+  l:
+    - x#y
+
+x#y: x
+
+x#y
+
+- v: '#x'
+  l:
+    - '#x'
+
+'#x': x
+
+'#x'
+
+- v: '# x'
+  l:
+    - '# x'
+
+'# x': x
+
+'# x'
+
+- v: '- x'
+  l:
+    - '- x'
+
+'- x': x
+
+'- x'
+
+- v: -x
+  l:
+    - -x
+
+-x: x
+
+-x
+
+- v: '-'
+  l:
+    - '-'
+
+'-': x
+
+'-'
+
+- v: --
+  l:
+    - --
+
+--: x
+
+--
+
+- v: '---'
+  l:
+    - '---'
+
+'---': x
+
+'---'
+
+- v: '--- x'
+  l:
+    - '--- x'
+
+'--- x': x
+
+'--- x'
+
+- v: '...'
+  l:
+    - '...'
+
+'...': x
+
+'...'
+
+- v: '....'
+  l:
+    - '....'
+
+'....': x
+
+'....'
+
+- v: '? x'
+  l:
+    - '? x'
+
+'? x': x
+
+'? x'
+
+- v: ?x
+  l:
+    - ?x
+
+?x: x
+
+?x
+
+- v: '?'
+  l:
+    - '?'
+
+'?': x
+
+'?'
+
+- v: '[a]'
+  l:
+    - '[a]'
+
+'[a]': x
+
+'[a]'
+
+- v: a[b]
+  l:
+    - a[b]
+
+a[b]: x
+
+a[b]
+
+- v: '{a}'
+  l:
+    - '{a}'
+
+'{a}': x
+
+'{a}'
+
+- v: a{b}
+  l:
+    - a{b}
+
+a{b}: x
+
+a{b}
+
+- v: a,b
+  l:
+    - a,b
+
+a,b: x
+
+a,b
+
+- v: ',a'
+  l:
+    - ',a'
+
+',a': x
+
+',a'
+
+- v: '&a'
+  l:
+    - '&a'
+
+'&a': x
+
+'&a'
+
+- v: '*a'
+  l:
+    - '*a'
+
+'*a': x
+
+'*a'
+
+- v: '!a'
+  l:
+    - '!a'
+
+'!a': x
+
+'!a'
+
+- v: '|a'
+  l:
+    - '|a'
+
+'|a': x
+
+'|a'
+
+- v: '>a'
+  l:
+    - '>a'
+
+'>a': x
+
+'>a'
+
+- v: '''a'''
+  l:
+    - '''a'''
+
+'''a''': x
+
+'''a'''
+
+- v: it's
+  l:
+    - it's
+
+it's: x
+
+it's
+
+- v: '"a"'
+  l:
+    - '"a"'
+
+'"a"': x
+
+'"a"'
+
+- v: say "hi"
+  l:
+    - say "hi"
+
+say "hi": x
+
+say "hi"
+
+- v: '%a'
+  l:
+    - '%a'
+
+'%a': x
+
+'%a'
+
+- v: '@a'
+  l:
+    - '@a'
+
+'@a': x
+
+'@a'
+
+- v: '`a`'
+  l:
+    - '`a`'
+
+'`a`': x
+
+'`a`'
+
+- v: a&b
+  l:
+    - a&b
+
+a&b: x
+
+a&b
+
+- v: a*b
+  l:
+    - a*b
+
+a*b: x
+
+a*b
+
+- v: a!b
+  l:
+    - a!b
+
+a!b: x
+
+a!b
+
+- v: a|b
+  l:
+    - a|b
+
+a|b: x
+
+a|b
+
+- v: a>b
+  l:
+    - a>b
+
+a>b: x
+
+a>b
+
+- v: a%b
+  l:
+    - a%b
+
+a%b: x
+
+a%b
+
+- v: a@b
+  l:
+    - a@b
+
+a@b: x
+
+a@b
+
+- v: ' lead'
+  l:
+    - ' lead'
+
+' lead': x
+
+' lead'
+
+- v: 'trail '
+  l:
+    - 'trail '
+
+'trail ': x
+
+'trail '
+
+- v: ' both '
+  l:
+    - ' both '
+
+' both ': x
+
+' both '
+
+- v: "tab\there"
+  l:
+    - "tab\there"
+
+"tab\there": x
+
+"tab\there"
+
+- v: "\ttab"
+  l:
+    - "\ttab"
+
+"\ttab": x
+
+"\ttab"
+
+- v: "tab\t"
+  l:
+    - "tab\t"
+
+"tab\t": x
+
+"tab\t"
+
+- v: back\slash
+  l:
+    - back\slash
+
+back\slash: x
+
+back\slash
+
+- v: C:\path
+  l:
+    - C:\path
+
+C:\path: x
+
+C:\path
+
+- v: |-
+    line1
+    line2
+  l:
+    - |-
+      line1
+      line2
+
+? |-
+  line1
+  line2
+: x
+
+|-
+  line1
+  line2
+
+- v: |
+    line1
+    line2
+  l:
+    - |
+      line1
+      line2
+
+? |
+  line1
+  line2
+: x
+
+|
+  line1
+  line2
+
+- v: |+
+    line1
+    line2
+
+  l:
+    - |+
+      line1
+      line2
+
+
+? |+
+  line1
+  line2
+
+: x
+
+|+
+  line1
+  line2
+
+
+- v: |-
+    lead
+  l:
+    - |-
+      lead
+
+"lead": x
+
+|-
+  lead
+
+- v: ""
+  l:
+    - ""
+
+"": x
+
+""
+
+- v: |2+
+  l:
+    - |2+
+
+? |2+
+: x
+
+|2+
+
+- v: |
+    a
+  l:
+    - |
+      a
+
+? |
+  a
+: x
+
+|
+  a
+
+- v: |2-
+     a
+    b
+  l:
+    - |2-
+       a
+      b
+
+? |2-
+   a
+  b
+: x
+
+|2-
+   a
+  b
+
+- v: "a \nb"
+  l:
+    - "a \nb"
+
+? "a \nb"
+: x
+
+"a \nb"
+
+- v: |-
+    a
+     b
+  l:
+    - |-
+      a
+       b
+
+? |-
+  a
+   b
+: x
+
+|-
+  a
+   b
+
+- v: |-
+    a
+
+    b
+  l:
+    - |-
+      a
+
+      b
+
+? |-
+  a
+
+  b
+: x
+
+|-
+  a
+
+  b
+
+- v: "a\nb "
+  l:
+    - "a\nb "
+
+? "a\nb "
+: x
+
+"a\nb "
+
+- v: |-
+    a	b
+    c
+  l:
+    - |-
+      a	b
+      c
+
+? |-
+  a	b
+  c
+: x
+
+|-
+  a	b
+  c
+
+- v: "a\r\nb"
+  l:
+    - "a\r\nb"
+
+? "a\r\nb"
+: x
+
+"a\r\nb"
+
+- v: "a\rb"
+  l:
+    - "a\rb"
+
+? "a\rb"
+: x
+
+"a\rb"
+
+- v: "trailing space \n"
+  l:
+    - "trailing space \n"
+
+? "trailing space \n"
+: x
+
+"trailing space \n"
+
+- v: |
+    x
+    # not a comment
+  l:
+    - |
+      x
+      # not a comment
+
+? |
+  x
+  # not a comment
+: x
+
+|
+  x
+  # not a comment
+
+- v: |
+    key: value
+    other: 2
+  l:
+    - |
+      key: value
+      other: 2
+
+? |
+  key: value
+  other: 2
+: x
+
+|
+  key: value
+  other: 2
+
+- v: |
+    - item
+    - item
+  l:
+    - |
+      - item
+      - item
+
+? |
+  - item
+  - item
+: x
+
+|
+  - item
+  - item
+
+- v: héllo
+  l:
+    - héllo
+
+héllo: x
+
+héllo
+
+- v: ✓ done
+  l:
+    - ✓ done
+
+✓ done: x
+
+✓ done
+
+- v: "\U0001F600"
+  l:
+    - "\U0001F600"
+
+"\U0001F600": x
+
+"\U0001F600"
+
+- v: nbsp here
+  l:
+    - nbsp here
+
+nbsp here: x
+
+nbsp here
+
+- v:  
+  l:
+    -  
+
+ : x
+
+ 
+
+- v: "bell\a"
+  l:
+    - "bell\a"
+
+"bell\a": x
+
+"bell\a"
+
+- v: "nul\0"
+  l:
+    - "nul\0"
+
+"nul\0": x
+
+"nul\0"
+
+- v: "esc\e[0m"
+  l:
+    - "esc\e[0m"
+
+"esc\e[0m": x
+
+"esc\e[0m"
+
+- v: "del\x7F"
+  l:
+    - "del\x7F"
+
+"del\x7F": x
+
+"del\x7F"
+
+- v: "\Nnel"
+  l:
+    - "\Nnel"
+
+? "\Nnel"
+: x
+
+"\Nnel"
+
+- v: 'ls     x'
+  l:
+    - 'ls       x'
+
+? 'ls   x'
+: x
+
+'ls   x'
+
+- v: 'ps     x'
+  l:
+    - 'ps       x'
+
+? 'ps   x'
+: x
+
+'ps   x'
+
+- v: "bom\uFEFFx"
+  l:
+    - "bom\uFEFFx"
+
+"bom\uFEFFx": x
+
+"bom\uFEFFx"
+
+- v: "\uFFFE"
+  l:
+    - "\uFFFE"
+
+"\uFFFE": x
+
+"\uFFFE"
+
+- v: "\uFFFF"
+  l:
+    - "\uFFFF"
+
+"\uFFFF": x
+
+"\uFFFF"
+
+- v: "ctl\x80"
+  l:
+    - "ctl\x80"
+
+"ctl\x80": x
+
+"ctl\x80"
+
+- v: "\x9F"
+  l:
+    - "\x9F"
+
+"\x9F": x
+
+"\x9F"
+
+- v: a­b
+  l:
+    - a­b
+
+a­b: x
+
+a­b
+
+- v: 
+  l:
+    - 
+
+: x
+
+
+
+- v: �
+  l:
+    - �
+
+�: x
+
+�
+
+- v: "\U00010000"
+  l:
+    - "\U00010000"
+
+"\U00010000": x
+
+"\U00010000"
+
+- v: "\U0010FFFF"
+  l:
+    - "\U0010FFFF"
+
+"\U0010FFFF": x
+
+"\U0010FFFF"
+
+- v: |
+    worker_processes 4;
+  l:
+    - |
+      worker_processes 4;
+
+? |
+  worker_processes 4;
+: x
+
+|
+  worker_processes 4;
+
+- v: |
+    server {}
+  l:
+    - |
+      server {}
+
+? |
+  server {}
+: x
+
+|
+  server {}
+
+- v: |
+    mode = fast
+    workers = 8
+  l:
+    - |
+      mode = fast
+      workers = 8
+
+? |
+  mode = fast
+  workers = 8
+: x
+
+|
+  mode = fast
+  workers = 8
+
+- v: ansible_facts['os_family'] == 'Debian'
+  l:
+    - ansible_facts['os_family'] == 'Debian'
+
+ansible_facts['os_family'] == 'Debian': x
+
+ansible_facts['os_family'] == 'Debian'
+
+- v: /usr/local/bin/warm-cache --all
+  l:
+    - /usr/local/bin/warm-cache --all
+
+/usr/local/bin/warm-cache --all: x
+
+/usr/local/bin/warm-cache --all
+
+- v: a | b
+  l:
+    - a | b
+
+a | b: x
+
+a | b
+
+- v: '{{ var }}'
+  l:
+    - '{{ var }}'
+
+'{{ var }}': x
+
+'{{ var }}'
+
+- v: '{{ var }} x'
+  l:
+    - '{{ var }} x'
+
+'{{ var }} x': x
+
+'{{ var }} x'
+
+- v: x {{ var }}
+  l:
+    - x {{ var }}
+
+x {{ var }}: x
+
+x {{ var }}
+
+- v: '*.example.com'
+  l:
+    - '*.example.com'
+
+'*.example.com': x
+
+'*.example.com'
+
+- v: '!vault |'
+  l:
+    - '!vault |'
+
+'!vault |': x
+
+'!vault |'
+
+- v: '@daily'
+  l:
+    - '@daily'
+
+'@daily': x
+
+'@daily'
+
+- v: 50%
+  l:
+    - 50%
+
+50%: x
+
+50%
+
+- v: "100"
+  l:
+    - "100"
+
+"100": x
+
+"100"
+
+- v: "1.0"
+  l:
+    - "1.0"
+
+"1.0": x
+
+"1.0"
+
+- v: 1e
+  l:
+    - 1e
+
+1e: x
+
+1e
+
+- v: 0x
+  l:
+    - 0x
+
+0x: x
+
+0x
+
+- v: 0b
+  l:
+    - 0b
+
+0b: x
+
+0b
+
+- v: 0o
+  l:
+    - 0o
+
+0o: x
+
+0o
+
+- v: "08"
+  l:
+    - "08"
+
+"08": x
+
+"08"
+
+- v: "09"
+  l:
+    - "09"
+
+"09": x
+
+"09"
+
+- v: "0_8"
+  l:
+    - "0_8"
+
+"0_8": x
+
+"0_8"
+
+- v: "-0"
+  l:
+    - "-0"
+
+"-0": x
+
+"-0"
+
+- v: "+0"
+  l:
+    - "+0"
+
+"+0": x
+
+"+0"
+
+- v: "00"
+  l:
+    - "00"
+
+"00": x
+
+"00"
+
+- v: 0.0.0
+  l:
+    - 0.0.0
+
+0.0.0: x
+
+0.0.0
+
+- v: 1.2.3
+  l:
+    - 1.2.3
+
+1.2.3: x
+
+1.2.3
+
+- v: v1.2
+  l:
+    - v1.2
+
+v1.2: x
+
+v1.2
+
+- v: 1,000
+  l:
+    - 1,000
+
+1,000: x
+
+1,000
+
+- v: !!merge <<
+  l:
+    - !!merge <<
+
+!!merge <<: x
+
+!!merge <<
+
+- v: =
+  l:
+    - =
+
+=: x
+
+=
+
+- v: ==
+  l:
+    - ==
+
+==: x
+
+==
+
+- v: a=b
+  l:
+    - a=b
+
+a=b: x
+
+a=b
+
+- v: <a>
+  l:
+    - <a>
+
+<a>: x
+
+<a>
+
+- v: http://x.y/z?q=1&r=2#frag
+  l:
+    - http://x.y/z?q=1&r=2#frag
+
+http://x.y/z?q=1&r=2#frag: x
+
+http://x.y/z?q=1&r=2#frag
+
+- v: user@host
+  l:
+    - user@host
+
+user@host: x
+
+user@host
+
+- v: a;b
+  l:
+    - a;b
+
+a;b: x
+
+a;b
+
+- v: $HOME
+  l:
+    - $HOME
+
+$HOME: x
+
+$HOME
+
+- v: ~/.ssh
+  l:
+    - ~/.ssh
+
+~/.ssh: x
+
+~/.ssh
+
+- v: ~x
+  l:
+    - ~x
+
+~x: x
+
+~x
+
+- v: \n
+  l:
+    - \n
+
+\n: x
+
+\n
+
+- v: ''''
+  l:
+    - ''''
+
+'''': x
+
+''''
+
+- v: ''''''
+  l:
+    - ''''''
+
+'''''': x
+
+''''''
+
+- v: '"'
+  l:
+    - '"'
+
+'"': x
+
+'"'
+
+- v: a'b"c
+  l:
+    - a'b"c
+
+a'b"c: x
+
+a'b"c
+
+- v: a\'b
+  l:
+    - a\'b
+
+a\'b: x
+
+a\'b
+
+null
+
+- v: null
+
+true
+
+- v: true
+
+false
+
+- v: false
+
+0
+
+- v: 0
+
+1
+
+- v: 1
+
+-1
+
+- v: -1
+
+8080
+
+- v: 8080
+
+9223372036854775807
+
+- v: 9223372036854775807
+
+-9223372036854775808
+
+- v: -9223372036854775808
+
+1.8446744073709552e+19
+
+- v: 1.8446744073709552e+19
+
+0.5
+
+- v: 0.5
+
+1.5
+
+- v: 1.5
+
+-2.25
+
+- v: -2.25
+
+100000.5
+
+- v: 100000.5
+
+1e+21
+
+- v: 1e+21
+
+1e-07
+
+- v: 1e-07
+
+1.23456789125e+08
+
+- v: 1.23456789125e+08
+
+1e+06
+
+- v: 1e+06
+
+1e+100
+
+- v: 1e+100
+
+0.0001
+
+- v: 0.0001
+
+1e-05
+
+- v: 1e-05
+
+3e+20
+
+- v: 3e+20
+
+1.7976931348623157e+308
+
+- v: 1.7976931348623157e+308
+
+5e-324
+
+- v: 5e-324
+
+[]
+
+- v: []
+
+{}
+
+- v: {}
+
+- []
+
+- v:
+    - []
+
+- {}
+
+- v:
+    - {}
+
+a: []
+
+- v:
+    a: []
+
+a: {}
+
+- v:
+    a: {}
+
+- 1
+- two
+- null
+- true
+
+- v:
+    - 1
+    - two
+    - null
+    - true
+
+- - 1
+  - 2
+- - 3
+
+- v:
+    - - 1
+      - 2
+    - - 3
+
+- - a
+- []
+
+- v:
+    - - a
+    - []
+
+a:
+  c: |
+    multi
+    line
+  d:
+    - 1
+    - w:
+        - 1
+      x: "y"
+b: 1
+
+- v:
+    a:
+      c: |
+        multi
+        line
+      d:
+        - 1
+        - w:
+            - 1
+          x: "y"
+    b: 1
+
+- list:
+    - a
+    - b
+  map:
+    k: v
+  name: x
+- s
+- - "n"
+  - k: |-
+      line1
+      line2
+
+- v:
+    - list:
+        - a
+        - b
+      map:
+        k: v
+      name: x
+    - s
+    - - "n"
+      - k: |-
+          line1
+          line2
+
+"": empty key
+' lead': 5
+'#c': 3
+'- x': 2
+"0644": octal key
+"1:30": 7
+"2001-12-14": 6
+'a: b': 1
+it's: 4
+key with space: 1
+? |-
+  multi
+  line
+: ml key
+"tab\tkey": 9
+"true": bool key
+"yes": 8
+
+- v:
+    "": empty key
+    ' lead': 5
+    '#c': 3
+    '- x': 2
+    "0644": octal key
+    "1:30": 7
+    "2001-12-14": 6
+    'a: b': 1
+    it's: 4
+    key with space: 1
+    ? |-
+      multi
+      line
+    : ml key
+    "tab\tkey": 9
+    "true": bool key
+    "yes": 8
+
+content: |
+  a
+groups:
+  - deploy
+  - sudo
+nested:
+  content: |2
+     indented start
+    line
+  deeper:
+    content: |+
+      starts with newline
+
+
+- v:
+    content: |
+      a
+    groups:
+      - deploy
+      - sudo
+    nested:
+      content: |2
+         indented start
+        line
+      deeper:
+        content: |+
+          starts with newline
+
+

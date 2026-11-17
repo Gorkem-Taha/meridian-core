@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use saphyr_parser::{Event, Parser, ScalarStyle, ScanError, Span};
 
 use crate::error::{Error, Position};
-use crate::scalar::{resolve_plain, Scalar};
+use meridian_yaml::scalar::{resolve_plain, Scalar};
 
 #[derive(Clone, Debug)]
 pub(crate) struct Node {
