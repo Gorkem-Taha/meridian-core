@@ -70,13 +70,16 @@ Each refusal has a rule name in brackets. The common ones:
 ## Warnings are not refusals in disguise
 
 A warning means the output does what the document says, and there is something
-about how that you should know. Two kinds exist today:
+about how that you should know. Three kinds exist today:
 
 - The tool is less expressive than the document, in a way that cannot change the
   result. Ansible runs independent resources in sequence; `kubectl` does not
   wait between manifests.
 - A notify is synthetic, and will show up in the tool's own output as a checksum
-  label, an annotation, or a replacement.
+  label, an annotation, a replacement, or a command at the end of a first boot.
+- The output relies on something about the machine that the document cannot
+  check. cloud-init has no module for services, so a service becomes `systemctl`
+  commands and the image has to use systemd.
 
 ## Why plan can be "unknown"
 
