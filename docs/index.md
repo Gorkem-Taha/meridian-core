@@ -1,7 +1,7 @@
 # Meridian
 
 Meridian is one declarative language that compiles to Ansible, Puppet, Chef, DSC,
-Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
+cloud-init, Terraform, CloudFormation, Bicep, Docker Compose and Kubernetes, and then drives the tool
 you chose to plan and apply it.
 
 ## Honest scope statement
@@ -44,12 +44,12 @@ byte. The reasons, the layout and the order of work are in
 | Reference | |
 |---|---|
 | [The `meridian` command](reference/cli.md) | commands, options, exit status |
-| [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec` |
+| [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 
 | Targets | |
 |---|---|
-| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md) |
+| Configuration management | [ansible](targets/ansible.md), [puppet](targets/puppet.md), [chef](targets/chef.md), [dsc](targets/dsc.md), [cloud-init](targets/cloud-init.md) |
 | Infrastructure as code | [terraform](targets/terraform.md), [cloudformation](targets/cloudformation.md), [bicep](targets/bicep.md) |
 | Containers | [docker](targets/docker.md), [podman](targets/podman.md), [kubernetes](targets/kubernetes.md) |
 
