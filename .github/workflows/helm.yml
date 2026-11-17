@@ -57,6 +57,6 @@ jobs:
       - name: Show the cluster when something failed
         if: failure()
         run: |
-          helm list --all-namespaces --all
-          kubectl get all,configmaps --all-namespaces
-          kubectl get events --all-namespaces --sort-by=.lastTimestamp | tail -40
+          helm list --all-namespaces --all || true
+          kubectl get all,configmaps --all-namespaces || true
+          kubectl get events --all-namespaces --sort-by=.lastTimestamp | tail -40 || true

@@ -139,7 +139,7 @@ spec:
           percent: "100% ${values.word} 50%s"
           big: n=${values.big}
           ratio: r=${values.ratio}
-          on: is ${values.on}
+          enabled: is ${values.on}
           dollar: $${HOME} costs $5
           whole: ${values.word}
         list: ${values.list}
@@ -165,7 +165,7 @@ spec:
             // 5e+06 if it were left to.
             "big: \"n=5000000\"",
             "ratio: \"r=0.25\"",
-            "on: \"is true\"",
+            "enabled: \"is true\"",
             "dollar: ${HOME} costs $5",
             "whole: \"it's \\\"quoted\\\" & <tagged>\"",
             "list: [1,\"two\",{\"three\":3}]",
