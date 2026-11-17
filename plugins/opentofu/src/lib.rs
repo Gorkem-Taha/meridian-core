@@ -53,6 +53,7 @@
 #![allow(clippy::result_large_err)]
 
 mod emit;
+mod import;
 mod encryption;
 mod expression;
 mod runner;
@@ -68,6 +69,7 @@ use meridian_sdk::{
 };
 
 pub use emit::CONFIG_PATH;
+pub use import::OpenTofuImporter;
 pub use runner::{OpenTofuRunner, PROGRAM_VARIABLE};
 
 /// The target name a document selects with `spec.target`.
