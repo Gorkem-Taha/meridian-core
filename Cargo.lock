@@ -639,6 +639,7 @@ dependencies = [
  "meridian-plugin-host",
  "meridian-plugin-testkit",
  "meridian-resolve",
+ "meridian-rules",
  "meridian-sdk",
  "meridian-target-ansible",
  "meridian-target-arm",
@@ -740,6 +741,14 @@ name = "meridian-resolve"
 version = "0.1.0"
 dependencies = [
  "meridian-ir",
+]
+
+[[package]]
+name = "meridian-rules"
+version = "0.1.0"
+dependencies = [
+ "meridian-ir",
+ "meridian-resolve",
 ]
 
 [[package]]

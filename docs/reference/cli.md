@@ -8,6 +8,7 @@ meridian apply    <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
 meridian plugins
 meridian migrate  <files>... [--to APIVERSION] [--check]
 meridian version
+meridian rules check --hierarchy FILE [--rules FILE] [--require-rules] [--data FILE] [--set KEY=VALUE]
 ```
 
 The files given to one command are one workflow. A file may hold several
@@ -152,6 +153,28 @@ A language version is `supported`, `deprecated since meridian <release>` or
 `removed in meridian <release>`. `plugin protocol` is the range this build
 speaks, such as `2` or `2 to 3`. `meridian --version` prints the first line
 only. [Compatibility](compatibility.md) explains each.
+
+### `rules check`
+
+Loads the layers of a hierarchy and checks them against its
+[compile rules](compile-rules.md): policies such as "a more specific layer may
+not change a variable or a secret a less specific layer set". It compiles
+nothing and loads no plugin.
+
+```
+$ meridian rules check --hierarchy config/hierarchy.yaml --set env=prod --set node=web01
+error: compile rules: 1 violation; nothing was compiled
+  - [meridian/protect-variables] layer "node/web01.yaml" (team) changes "variables.Region", which layer "common.yaml" (organization) set
+```
+
+The rules file is `rules.yaml` beside the hierarchy file, or the file given
+with `--rules`. Every violation is listed, each naming the rule, the layer,
+its group and the key, and never a value. With no rules file nothing is
+checked, unless `--require-rules` is given, which makes that an error.
+`--data FILE` and `--set KEY=VALUE` mean what they mean on `compile`: values
+merged over the hierarchy, `--set` last. Each is checked as a layer of the
+group `(command line)`, and a layer path's `%{KEY}` reads the `--set` value. [The reference](compile-rules.md#running-the-check) has the options
+and the output in full.
 
 ## Options
 

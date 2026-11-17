@@ -46,6 +46,7 @@ byte. The reasons, the layout and the order of work are in
 | [Dependencies and notifications](concepts/dependencies.md) | `dependsOn` and `notifies`, and what each tool makes of them |
 | [The capability model](concepts/capability-model.md) | why a document either does what it says or does not compile |
 | [The two-stage architecture](concepts/two-stage-architecture.md) | Infrastructure, ResourceSet and the hand-off between them |
+| [Compile rules](concepts/compile-rules.md) | policies over layered configuration: what a layer may and may not override, checked before anything is compiled |
 
 | Reference | |
 |---|---|
@@ -58,6 +59,7 @@ byte. The reasons, the layout and the order of work are in
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 | [Conformance matrix](reference/conformance-matrix.md) | the same document on every configuration management target, cell by cell; generated from the plugins |
 | [Compatibility](reference/compatibility.md) | which language versions a build reads, and which plugins it loads; generated from the code |
+| [Compile rules](reference/compile-rules.md) | the rules file, every rule and every refusal, and `meridian rules check` |
 
 | Targets | |
 |---|---|
