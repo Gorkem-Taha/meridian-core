@@ -1,0 +1,77 @@
+# A web server configured with Chef.
+#
+# The resources are the same abstract types every configuration management
+# target takes (package, file, service, user, group, exec), so this document
+# compiles for Ansible or Puppet by changing `target`, apart from the one
+# place it uses something only some targets have: `runtimeWhen`.
+apiVersion: meridian/v1
+kind: ResourceSet
+metadata:
+  name: web
+spec:
+  target: chef
+  targetHost:
+    from: inline
+    host: web01.example.com
+  resources:
+    - id: nginx_pkg
+      type: package
+      params:
+        name: nginx
+
+    - id: web_user
+      type: user
+      params:
+        name: web
+        system: true
+        shell: /usr/sbin/nologin
+        groups: [www-data]
+      dependsOn:
+        - resource: nginx_pkg
+
+    - id: site_root
+      type: file
+      state: directory
+      params:
+        path: /srv/www
+        owner: web
+        mode: "0755"
+      dependsOn:
+        - resource: web_user
+
+    - id: nginx_conf
+      type: file
+      params:
+        path: /etc/nginx/conf.d/site.conf
+        content: |
+          server {
+            listen 80;
+            root /srv/www;
+          }
+        owner: root
+        mode: "0644"
+      dependsOn:
+        - resource: nginx_pkg
+      # Chef's notifies names the action, so a reload stays a reload.
+      notifies:
+        - resource: nginx_svc
+          action: reload
+
+    - id: nginx_svc
+      type: service
+      state: running
+      params:
+        name: nginx
+        enabled: true
+      dependsOn:
+        - resource: nginx_conf
+
+    # Checked on the node when Chef reaches the resource. The condition is
+    # the Ruby an only_if guard holds.
+    - id: open_firewall
+      type: exec
+      params:
+        command: ufw allow 80/tcp
+      runtimeWhen: "node['platform_family'] == 'debian'"
+      dependsOn:
+        - resource: nginx_svc
