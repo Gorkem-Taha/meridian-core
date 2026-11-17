@@ -351,13 +351,17 @@ impl Reader<'_> {
     }
 
     /// Where a secret comes from: `{from: env, key: NAME}`, `{from: file,
-    /// path: FILE}` or `{from: exec, command: [PROGRAM, ARG...]}`.
+    /// path: FILE}`, `{from: exec, command: [PROGRAM, ARG...]}` or one of
+    /// the operating system's stores, with the fields the provider takes.
     fn secret_source(&self, value: &Value, field: &str) -> Result<meridian_secret::Source, Error> {
         let known = [
             "from",
             "key",
             "path",
             "command",
+            "service",
+            "account",
+            "attributes",
             "allowWideMode",
             "keepTrailingNewline",
         ];
@@ -394,11 +398,38 @@ impl Reader<'_> {
                 )
             }
         };
+        let mut attributes = std::collections::BTreeMap::new();
+        match map.get("attributes") {
+            None | Some(Value::Null) => {}
+            Some(Value::Map(entries)) => {
+                for (name, item) in entries {
+                    let at = format!("{field}.attributes.{name}");
+                    match self.string(Some(item), &at)? {
+                        Some(value) => {
+                            attributes.insert(name.clone(), value);
+                        }
+                        None => return self.err(&at, "must not be empty"),
+                    }
+                }
+            }
+            Some(other) => {
+                return self.err(
+                    &at("attributes"),
+                    format!(
+                        "expected a mapping of the item's attributes, found {}",
+                        other.describe()
+                    ),
+                )
+            }
+        }
         Ok(meridian_secret::Source {
             from: text("from")?,
             key: text("key")?,
             path: text("path")?,
             command,
+            service: text("service")?,
+            account: text("account")?,
+            attributes,
             allow_wide_mode: flag("allowWideMode")?,
             keep_trailing_newline: flag("keepTrailingNewline")?,
         })
