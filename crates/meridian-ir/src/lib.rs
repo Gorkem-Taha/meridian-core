@@ -15,11 +15,11 @@ mod validate;
 mod value;
 
 pub use error::{Error, ErrorList, Position};
-pub use parse::{parse, parse_file};
+pub use parse::{parse, parse_file, parse_value};
 pub use types::{
     Dependency, Document, IfMissing, Infrastructure, InfrastructureSpec, Kind, Metadata,
     Notification, Output, Resource, ResourceSet, ResourceSetSpec, TargetHost, API_VERSION_V1,
     TARGET_HOST_FROM_INFRASTRUCTURE, TARGET_HOST_FROM_INLINE,
 };
 pub use validate::{load, validate, Bundle};
-pub use value::Value;
+pub use value::{canonical_map, Value};

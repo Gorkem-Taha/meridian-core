@@ -1,0 +1,1 @@
+{"nginx":{"limits":{"nofile":65535,"nproc":512,"stack":8192},"listen":80,"workers":4},"ntp_server":"web01.ntp.internal","packages":["curl","vim","git","htop","nginx"],"users":[{"name":"deploy","uid":1000},{"name":"ops","uid":1001},{"name":"app","uid":2000}]}

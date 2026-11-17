@@ -41,12 +41,7 @@ pub fn parse(name: &str, data: &[u8]) -> Result<Vec<Document>, ErrorList> {
         }
     };
 
-    let json = looks_like_json(text);
-    let roots = if json {
-        load_json(name, text)?
-    } else {
-        node::load_yaml(name, text)?
-    };
+    let (roots, json) = load_roots(name, text, true)?;
     if roots.is_empty() {
         return Err(Error::new(Position::document(name, 0), "", "no documents found").into());
     }
@@ -69,33 +64,77 @@ pub fn parse(name: &str, data: &[u8]) -> Result<Vec<Document>, ErrorList> {
     errs.finish(docs)
 }
 
-/// Whether the first significant byte opens a JSON value. YAML flow style can
-/// look the same, but such a document parsed as JSON means the same thing, so
-/// the ambiguity is harmless.
-fn looks_like_json(text: &str) -> bool {
-    matches!(
-        text.trim_start_matches([' ', '\t', '\r', '\n'])
-            .as_bytes()
-            .first(),
-        Some(b'{' | b'[')
-    )
+/// Parses a free-form YAML or JSON document, such as a hierarchy data layer,
+/// into a [`Value`]. An empty document is [`Value::Null`]. The stream must hold
+/// a single document.
+pub fn parse_value(name: &str, data: &[u8]) -> Result<Value, ErrorList> {
+    let text = match std::str::from_utf8(data) {
+        Ok(text) => text.strip_prefix('\u{feff}').unwrap_or(text),
+        Err(e) => {
+            let (line, column) = line_column(data, e.valid_up_to());
+            let pos = Position {
+                file: name.to_owned(),
+                doc_idx: 0,
+                line,
+                column,
+            };
+            return Err(Error::new(pos, "", "input is not valid UTF-8").into());
+        }
+    };
+    let (mut roots, json) = load_roots(name, text, false)?;
+    let mut d = Decoder {
+        file: name,
+        doc_idx: 0,
+        json,
+        errs: ErrorList::new(),
+    };
+    if roots.len() > 1 {
+        d.doc_idx = 1;
+        d.error(&roots[1], "", "expected a single document, found another");
+        d.doc_idx = 0;
+    }
+    let value = match roots.first_mut() {
+        Some(root) => d.value(root, ""),
+        None => Value::Null,
+    };
+    d.errs.finish(value)
 }
 
-fn load_json(name: &str, text: &str) -> Result<Vec<Node>, Error> {
-    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| {
-        let pos = Position {
-            file: name.to_owned(),
-            doc_idx: 0,
-            line: e.line(),
-            column: e.column(),
-        };
-        Error::new(pos, "", e.to_string())
-    })?;
-    // A top-level array is a document stream; anything else is one document.
-    Ok(match value {
-        serde_json::Value::Array(items) => items.into_iter().map(node::from_json).collect(),
-        other => vec![node::from_json(other)],
-    })
+fn json_error(name: &str, e: &serde_json::Error) -> Error {
+    let pos = Position {
+        file: name.to_owned(),
+        doc_idx: 0,
+        line: e.line(),
+        column: e.column(),
+    };
+    Error::new(pos, "", e.to_string())
+}
+
+/// Loads the documents in `text`, and says whether they were read as JSON.
+///
+/// Text whose first significant byte opens a JSON value is read as JSON. If
+/// that fails it is tried as YAML, because YAML flow style (`{name: web}`)
+/// opens the same way; when both fail the JSON error is the one reported,
+/// since JSON is what the text looked like. With `array_is_stream`, a
+/// top-level JSON array is a stream of documents instead of one document.
+fn load_roots(name: &str, text: &str, array_is_stream: bool) -> Result<(Vec<Node>, bool), Error> {
+    let first = text
+        .trim_start_matches([' ', '\t', '\r', '\n'])
+        .as_bytes()
+        .first();
+    if !matches!(first, Some(b'{' | b'[')) {
+        return Ok((node::load_yaml(name, text)?, false));
+    }
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Array(items)) if array_is_stream => {
+            Ok((items.into_iter().map(node::from_json).collect(), true))
+        }
+        Ok(value) => Ok((vec![node::from_json(value)], true)),
+        Err(json_err) => match node::load_yaml(name, text) {
+            Ok(roots) => Ok((roots, false)),
+            Err(_) => Err(json_error(name, &json_err)),
+        },
+    }
 }
 
 /// Converts a byte offset into a 1-based line and column.

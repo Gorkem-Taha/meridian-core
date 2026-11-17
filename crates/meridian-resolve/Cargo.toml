@@ -1,0 +1,13 @@
+[package]
+name = "meridian-resolve"
+description = "Meridian's hierarchical data resolution: a layered, deterministic merge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-ir = { path = "../meridian-ir" }
+
+[lints]
+workspace = true

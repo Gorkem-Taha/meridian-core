@@ -48,6 +48,7 @@ the Go core stays in the repository until the Rust core reproduces its golden fi
 The Rust core is a Cargo workspace under `crates/`. Ported so far:
 
 - `crates/meridian-ir` — parsing and validation, the counterpart of `internal/ir`
+- `crates/meridian-resolve` — hierarchical data resolution, the counterpart of `internal/resolve`
 
 ```
 cargo test --workspace

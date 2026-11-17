@@ -374,3 +374,45 @@ fn hostile_input_is_refused_not_a_crash() {
         );
     }
 }
+
+/// A YAML flow mapping opens with `{` exactly as JSON does. It is not JSON,
+/// and it must still parse.
+#[test]
+fn a_flow_style_yaml_document_is_not_mistaken_for_broken_json() {
+    let doc = "{apiVersion: meridian/v1, kind: ResourceSet, metadata: {name: a}, spec: {target: ansible, resources: [{id: a, type: package}]}}\n";
+    let docs = parse("flow.yaml", doc.as_bytes()).unwrap();
+    assert_eq!(docs[0].name(), "a");
+    // Read as YAML, so it has positions, which JSON would not.
+    assert_eq!(docs[0].resources()[0].pos.line, 1);
+}
+
+#[test]
+fn parse_value_reads_a_free_form_document() {
+    use meridian_ir::parse_value;
+    let v = parse_value("data.yaml", b"b: [1, two]\na: {x: 0.5}\n").unwrap();
+    assert_eq!(v.canonical(), r#"{"a":{"x":0.5},"b":[1,"two"]}"#);
+    assert_eq!(
+        parse_value("data.json", br#"{"n": 1, "f": 1.0, "s": "x"}"#)
+            .unwrap()
+            .canonical(),
+        r#"{"f":1,"n":1,"s":"x"}"#
+    );
+    assert_eq!(
+        parse_value("empty.yaml", b"# nothing\n").unwrap(),
+        Value::Null
+    );
+    let err = parse_value("two.yaml", b"a: 1\n---\nb: 2\n")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("two.yaml[doc 1]:3:1: expected a single document"),
+        "{err}"
+    );
+    let err = parse_value("dup.yaml", b"a: 1\na: 2\n")
+        .unwrap_err()
+        .to_string();
+    assert!(
+        err.contains("dup.yaml:2:1: a: key is already defined at line 1"),
+        "{err}"
+    );
+}
