@@ -60,6 +60,7 @@ would be a worse one. The resource's `type` is the tool's own type and its
 | Target | `type` is | Example |
 |---|---|---|
 | `terraform` | the Terraform type | `aws_instance` |
+| `opentofu` | the OpenTofu type | `aws_instance` |
 | `cloudformation` | the CloudFormation type | `AWS::EC2::Instance` |
 | `bicep` | the Azure type and API version | `Microsoft.Network/publicIPAddresses@2023-09-01` |
 | `kubernetes` | API version and kind | `apps/v1/Deployment` |
@@ -74,13 +75,16 @@ to the next stage, and one way to plan and apply.
 Most passthrough targets also take one **settings resource** that is not part of
 the tool's file: where to deploy, which cluster, which daemon. It has a fixed
 type name (`stack`, `deployment`, `cluster`, `project`, `runner`) and is
-described on the target's page.
+described on the target's page. The `terraform` and `opentofu` targets have no
+settings resource of that kind; their `provider` and `backend` resources, and
+`opentofu`'s `encryption`, `variable` and `local`, become blocks of the
+configuration itself.
 
 ## References
 
 `${id}` or `${id.path}` inside a param refers to another resource in the same
 document. Meridian checks that the resource exists, and each target rewrites the
-reference into the tool's own form: a Terraform address, a CloudFormation `Ref`,
+reference into the tool's own form: a Terraform or OpenTofu address, a CloudFormation `Ref`,
 the name of a Kubernetes object. What a path can read depends on the tool, and
 the target's page says. Write `$${` for a literal `${`.
 

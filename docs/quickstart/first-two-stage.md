@@ -105,7 +105,7 @@ Meridian prints.
 
 A stage can only promise outputs if its tool can report values after an apply.
 The `outputs` column of the [capability matrix](../reference/capability-matrix.md)
-says which do: Terraform, CloudFormation, Bicep, Docker and Kubernetes. The
+says which do: Terraform, OpenTofu, CloudFormation, Bicep, Docker and Kubernetes. The
 configuration management targets configure a machine and report nothing.
 
 More on why the two kinds are kept apart:

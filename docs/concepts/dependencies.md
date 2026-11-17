@@ -23,12 +23,12 @@ about order:
 | Tool orders by | Targets | What `dependsOn` becomes |
 |---|---|---|
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
-| declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
+| declared relationships | `puppet`, `dsc`, `terraform`, `opentofu`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
-Terraform, the plugin does not write it a second time.
+Terraform and OpenTofu, the plugin does not write it a second time.
 
 ## `notifies`: reaction
 
@@ -62,6 +62,8 @@ tool's own output, so each one is documented where it happens:
   service. ([docker](../targets/docker.md#notifications))
 - Terraform: `replace_triggered_by` on the notified resource, which replaces it.
   ([terraform](../targets/terraform.md#notifications))
+- OpenTofu: the same `replace_triggered_by`.
+  ([opentofu](../targets/opentofu.md#notifications))
 
 A synthetic notify always comes with a compile warning that says what it will
 look like.

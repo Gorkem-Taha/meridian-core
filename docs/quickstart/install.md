@@ -19,6 +19,7 @@ That produces the `meridian` command and one binary per plugin, all in
 meridian
 meridian-target-ansible
 meridian-target-terraform
+meridian-target-opentofu
 ...
 ```
 
@@ -50,10 +51,18 @@ hand:
 | `chef` | `chef-client`, or `chef-run` to reach another host |
 | `dsc` | PowerShell (`pwsh`) with the Dsc.PipelineRunner module |
 | `terraform` | `terraform` (or `tofu`) |
+| `opentofu` | `tofu`, version 1.8 or later |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
 | `docker` | `docker` with the Compose plugin |
 | `kubernetes` | `kubectl` |
+
+Two targets can run `tofu`. Pick `opentofu` when OpenTofu is the tool you use: it writes
+`main.tofu.json`, which only OpenTofu reads, and it gives you OpenTofu's own features,
+such as state and plan encryption, variables, local values and ephemeral resources. Pick
+`terraform` when the same document must also run with `terraform`; it writes
+`main.tf.json` and can be pointed at `tofu` with `MERIDIAN_TERRAFORM`. The
+[OpenTofu page](../targets/opentofu.md#opentofu-or-terraform) compares the two.
 
 Each tool keeps using its own credentials and configuration. Meridian does not
 store or pass any: if `aws sts get-caller-identity` or `kubectl get nodes` works

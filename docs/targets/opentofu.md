@@ -12,7 +12,7 @@ with `tofu`.
 | Resource types | OpenTofu's own: any `<provider>_<type>`, plus `data.<type>`, `ephemeral.<type>`, `module`, `variable`, `local`, `provider`, `backend` and `encryption` |
 | State and plan encryption | Yes, with `type: encryption`, checked at compile time. See [State and plan encryption](#state-and-plan-encryption) |
 | `dependsOn` | Yes, as `depends_on`, unless a reference already implies the order |
-| `notifies` | Synthetic, and blunt: the action `replace` only. See [Notify](#notify) |
+| `notifies` | Synthetic, and blunt: the action `replace` only. See [Notifications](#notifications) |
 | `runtimeWhen` | No. Refused |
 | `state: absent` | No. OpenTofu removes what the configuration no longer declares, so remove the resource from the document |
 | Plan | Yes: OpenTofu's own plan |
@@ -89,9 +89,103 @@ Two complete documents are in [`examples/opentofu/`](../../examples/opentofu):
 Meta-arguments such as `count`, `for_each`, `provider`, `lifecycle` and `provisioner` are
 params like any other, and are written through unchanged.
 
+### Resources and data sources
+
+A managed resource's `type` is the provider's type name and its `params` are that type's
+arguments and nested blocks, written as the provider's documentation names them. A data
+source is the same with `data.` in front of the type.
+
+```yaml
+    - id: ubuntu
+      type: data.aws_ami
+      params:
+        most_recent: true
+        owners: ["099720109477"]
+        filter:
+          - name: name
+            values: ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
+
+    - id: web_vm
+      type: aws_instance
+      params:
+        ami: ${ubuntu.id}
+        instance_type: t3.small
+        count: 2
+        lifecycle:
+          create_before_destroy: true
+```
+
+A nested block is a map, and a repeated nested block is a list of maps, as `filter` is
+above. OpenTofu decides from the provider's schema whether a param is an argument or a
+block, so the document does not have to say.
+
+The only field of a resource besides `id`, `type` and `params` that this target accepts
+is `state: present`, which is also the default. `state: absent` is refused: remove the
+resource from the document and OpenTofu destroys it.
+
+### Ephemeral resources
+
+`ephemeral.<type>` becomes an `ephemeral` block (OpenTofu 1.11 or later). OpenTofu opens
+an ephemeral resource during a plan or an apply and closes it afterwards, and never
+writes its values to the state or the plan. Use one for a secret that is only needed
+while OpenTofu runs, and pass its values to a provider's write-only arguments:
+
+```yaml
+    - id: db_password
+      type: ephemeral.aws_secretsmanager_secret_version
+      params:
+        secret_id: prod/db/password
+
+    - id: db
+      type: aws_db_instance
+      params:
+        identifier: web-db
+        password_wo: ${db_password.secret_string}
+        password_wo_version: 1
+```
+
+An ephemeral resource never appears among a plan's changes.
+
+### Modules
+
+`module` becomes a `module` block. `source` is required; `version`, `providers`, `count`,
+`for_each` and `depends_on` are OpenTofu's own, and every other param is an input of the
+module. `${id.<output>}` reads one of the module's outputs.
+
+```yaml
+    - id: network
+      type: module
+      params:
+        source: terraform-aws-modules/vpc/aws
+        version: 5.1.0
+        cidr: 10.0.0.0/16
+
+    - id: web_vm
+      type: aws_instance
+      params:
+        subnet_id: ${network.public_subnets[0]}
+```
+
+### Backends
+
+`backend` becomes the `backend` block, which says where the state is stored. The `id` is
+the backend type and the params are that backend's settings. A document may declare one.
+Without one, OpenTofu keeps `terraform.tfstate` in the work directory.
+
+```yaml
+    - id: s3
+      type: backend
+      params:
+        bucket: meridian-state
+        key: web-vm.tfstate
+        region: eu-west-1
+```
+
 ### Providers
 
-A provider's `id` is its local name. To configure one provider twice, give both the same
+A provider's `id` is its local name, and its params are the provider's configuration.
+`source` and `version` are moved to `required_providers`; leave them out for a provider
+OpenTofu can find by its name alone. To configure one provider twice, give both the same
 `name` and all but one an `alias`:
 
 ```yaml
@@ -195,7 +289,7 @@ Resources, data sources, ephemeral resources and modules can be depended on. Pro
 backends, variables, local values and the encryption block cannot: OpenTofu works those
 out before or alongside everything else, and the compile says so.
 
-## Notify
+## Notifications
 
 OpenTofu has no handler to run when something changes. The nearest it has is
 `replace_triggered_by`, which destroys and recreates the notified resource. The plugin
@@ -259,6 +353,13 @@ The params are OpenTofu's: `key_provider` and `method` are maps of a type to a n
 its settings, and `state`, `plan` and `remote_state_data_sources` each name the method
 that protects them. `fallback` and `enforced` are supported, as is the `unencrypted`
 method OpenTofu provides for moving an existing state into or out of encryption.
+
+| Param | Shape | Settings |
+|---|---|---|
+| `key_provider` | `<type>: <name>: {…}` | The key provider's own settings, passed through. For `pbkdf2`, `passphrase`; for `aws_kms`, `kms_key_id`, `region` and `key_spec`. Any other type OpenTofu has, such as `gcp_kms` or `openbao`, is written as given |
+| `method` | `<type>: <name>: {…}` | For `aes_gcm`, `keys`, a reference to a key provider. `unencrypted` takes none |
+| `state`, `plan` | a map | `method` (required), `enforced` (true or false), `fallback: {method: …}` |
+| `remote_state_data_sources` | a map | `default`, and `remote_state_data_source: <name>:`, each with the same settings as `state` |
 
 A `method` is always one fixed reference, `${method.<type>.<name>}`. OpenTofu chooses the
 method before it evaluates anything, so an expression cannot choose it; `keys` and a key
@@ -334,6 +435,7 @@ says why.
 | `unsupported-state` | `state: absent`. OpenTofu destroys what its configuration no longer declares, so remove the resource from the document |
 | `unsupported-runtime-condition` | a resource has `runtimeWhen`. OpenTofu computes its whole plan before it changes anything |
 | `unsupported-action` | a `notifies` uses an action other than `replace` |
+| `unknown-dependency` | `dependsOn` or `notifies` names a resource the document does not declare |
 | `unsupported-dependency` | `dependsOn` names, or is written on, a provider, backend, variable, local value or encryption block |
 | `duplicate-provider`, `duplicate-backend`, `duplicate-output` | the same thing is declared twice |
 | `missing-param` | a `module` has no `source`, or a `local` has no `value` |
