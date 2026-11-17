@@ -1,0 +1,21 @@
+{
+  "context": "",
+  "host": "ssh://deploy@web01.example.com",
+  "name": "web",
+  "outputs": [
+    {
+      "name": "web_port",
+      "parts": [
+        {
+          "port": "80",
+          "service": "proxy"
+        }
+      ]
+    }
+  ],
+  "services": [
+    "db",
+    "app",
+    "proxy"
+  ]
+}

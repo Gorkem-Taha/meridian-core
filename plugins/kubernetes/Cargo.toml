@@ -1,0 +1,17 @@
+[package]
+name = "meridian-target-kubernetes"
+description = "The Meridian plugin for Kubernetes: compiles a document to manifests and applies them with kubectl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+meridian-sdk = { path = "../../crates/meridian-sdk" }
+meridian-yaml = { path = "../../crates/meridian-yaml" }
+
+[dev-dependencies]
+meridian-plugin-testkit = { path = "../../crates/meridian-plugin-testkit" }
+
+[lints]
+workspace = true

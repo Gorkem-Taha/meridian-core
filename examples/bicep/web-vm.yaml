@@ -1,0 +1,82 @@
+# A public address and the network for a web server on Azure, deployed with
+# Bicep.
+#
+# Every resource's type is the Azure type with its API version, and its
+# params are the resource's body. ${id} is another resource of this document
+# and ${id.properties.x} reads from it. Anything else inside ${ } is Bicep's
+# own expression language.
+apiVersion: meridian/v1
+kind: Infrastructure
+metadata:
+  name: web-vm
+spec:
+  target: bicep
+  resources:
+    # Not part of the Bicep file: where it is deployed.
+    - id: target
+      type: deployment
+      params:
+        resourceGroup: web-prod
+
+    - id: web_ip
+      type: Microsoft.Network/publicIPAddresses@2023-09-01
+      params:
+        name: web-ip
+        location: ${resourceGroup().location}
+        sku:
+          name: Standard
+        properties:
+          publicIPAllocationMethod: Static
+          dnsSettings:
+            domainNameLabel: web-${uniqueString(resourceGroup().id)}
+
+    - id: vnet
+      type: Microsoft.Network/virtualNetworks@2023-09-01
+      params:
+        name: web-vnet
+        location: ${resourceGroup().location}
+        properties:
+          addressSpace:
+            addressPrefixes: ["10.0.0.0/16"]
+          subnets:
+            - name: web
+              properties:
+                addressPrefix: 10.0.1.0/24
+
+    - id: nic
+      type: Microsoft.Network/networkInterfaces@2023-09-01
+      params:
+        name: web-nic
+        location: ${resourceGroup().location}
+        tags:
+          cost-center: web
+        properties:
+          ipConfigurations:
+            - name: primary
+              properties:
+                privateIPAllocationMethod: Dynamic
+                publicIPAddress:
+                  id: ${web_ip.id}
+                subnet:
+                  id: ${vnet.properties.subnets[0].id}
+      # Both of these are already implied by the references above.
+      dependsOn:
+        - resource: web_ip
+        - resource: vnet
+
+    - id: lock
+      type: Microsoft.Authorization/locks@2020-05-01
+      params:
+        name: keep-web-ip
+        scope: ${web_ip}
+        properties:
+          level: CanNotDelete
+      # Nothing in the body mentions the interface, so this becomes dependsOn.
+      dependsOn:
+        - resource: nic
+
+  outputs:
+    - name: web_vm_ip
+      value: ${web_ip.properties.ipAddress}
+    - name: web_url
+      value: http://${web_ip.properties.dnsSettings.fqdn}/

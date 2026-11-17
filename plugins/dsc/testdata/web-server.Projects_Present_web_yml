@@ -1,0 +1,61 @@
+parameters: {}
+variables: {}
+resources:
+  - name: iis
+    type: PSDscResources/WindowsFeature
+    target:
+      action: WinRM
+      computerName: web01.example.com
+      credentialRef: svcDeploy
+    properties:
+      Ensure: Present
+      Name: Web-Server
+  - name: site_root
+    type: PSDesiredStateConfiguration/File
+    dependsOn:
+      - PSDscResources/WindowsFeature/iis
+    target:
+      action: WinRM
+      computerName: web01.example.com
+      credentialRef: svcDeploy
+    properties:
+      DestinationPath: C:\inetpub\app
+      Ensure: Present
+      Type: Directory
+  - name: site_config
+    type: PSDesiredStateConfiguration/File
+    dependsOn:
+      - PSDesiredStateConfiguration/File/site_root
+    notify:
+      - PSDscResources/Service/w3svc
+    target:
+      action: WinRM
+      computerName: web01.example.com
+      credentialRef: svcDeploy
+    properties:
+      Contents: <configuration><system.webServer/></configuration>
+      DestinationPath: C:\inetpub\app\web.config
+      Ensure: Present
+  - name: w3svc
+    type: PSDscResources/Service
+    target:
+      action: WinRM
+      computerName: web01.example.com
+      credentialRef: svcDeploy
+    properties:
+      Name: W3SVC
+      StartupType: Automatic
+      State: Running
+  - name: app_pool
+    type: WebAdministrationDsc/WebAppPool
+    preCondition: equals (nodeName) 'web'
+    dependsOn:
+      - PSDscResources/WindowsFeature/iis
+    target:
+      action: WinRM
+      computerName: web01.example.com
+      credentialRef: svcDeploy
+    properties:
+      Ensure: Present
+      Name: app
+      State: Started
