@@ -8,7 +8,8 @@
 
 use std::collections::BTreeSet;
 
-use meridian_value::Value;
+use meridian_secret::Piece;
+use meridian_value::{SecretRef, Value};
 
 use crate::{Expr, Names, Scope};
 
@@ -187,6 +188,8 @@ impl Template {
                 .map(placed)
                 .map_err(|why| format!("in {OPEN} {source} {CLOSE}: {why}"));
         }
+        // Text gathers in `out`. When a secret is placed, what has gathered
+        // so far and the secret become pieces, and the whole is a secret.
         let mut out = String::new();
         // Whether the text last added was placed by an interpolation. A
         // placed value that ends in a dollar, followed by text that opens a
@@ -204,6 +207,7 @@ impl Template {
             out.push_str(text);
             last_placed = is_placed;
         };
+        let mut pieces: Vec<(String, SecretRef)> = Vec::new();
         for part in &self.parts {
             match part {
                 Part::Text(text) => add(&mut out, text, false),
@@ -219,6 +223,7 @@ impl Template {
                         | Value::Int(_)
                         | Value::Uint(_)
                         | Value::Float(_)) => add(&mut out, &value.canonical(), true),
+                        Value::Secret(secret) => pieces.push((std::mem::take(&mut out), secret)),
                         Value::Null => {
                             return Err(fail(
                                 "the value is null, which has no text form; give a default \
@@ -237,7 +242,24 @@ impl Template {
                 }
             }
         }
-        Ok(Value::String(out))
+        if pieces.is_empty() {
+            return Ok(Value::String(out));
+        }
+        let mut joined = Vec::with_capacity(pieces.len() * 2 + 1);
+        for (before, secret) in &pieces {
+            joined.push(Piece::Text(before));
+            joined.push(Piece::Secret(*secret));
+        }
+        joined.push(Piece::Text(&out));
+        scope
+            .secrets
+            .as_deref()
+            .ok_or_else(|| {
+                "a secret cannot be placed here: this place holds no secrets".to_owned()
+            })?
+            .join(&joined)
+            .map(Value::Secret)
+            .map_err(|e| e.to_string())
     }
 }
 

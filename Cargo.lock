@@ -671,6 +671,7 @@ name = "meridian-expr"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "meridian-secret",
  "meridian-value",
  "regex",
  "sha2",
@@ -772,6 +773,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "libc",
+ "meridian-value",
  "zeroize",
 ]
 

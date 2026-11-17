@@ -93,6 +93,8 @@ fn literal(value: &Value) -> String {
             }
         }
         Value::String(s) => quote(s),
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => quote(meridian_sdk::SENSITIVE),
         Value::List(items) => {
             let items: Vec<String> = items.iter().map(literal).collect();
             format!("[{}]", items.join(", "))

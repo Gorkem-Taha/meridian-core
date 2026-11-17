@@ -36,7 +36,7 @@ fn hex(from: &[u8], home: &mut [u8]) {
     }
 }
 
-fn url_len(from: &[u8]) -> usize {
+pub(crate) fn url_len(from: &[u8]) -> usize {
     from.iter()
         .map(|b| if unreserved(*b) { 1 } else { 3 })
         .sum()
@@ -46,7 +46,7 @@ fn unreserved(byte: u8) -> bool {
     byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~')
 }
 
-fn url(from: &[u8], home: &mut [u8]) {
+pub(crate) fn url(from: &[u8], home: &mut [u8]) {
     const DIGITS: &[u8; 16] = b"0123456789ABCDEF";
     let mut at = 0;
     for byte in from {

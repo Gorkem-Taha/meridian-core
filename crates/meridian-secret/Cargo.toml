@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 base64 = "0.22"
+meridian-value = { path = "../meridian-value" }
 zeroize = "1"
 
 [target.'cfg(unix)'.dependencies]

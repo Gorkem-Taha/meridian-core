@@ -54,6 +54,7 @@ mod deliver;
 mod mask;
 mod provider;
 mod sys;
+mod table;
 
 use std::fmt;
 use std::io::Read;
@@ -62,6 +63,7 @@ pub use deliver::{sweep_stale, Part, SecretFile};
 pub use mask::Masker;
 pub use provider::{from_env, from_exec, from_file, FetchError, FileOptions};
 pub use sys::Protection;
+pub use table::{Piece, SecretTable, TableError, Transform};
 
 /// What is shown wherever a secret would be.
 pub const MASK: &str = "(sensitive)";
