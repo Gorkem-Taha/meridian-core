@@ -76,6 +76,58 @@ impl Value {
         out
     }
 
+    /// Renders the value as indented JSON for a person to read: two spaces a
+    /// level, map keys in sorted order, a trailing newline. It is what a
+    /// plugin writes when its tool's own file format is JSON.
+    ///
+    /// Unlike [`Value::canonical`] it escapes only what JSON requires, so an
+    /// expression such as `${a.b}` or a `<` stays readable.
+    pub fn pretty(&self) -> String {
+        let mut out = String::new();
+        self.write_pretty(&mut out, 0);
+        out.push('\n');
+        out
+    }
+
+    fn write_pretty(&self, out: &mut String, depth: usize) {
+        let indent = |out: &mut String, depth: usize| {
+            out.push('\n');
+            for _ in 0..depth {
+                out.push_str("  ");
+            }
+        };
+        match self {
+            Value::String(s) => write_plain_string(s, out),
+            Value::List(items) if !items.is_empty() => {
+                out.push('[');
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    indent(out, depth + 1);
+                    item.write_pretty(out, depth + 1);
+                }
+                indent(out, depth);
+                out.push(']');
+            }
+            Value::Map(map) if !map.is_empty() => {
+                out.push('{');
+                for (i, (key, value)) in map.iter().enumerate() {
+                    if i > 0 {
+                        out.push(',');
+                    }
+                    indent(out, depth + 1);
+                    write_plain_string(key, out);
+                    out.push_str(": ");
+                    value.write_pretty(out, depth + 1);
+                }
+                indent(out, depth);
+                out.push('}');
+            }
+            other => other.write_canonical(out),
+        }
+    }
+
     fn write_canonical(&self, out: &mut String) {
         match self {
             Value::Null => out.push_str("null"),
@@ -153,6 +205,23 @@ impl From<serde_json::Value> for Value {
             }
         }
     }
+}
+
+/// A JSON string with only the escapes JSON requires.
+fn write_plain_string(s: &str, out: &mut String) {
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
 }
 
 /// [`Value::canonical`] for a top-level map, such as a resource's params.

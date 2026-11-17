@@ -184,6 +184,19 @@ impl Tool {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         if let Some(dir) = &self.dir {
+            // Spawning in a directory that is not there fails with "not
+            // found", which would read as the program being missing.
+            if !dir.is_dir() {
+                return Err(RunError {
+                    msg: format!(
+                        "could not run {}: its working directory {} does not exist",
+                        self.program,
+                        dir.display()
+                    ),
+                    command: self.command_line(),
+                    ..RunError::default()
+                });
+            }
             command.current_dir(dir);
         }
         for (key, value) in &self.env {

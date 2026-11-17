@@ -1,0 +1,83 @@
+{
+  "data": {
+    "aws_ami": {
+      "ubuntu": {
+        "filter": [
+          {
+            "name": "name",
+            "values": [
+              "ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"
+            ]
+          }
+        ],
+        "most_recent": true,
+        "owners": [
+          "099720109477"
+        ]
+      }
+    }
+  },
+  "output": {
+    "web_url": {
+      "value": "http://${aws_eip.web_ip.public_dns}/"
+    },
+    "web_vm_ip": {
+      "value": "${aws_eip.web_ip.public_ip}"
+    }
+  },
+  "provider": {
+    "aws": {
+      "region": "us-east-1"
+    }
+  },
+  "resource": {
+    "aws_eip": {
+      "web_ip": {
+        "instance": "${aws_instance.web_vm.id}"
+      }
+    },
+    "aws_instance": {
+      "web_vm": {
+        "ami": "${data.aws_ami.ubuntu.id}",
+        "instance_type": "t3.small",
+        "tags": {
+          "Name": "web-${data.aws_ami.ubuntu.architecture}"
+        },
+        "vpc_security_group_ids": [
+          "${aws_security_group.web_sg.id}"
+        ]
+      }
+    },
+    "aws_security_group": {
+      "web_sg": {
+        "ingress": [
+          {
+            "cidr_blocks": [
+              "0.0.0.0/0"
+            ],
+            "from_port": 80,
+            "protocol": "tcp",
+            "to_port": 80
+          }
+        ],
+        "name": "web"
+      }
+    },
+    "terraform_data": {
+      "dns_ready": {
+        "depends_on": [
+          "aws_eip.web_ip"
+        ],
+        "input": "ready"
+      }
+    }
+  },
+  "terraform": {
+    "required_providers": {
+      "aws": {
+        "source": "hashicorp/aws",
+        "version": "~> 5.0"
+      }
+    }
+  }
+}
