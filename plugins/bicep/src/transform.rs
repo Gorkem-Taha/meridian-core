@@ -203,6 +203,8 @@ fn rewrite(
         }
         Value::Float(f) => Expr::Raw(format!("json('{f}')")),
         Value::String(s) => rewrite_string(s, symbols, refs)?,
+        // A plugin is never sent a secret as a value; one would be written as its mask.
+        Value::Secret(_) => rewrite_string(meridian_sdk::SENSITIVE, symbols, refs)?,
         Value::List(items) => Expr::Array(
             items
                 .iter()

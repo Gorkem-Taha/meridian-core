@@ -137,6 +137,29 @@ pub struct Output {
     pub pos: Position,
 }
 
+/// One entry of `spec.secrets`: a secret's name and where it comes from. Its
+/// value is never written in a document.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Secret {
+    /// The name it is read by, as `secret.<name>`.
+    pub name: String,
+    /// The provider: `env`, `file` or `exec`.
+    pub from: String,
+    /// `from: env`: the environment variable.
+    pub key: String,
+    /// `from: file`: the file.
+    pub path: String,
+    /// `from: exec`: the program and its arguments. No shell reads them.
+    pub command: Vec<String>,
+    /// A secret that cannot be found is null instead of an error.
+    pub optional: bool,
+    /// `from: file`: read a file that others can read as well.
+    pub allow_wide_mode: bool,
+    /// `from: file` and `from: exec`: keep the value's last line ending.
+    pub keep_trailing_newline: bool,
+    pub pos: Position,
+}
+
 /// Binds a ResourceSet to the node it configures. `from: infrastructure`
 /// resolves `ref`/`output` against a sibling Infrastructure document.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -159,6 +182,8 @@ pub struct InfrastructureSpec {
     pub variables: BTreeMap<String, Value>,
     /// `spec.conditions`: named conditions, read as `cond.<name>`.
     pub conditions: BTreeMap<String, String>,
+    /// `spec.secrets`: the secrets the document reads, as `secret.<name>`.
+    pub secrets: Vec<Secret>,
     pub resources: Vec<Resource>,
     pub outputs: Vec<Output>,
 }
@@ -191,6 +216,8 @@ pub struct ResourceSetSpec {
     pub variables: BTreeMap<String, Value>,
     /// `spec.conditions`: named conditions, read as `cond.<name>`.
     pub conditions: BTreeMap<String, String>,
+    /// `spec.secrets`: the secrets the document reads, as `secret.<name>`.
+    pub secrets: Vec<Secret>,
     pub target_host: Option<TargetHost>,
     pub resources: Vec<Resource>,
 }
@@ -279,6 +306,14 @@ impl Document {
         match self {
             Document::Infrastructure(d) => &d.spec.conditions,
             Document::ResourceSet(d) => &d.spec.conditions,
+        }
+    }
+
+    /// `spec.secrets`.
+    pub fn secrets(&self) -> &[Secret] {
+        match self {
+            Document::Infrastructure(d) => &d.spec.secrets,
+            Document::ResourceSet(d) => &d.spec.secrets,
         }
     }
 
