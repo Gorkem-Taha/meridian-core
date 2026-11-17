@@ -4297,6 +4297,7 @@
                 {
                   "enum": [
                     "backend",
+                    "local",
                     "module",
                     "provider",
                     "variable"
