@@ -1,0 +1,23 @@
+name: relative
+services:
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.prod
+    configs:
+      - site
+    env_file:
+      - web.env
+      - path: ../shared.env
+        required: false
+    volumes:
+      - ./public:/usr/share/nginx/html:ro
+      - source: logs
+        target: /var/log/nginx
+        type: bind
+  worker:
+    build: worker
+    env_file: /etc/shop/worker.env
+configs:
+  site:
+    file: ./nginx.conf
