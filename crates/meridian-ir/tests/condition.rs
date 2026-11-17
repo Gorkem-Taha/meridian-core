@@ -96,8 +96,22 @@ fn a_condition_that_is_not_in_the_language_is_refused_when_it_is_read() {
         ("env == 'prod'", "unknown name \"env\""),
         ("defined(env)", "unknown name \"env\""),
         ("defined('x')", "defined(...) takes a data.<key> path"),
-        ("data.a > 1", "unexpected \">\""),
-        ("data.a = 1", "unexpected \"=\""),
+        ("data.a > ", "the condition ends where a value was expected"),
+        (
+            "data.a = 1",
+            "unexpected \"=\" (to compare two values in a condition, write ==)",
+        ),
+        ("data.a === 1", "unexpected \"=\""),
+        ("data.a & data.b", "unexpected \"&\""),
+        (
+            "param.x == 1",
+            "unknown name \"param\" (a condition reads data.<key>; text is quoted)",
+        ),
+        ("nosuch(data.a)", "unknown function \"nosuch\""),
+        (
+            "upper(data.a, 1) == 'A'",
+            "upper(...) takes 1 argument, and was given 2",
+        ),
         ("'open", "a quoted text is never closed"),
     ] {
         let err = Condition::parse(condition).expect_err(condition);
@@ -210,6 +224,137 @@ fn a_condition_that_fails_names_the_resource_and_its_line() {
     assert_eq!(
         err,
         "site.yaml:7:7: spec.resources[0].when: resource \"pkg\": data.install is not set \
-         (give it with --data, or test for it with defined(data.install))"
+         (give it with --data or --set, or test for it with defined(data.install))"
     );
+}
+
+#[test]
+fn a_condition_uses_the_whole_expression_language() {
+    for (condition, want) in [
+        ("data.count > 2", true),
+        ("data.count >= 4", false),
+        ("data.ratio < data.count", true),
+        ("data.count + 1 == 4", true),
+        ("data.count * 2 - 1 == 5", true),
+        ("data.count % 2 == 1", true),
+        ("data.env in ['prod', 'staging']", true),
+        ("data.env not in ['prod']", false),
+        ("'name' in data.region", true),
+        ("data.region.name =~ '^eu-'", true),
+        ("data.region.name !~ '^eu-'", false),
+        ("data.missing ?? false", false),
+        ("data.nothing ?? true", true),
+        ("(data.env == 'prod' ? data.count : 0) == 3", true),
+        ("length(data.env) == 4", true),
+        ("upper(data.env) == 'PROD'", true),
+        ("startsWith(data.region.name, 'eu')", true),
+        ("contains(keys(data.region), 'zones')", true),
+        ("all(map([1, 2, 3], 'n', n <= data.count))", true),
+        ("length(filter([1, 2, 3], 'n', n < data.count)) == 2", true),
+        ("data.region['name'] == 'eu-west-1'", true),
+        ("[data.count, 1][0] == 3", true),
+        ("{a: data.env}.a == 'prod'", true),
+    ] {
+        assert_eq!(decide(condition), Ok(want), "{condition}");
+    }
+    for (condition, want) in [
+        (
+            "data.env > 1",
+            "cannot compare a string and a number with >",
+        ),
+        (
+            "data.env + 1 == 2",
+            "cannot add a string and a number with +",
+        ),
+        ("data.count / 0 == 1", "data.count is divided by zero"),
+        ("data.count in 3", "in tests for an item of a list"),
+        ("data.count =~ '3'", "=~ matches text against a pattern"),
+        (
+            "length(data.count) == 1",
+            "argument 1 of length(...) must be text, a list or a mapping",
+        ),
+        (
+            "data.count + 1",
+            "the expression is a number, not true or false",
+        ),
+        (
+            "data.missing > 1",
+            "data.missing is not set (give it with --data or --set",
+        ),
+    ] {
+        let err = decide(condition).expect_err(condition);
+        assert!(err.contains(want), "{condition}: {err}");
+    }
+}
+
+/// A kept resource: its id, what it depends on and what it notifies.
+type Kept = (String, Vec<String>, Vec<String>);
+
+/// Conditions are decided before a target is involved, so which target a
+/// document names, and which kind it is, cannot change what is kept.
+#[test]
+fn what_a_condition_keeps_does_not_depend_on_the_target() {
+    const TARGETS: [&str; 18] = [
+        "ansible",
+        "arm",
+        "bicep",
+        "chef",
+        "cloud-init",
+        "cloudformation",
+        "docker",
+        "dsc",
+        "helm",
+        "kubernetes",
+        "opentofu",
+        "openvox",
+        "packer",
+        "podman",
+        "pulumi",
+        "puppet",
+        "salt",
+        "terraform",
+    ];
+    let resources = r#"
+    - {id: a, type: t, when: "data.env == 'prod'"}
+    - {id: b, type: t, when: "data.count < 3"}
+    - {id: c, type: t, when: "data.env in ['dev', 'prod'] && data.region.zones >= 3"}
+    - {id: d, type: t, when: "length(data.region.name) > 20"}
+    - {id: e, type: t, when: "data.missing ?? data.install"}
+    - {id: f, type: t, dependsOn: [{resource: b, ifMissing: skip}, {resource: a}]}
+    - {id: g, type: t, when: "data.region.name =~ 'west'", notifies: [{resource: d, action: x, ifMissing: skip}]}
+"#;
+    let mut seen: Option<Vec<Kept>> = None;
+    for target in TARGETS {
+        for (kind, host) in [
+            ("Infrastructure", ""),
+            ("ResourceSet", "  targetHost: {from: inline, host: h}\n"),
+        ] {
+            let text = format!(
+                "apiVersion: meridian/v1\nkind: {kind}\nmetadata: {{name: d}}\nspec:\n  \
+                 target: {target}\n{host}  resources:{resources}"
+            );
+            let docs = parse("doc.yaml", text.as_bytes()).unwrap();
+            let kept = prune(docs[0].resources(), &data()).unwrap();
+            let shape: Vec<Kept> = kept
+                .iter()
+                .map(|r| {
+                    (
+                        r.id.clone(),
+                        r.depends_on.iter().map(|d| d.resource.clone()).collect(),
+                        r.notifies.iter().map(|n| n.resource.clone()).collect(),
+                    )
+                })
+                .collect();
+            match &seen {
+                None => {
+                    let ids: Vec<&str> = shape.iter().map(|(id, _, _)| id.as_str()).collect();
+                    assert_eq!(ids, ["a", "c", "e", "f", "g"]);
+                    assert_eq!(shape[3].1, ["a"]);
+                    assert!(shape[4].2.is_empty());
+                    seen = Some(shape);
+                }
+                Some(first) => assert_eq!(&shape, first, "{target} as {kind}"),
+            }
+        }
+    }
 }

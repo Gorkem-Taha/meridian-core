@@ -2,9 +2,9 @@
 
 ```
 meridian validate <files>...
-meridian compile  <files>... [-l SELECTOR] [--data FILE] [--out DIR]
-meridian plan     <files>... [-l SELECTOR] [--data FILE]
-meridian apply    <files>... [-l SELECTOR] [--data FILE]
+meridian compile  <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE] [--out DIR]
+meridian plan     <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
+meridian apply    <files>... [-l SELECTOR] [--data FILE] [--set KEY=VALUE]
 meridian plugins
 ```
 
@@ -101,6 +101,7 @@ versions decide which `targetVersion` a document may ask it for.
 | `--out DIR` | | | `compile` only: where to write the compiled files |
 | `-l SELECTOR`, `--selector SELECTOR` | | every document | `compile`, `plan`, `apply`: run only the documents whose `metadata.labels` match, as in `tier=web,env!=prod`. May be repeated; every requirement must hold. [Labels and selectors](dsl/index.md#labels-and-selectors) |
 | `--data FILE` | | no data | `compile`, `plan`, `apply`: a YAML or JSON mapping of values that [`when`](dsl/index.md#when-and-runtimewhen) conditions read as `data.<key>`. May be repeated; a later file's key replaces an earlier file's |
+| `--set KEY=VALUE` | | | `compile`, `plan`, `apply`: one value for `when` conditions, applied after every `--data` file, so it wins. `KEY` may be dotted to set one key inside a mapping (`region.name=eu-west-1`). The value is typed as YAML types it. May be repeated. See [giving the data](dsl/conditions.md#giving-the-data) |
 
 ### Running part of a workflow
 
