@@ -1,0 +1,46 @@
+name: pulumi
+
+# Runs the Pulumi plugin against the real pulumi. The plugin's other tests use
+# a stand-in and run with everything else in the rust workflow; this one needs
+# the tool and a network, so it runs only when the plugin or what it is built
+# on changes.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - 'plugins/pulumi/**'
+      - 'examples/pulumi/**'
+      - 'crates/meridian-sdk/**'
+      - 'crates/meridian-yaml/**'
+      - 'crates/meridian-plugin-testkit/**'
+      - 'Cargo.lock'
+      - '.github/workflows/pulumi.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  real:
+    name: against the real pulumi
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the stable toolchain
+        run: rustup toolchain install stable --profile minimal --no-self-update && rustup default stable
+
+      # The hosted runners ship Pulumi. Install it only where one does not.
+      - name: Find or install pulumi
+        run: |
+          if ! command -v pulumi >/dev/null; then
+            curl -fsSL https://get.pulumi.com | sh
+            echo "$HOME/.pulumi/bin" >> "$GITHUB_PATH"
+            export PATH="$HOME/.pulumi/bin:$PATH"
+          fi
+          pulumi version
+
+      - name: Test against pulumi
+        env:
+          MERIDIAN_REAL_PULUMI: '1'
+        run: cargo test -p meridian-target-pulumi --locked --test real -- --nocapture
