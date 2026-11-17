@@ -23,6 +23,7 @@ start with the [design plan](docs/plans/design-plan.md).
 | [`terraform`](docs/targets/terraform.md) | infrastructure as code | `main.tf.json` | `terraform`, or `tofu` |
 | [`cloudformation`](docs/targets/cloudformation.md) | infrastructure as code | a template | `aws cloudformation` change sets |
 | [`bicep`](docs/targets/bicep.md) | infrastructure as code | `main.bicep` | `az deployment group` |
+| [`packer`](docs/targets/packer.md) | infrastructure as code (image building) | `build.pkr.json` | `packer` |
 | [`docker`](docs/targets/docker.md) | containerization | a Compose file | `docker compose` |
 | [`kubernetes`](docs/targets/kubernetes.md) | container orchestration | manifests | `kubectl apply` |
 

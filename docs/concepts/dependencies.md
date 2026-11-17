@@ -25,6 +25,7 @@ about order:
 | position in the file | `ansible`, `chef` | nothing written; the resources are emitted in order |
 | declared relationships | `puppet`, `dsc`, `terraform`, `cloudformation`, `bicep` | the tool's own keyword (`require`, `dependsOn`, `depends_on`, `DependsOn`) |
 | its own rules | `docker` | `depends_on` between services; everything else Compose already creates first |
+| the stages of a build | `packer` | the order of the provisioners, and post-processors chained into a sequence; a dependency against the fixed shape of a build is refused |
 | nothing | `kubernetes` | the order of the manifests, with a warning that `kubectl` does not wait |
 
 Where a reference already implies the order, as `${web_vm.id}` does in
@@ -72,7 +73,8 @@ a service on refresh but cannot reload it, so `action: reload` is refused on
 Puppet with the reason, not turned into a restart. Kubernetes can roll pods and
 nothing else, so only `restart` aimed at a Deployment, StatefulSet or DaemonSet
 is accepted. CloudFormation and Bicep have no way to react to a change at all,
-and refuse every notify.
+and refuse every notify. So does Packer: a build runs each step once, on a
+machine it then discards.
 
 The [capability matrix](../reference/capability-matrix.md) has the summary. The
 rule behind it: Meridian either does what the document says or refuses to

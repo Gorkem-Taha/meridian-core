@@ -19,6 +19,7 @@ That produces the `meridian` command and one binary per plugin, all in
 meridian
 meridian-target-ansible
 meridian-target-terraform
+meridian-target-packer
 ...
 ```
 
@@ -52,6 +53,7 @@ hand:
 | `terraform` | `terraform` (or `tofu`) |
 | `cloudformation` | the `aws` command line |
 | `bicep` | the `az` command line |
+| `packer` | `packer` 1.7 or later |
 | `docker` | `docker` with the Compose plugin |
 | `kubernetes` | `kubectl` |
 

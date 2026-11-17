@@ -2,28 +2,41 @@
 
 <img src="../branding/logos/meridian-packer.svg" width="96" alt="Meridian Packer plugin logo">
 
-The Packer plugin compiles a Meridian `Infrastructure` document into a
-[Packer](https://developer.hashicorp.com/packer) build template and runs it with `packer`.
-Use it to build machine images and container images: an AMI, an Azure or Google Cloud
-image, a VMware template, a Docker image.
+Compiles an Infrastructure document into a [Packer](https://developer.hashicorp.com/packer)
+build template and runs it with `packer`. Use it to build machine images and container
+images: an AMI, an Azure or Google Cloud image, a VMware template, a Docker image.
+
+## What it does and does not support
 
 | | |
-| --- | --- |
-| Target name | `packer` |
-| Category | `infrastructure-as-code` (see [Why this category](#why-this-category)) |
-| Operations | compile, plan, apply, outputs |
-| Document kind | `Infrastructure` |
+|---|---|
+| Resource types | Packer's own, after a prefix that says what part of a build the resource is: `source.<builder>`, `provisioner.<type>`, `post-processor.<type>`, `error-cleanup-provisioner.<type>`, `data.<type>`, plus `variable`, `local` and `plugin` |
+| Document kind | `Infrastructure`. One document is one Packer build |
+| `dependsOn` | Yes, inside the fixed shape of a build: it orders provisioners and chains post-processors into a sequence. A dependency that contradicts the shape is refused. See [Order](#order) |
+| `notifies` | No. Refused: a build runs each step once on a machine it then discards. See [Notifications](#notifications) |
+| `runtimeWhen` | No. Refused. Use a step's own `only` or `except` param |
+| `state: absent` | No. A build only creates images; remove the resource from the document |
+| References | Yes, to a `variable`, a `local` or a `data.<type>`, checked at compile time. See [References](#references) |
+| Plan | Yes, but Packer has no plan of its own: Packer validates the template, and the plan lists one image to create per source. A plan is never "in sync" |
+| Apply | Yes: `packer build`. Every apply builds a new image |
+| Outputs | Yes, read from the manifest every build ends by writing. See [Outputs](#outputs) |
+| Sensitive values | A `variable` can be `sensitive`. Outputs are image ids and are never sensitive |
+| Category | `infrastructure-as-code`. See [Why this category](#why-this-category) |
 | Compiles to | `build.pkr.json`, plus `meridian-build.json` for Meridian's own use |
 | Needs | `packer` 1.7 or later on the machine running Meridian |
 | Binary | `meridian-target-packer` |
+| Tested against | The real `packer` 1.11 in CI, with the null builder: validate, build, outputs, a rejected template and a failed build. The cloud builders have not been run against a real account |
 
 ## Contents
 
+- [What it does and does not support](#what-it-does-and-does-not-support)
 - [A first build](#a-first-build)
 - [How a document maps to a build](#how-a-document-maps-to-a-build)
 - [Resource types](#resource-types)
 - [References](#references)
+- [Resource types in detail](#resource-types-in-detail)
 - [Order](#order)
+- [Notifications](#notifications)
 - [Outputs](#outputs)
 - [Running a build](#running-a-build)
 - [What the plugin refuses](#what-the-plugin-refuses)
@@ -134,7 +147,9 @@ like any other. In `only` and `except` a source can be named by its id alone: th
 writes `amazon-ebs.ubuntu` for `ubuntu`.
 
 `state` must be `present` or left out, since a build only creates images. `notifies` and
-`runtimeWhen` are refused: see [What the plugin refuses](#what-the-plugin-refuses).
+`runtimeWhen` are refused: see [Notifications](#notifications) and
+[What the plugin refuses](#what-the-plugin-refuses). Each type's params are in
+[Resource types in detail](#resource-types-in-detail).
 
 ## References
 
@@ -160,6 +175,98 @@ Two things follow from this:
 A source, a provisioner, a post-processor and a plugin requirement have nothing to read
 inside a param. Inside a provisioner, Packer's own `${source.name}` and `${build.ID}`
 describe the source being built.
+
+## Resource types in detail
+
+Every resource takes the fields every Meridian resource takes: `id`, `type`, `params`,
+`dependsOn` and `state` (which must be `present` or left out). What
+`params` holds depends on the type.
+
+### `source.<builder>`
+
+What to build from, and where. `<builder>` is any Packer builder: `amazon-ebs`,
+`azure-arm`, `googlecompute`, `docker`, `vsphere-iso`, `qemu`, `null`, `file` and so on.
+
+| | |
+|---|---|
+| Params | The builder's own arguments, unchanged. Nested blocks such as `launch_block_device_mappings` or `source_image_reference` are written as maps or lists of maps |
+| Required | At least one source per document. What each builder requires is the builder's business, and `packer validate` checks it during a plan |
+| Id | The source's name. Packer shows the build as `<document>.<builder>.<id>` |
+| Readable | Nothing inside a param. In outputs: `id`, `artifact_id`, `builder_type`, `build_time`, `files`, `packer_run_uuid` |
+| Dependencies | A source cannot depend on another source: Packer builds them at the same time |
+
+A document with several sources builds them all in parallel, and every provisioner and
+post-processor runs for each one unless its `only` or `except` says otherwise.
+
+### `provisioner.<type>`
+
+A step run on the machine being built, or on the machine running Packer for `shell-local`.
+`<type>` is any Packer provisioner: `shell`, `file`, `powershell`, `ansible`,
+`ansible-local`, `breakpoint`, `shell-local`, `windows-restart` and so on.
+
+| | |
+|---|---|
+| Params | The provisioner's own arguments, plus the ones Packer accepts on every provisioner: `only`, `except`, `override`, `pause_before`, `max_retries`, `timeout` |
+| `only`, `except` | A list of sources. A source may be named by its id alone (`ubuntu`), and is written as Packer wants it (`amazon-ebs.ubuntu`). Anything else is left as written |
+| Order | Dependency order, then the order of the document |
+| Readable | Nothing. Inside its params, Packer's own `${source.name}`, `${source.type}` and `${build.*}` describe the source being built |
+
+### `post-processor.<type>`
+
+A step run on what was built. `<type>` is any Packer post-processor: `docker-tag`,
+`docker-push`, `compress`, `checksum`, `manifest`, `shell-local`, `vagrant` and so on.
+
+| | |
+|---|---|
+| Params | The post-processor's own arguments, plus `only`, `except`, `keep_input_artifact` and `name` |
+| Input | With no dependency on another post-processor, the artifact the build produced. With one, the artifact that post-processor produced |
+| Limits | A post-processor takes one input, so it can depend on at most one other post-processor, and at most one can depend on it. To use an artifact twice, declare the first post-processor again under another id |
+
+### `error-cleanup-provisioner.<type>`
+
+A provisioner that runs only when the build has failed, before Packer tears the machine
+down. Its params are a provisioner's. A document has at most one, and nothing can depend
+on it.
+
+### `data.<type>`
+
+A lookup done before the build starts. `<type>` is any Packer data source: `amazon-ami`,
+`amazon-secretsmanager`, `http`, `null` and so on. Params are the data source's own
+arguments. `${id.attribute}` reads what it found.
+
+### `variable`
+
+An input to the build. The id is the variable's name.
+
+| Param | Meaning |
+|---|---|
+| `type` | Packer's type, as text: `string`, `number`, `bool`, `list(string)`, `map(string)` |
+| `default` | The value when none is given. A variable without one must be set, or Packer refuses to validate |
+| `description` | Shown by Packer when it asks about the variable |
+| `sensitive` | `true` keeps the value out of Packer's output |
+
+Any other argument of Packer's `variable` block is passed through as written.
+
+`${id}` reads it. It is set by an input of the same name from an earlier stage, or by
+`PKR_VAR_<id>` in the environment.
+
+### `local`
+
+A named value computed once. It takes exactly one param, `value`, which can be text, a
+number, a list or a map, and can hold references and Packer expressions. `${id}` reads it.
+
+### `plugin`
+
+A Packer plugin the build needs. The id is the plugin's name.
+
+| Param | Meaning |
+|---|---|
+| `source` | Where the plugin comes from, such as `github.com/hashicorp/amazon`. Required |
+| `version` | A version constraint, such as `>= 1.3.0`. Required |
+
+`packer init` installs it the first time the document is planned or applied. The builders
+`null` and `file`, and the provisioners and post-processors that ship inside Packer, need
+no plugin.
 
 ## Order
 
@@ -217,6 +324,30 @@ The last sequence is the plugin's own: see [Outputs](#outputs).
 A dependency that only restates the shape, such as a provisioner depending on a source, is
 accepted and changes nothing. One that contradicts it is refused, because writing the
 template anyway would run the steps in an order the document ruled out.
+
+## Notifications
+
+`notifies` is refused on this target, whatever the action. A notify means "when this
+really changes, do that to the other", and a build has no such moment: every provisioner
+runs exactly once, in order, on a machine that did not exist before the build and is
+discarded after it. There is nothing to compare with, so nothing can be said to have
+changed.
+
+What a notify would be used for elsewhere is simply the next step here. To restart a
+service after writing its configuration, add a provisioner that depends on the one that
+writes the file:
+
+```yaml
+- id: nginx_conf
+  type: provisioner.file
+  params: {source: /srv/build/nginx.conf, destination: /tmp/nginx.conf}
+
+- id: restart_nginx
+  type: provisioner.shell
+  params: {inline: ["sudo mv /tmp/nginx.conf /etc/nginx/nginx.conf", "sudo systemctl restart nginx"]}
+  dependsOn:
+    - resource: nginx_conf
+```
 
 ## Outputs
 
