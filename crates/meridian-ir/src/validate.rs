@@ -43,6 +43,16 @@ impl Bundle {
         }
     }
 
+    /// The one warning this run owes for documents written in a deprecated
+    /// language version, or `None` when there are none.
+    pub fn deprecation_warning(&self) -> Option<String> {
+        crate::api::VersionTable::builtin().deprecation_warning(
+            self.documents
+                .iter()
+                .map(|doc| (doc.api_version(), doc.name())),
+        )
+    }
+
     /// The Infrastructure document with the given `metadata.name`.
     pub fn infrastructure(&self, name: &str) -> Option<&Infrastructure> {
         self.documents

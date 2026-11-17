@@ -57,6 +57,7 @@ byte. The reasons, the layout and the order of work are in
 | [Configuration management resource types](reference/resource-types.md) | `package`, `file`, `service`, `user`, `group`, `exec`, and how each target differs |
 | [Capability matrix](reference/capability-matrix.md) | generated from the plugins |
 | [Conformance matrix](reference/conformance-matrix.md) | the same document on every configuration management target, cell by cell; generated from the plugins |
+| [Compatibility](reference/compatibility.md) | which language versions a build reads, and which plugins it loads; generated from the code |
 
 | Targets | |
 |---|---|
@@ -79,7 +80,9 @@ plugins.
 | [Migration & adoption path](plans/migration-and-adoption.md) | Forward-compile scope decision, coexistence, pilot guidance |
 | [Observability, logging & diagnostics](plans/observability.md) | Log schema, plan output, fact provenance, telemetry, audit |
 | [Release, versioning & compatibility](plans/release-and-versioning.md) | apiVersion, SDK compatibility, run-state migration, channels |
+| [Modules and versioning](plans/modules-and-versioning.md) | Proposed: shareable modules (sources, lockfile, integrity), how `apiVersion` is enforced, protocol negotiation |
 | [Security & secrets handling](plans/security.md) | Threat model, `secret: true` guarantees, disclosure process |
+| [Language expansion](plans/language-expansion.md) (accepted, being built) | Expressions and functions, conditions, templating, configurations with inputs, endpoints and inventory, secrets, workflows |
 
 ## Contributing
 

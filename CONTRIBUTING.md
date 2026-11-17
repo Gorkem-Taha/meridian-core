@@ -136,7 +136,8 @@ of these needs two reviewers, whoever wrote it:
 - Code that builds a shell command string, or escapes one, in any runner.
 - Anything that handles a secret: `secret_arg`, a `sensitive` output, masking.
 - What is written to the run-state under `.meridian`.
-- The plugin protocol in `proto/`, or `PROTOCOL_VERSION`.
+- The plugin protocol in `proto/`, `PROTOCOL_VERSION` or `MIN_PROTOCOL_VERSION`.
+- The table of language versions in `crates/meridian-ir/src/api.rs`, or a migration step.
 
 ### Capability claims
 

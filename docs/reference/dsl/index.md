@@ -114,10 +114,42 @@ spec:
 
 | Field | Required | Value |
 |---|---|---|
-| `apiVersion` | yes | `meridian/v1`. Anything else is refused before the rest of the document is read |
+| `apiVersion` | yes | The version of the language the document is written in: `meridian/v1`. Anything else is refused before the rest of the document is read. See [`apiVersion`](#apiversion) |
 | `kind` | yes | `Infrastructure` or `ResourceSet` |
 | `metadata` | yes | see [`metadata`](#metadata) |
 | `spec` | yes | depends on the kind |
+
+### `apiVersion`
+
+`apiVersion` says which version of the Meridian language a document is written
+in. It is `meridian/v` and a whole number, and `meridian/v1` is the only
+version so far.
+
+The number changes only when a document that compiles today would stop
+compiling or would mean something else. New fields, new kinds of document and
+new resource types are added inside the current version, so a document never
+needs its `apiVersion` touched to keep working, and you never need to raise it
+to use something new.
+
+A build reads each version it knows in one of three ways:
+
+| State | What happens |
+|---|---|
+| supported | the document compiles |
+| deprecated | the document compiles, and the run prints one warning naming the version to move to |
+| removed | the document is refused, and the message names the release that removed the version |
+
+A value the build does not know is refused, and the message says why:
+
+```
+site.yaml:1:1: apiVersion: unsupported apiVersion "meridian/v2": it is newer than this build, which understands meridian/v1; upgrade meridian
+site.yaml:1:1: apiVersion: unsupported apiVersion "meridian/v1.0": versions are whole numbers, as in "meridian/v1"
+site.yaml:1:1: apiVersion: unsupported apiVersion "apps/v1": expected "meridian/v1"
+```
+
+[`meridian migrate`](../cli.md#migrate) moves documents to a newer version,
+[`meridian version`](../cli.md#version) lists the versions a build reads, and
+[compatibility](../compatibility.md) has the full rules.
 
 The two kinds answer different questions. An **Infrastructure** document says
 what should exist, and can promise [outputs](#outputs). A **ResourceSet** says
