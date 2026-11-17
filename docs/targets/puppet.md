@@ -1,5 +1,7 @@
 # Target: `puppet`
 
+<img src="../branding/logos/meridian-puppet.svg" width="72" alt="Meridian Puppet plugin logo">
+
 Compiles a ResourceSet into a Puppet class and the node statement that assigns
 it, and applies it with `puppet apply`, or with Bolt for another machine.
 

@@ -17,9 +17,11 @@ documents separated by `---`. Infrastructure documents run before ResourceSets
 ### `validate`
 
 Checks the documents and loads no plugin: required fields, unique ids,
-dependencies that exist and form no cycle, and hand-offs between documents that
-name a real document and output. Errors give the file, line and field. It does
-not know what a target can express; `compile` does.
+dependencies that exist, and hand-offs between documents that name a real
+document and output. Errors give the file, line and field. It does not know what
+a target can express, and it does not look for dependency cycles; `compile`
+does both. [Which check happens when](dsl/index.md#which-check-happens-when) has
+the full list.
 
 ### `compile`
 

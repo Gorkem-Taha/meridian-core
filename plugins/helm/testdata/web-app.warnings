@@ -1,0 +1,1 @@
+helm: web: restarts by rolling its pods whenever "web_config" changes: Helm has no handlers, so a checksum of that object is kept on the pod template as the annotation checksum/web_config

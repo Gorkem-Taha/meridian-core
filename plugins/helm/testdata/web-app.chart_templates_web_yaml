@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name | toRawJson }}
+  labels:
+    app.kubernetes.io/name: {{ .Release.Name | toRawJson }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | toRawJson }}
+spec:
+  replicas: {{ .Values.replicas | toRawJson }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Release.Name | toRawJson }}
+  template:
+    metadata:
+      annotations:
+        checksum/web_config: {{ include (print $.Template.BasePath "/web_config.yaml") . | sha256sum | quote }}
+      labels:
+        app.kubernetes.io/name: {{ .Release.Name | toRawJson }}
+    spec:
+      containers:
+        - image: {{ printf "%s:%s" .Values.image.repository .Values.image.tag | toRawJson }}
+          name: nginx
+          ports:
+            - containerPort: {{ .Values.port | toRawJson }}
+          volumeMounts:
+            - mountPath: /usr/share/nginx/html
+              name: content
+      volumes:
+        - configMap:
+            name: {{ printf "%s-config" .Release.Name | toRawJson }}
+          name: content

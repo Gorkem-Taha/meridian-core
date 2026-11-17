@@ -1,5 +1,7 @@
 # Target: `terraform`
 
+<img src="../branding/logos/meridian-terraform.svg" width="72" alt="Meridian Terraform plugin logo">
+
 Compiles an Infrastructure document into a Terraform configuration and runs it
 with `terraform`. OpenTofu's `tofu` takes the same commands.
 

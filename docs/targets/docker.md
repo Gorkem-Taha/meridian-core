@@ -1,5 +1,7 @@
 # Target: `docker`
 
+<img src="../branding/logos/meridian-docker.svg" width="72" alt="Meridian Docker plugin logo">
+
 Compiles a document into a Docker Compose file and brings it up with
 `docker compose`. An Infrastructure document runs on the local Docker daemon,
 or the one its `project` names. A ResourceSet runs on its target host's daemon.
