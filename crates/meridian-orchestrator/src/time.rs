@@ -3,7 +3,7 @@
 //! The record needs two things from a clock: a time a person and a log
 //! system can both read, and an id that sorts in the order runs happened.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
@@ -74,16 +74,16 @@ pub fn now() -> String {
 pub fn run_id() -> String {
     // Within one process the clock is only ever read forwards, so two ids
     // made in the same millisecond still differ and still sort.
-    static LAST: AtomicU64 = AtomicU64::new(0);
+    static LAST: Mutex<u64> = Mutex::new(0);
     let wall = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    let mut millis = wall;
-    let _ = LAST.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |last| {
-        millis = wall.max(last + 1);
-        Some(millis)
-    });
+    let millis = {
+        let mut last = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        *last = wall.max(*last + 1);
+        *last
+    };
     let p = parts(UNIX_EPOCH + std::time::Duration::from_millis(millis));
     let mut hasher = Sha256::new();
     hasher.update(millis.to_be_bytes());
