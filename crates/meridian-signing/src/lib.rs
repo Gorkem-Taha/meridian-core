@@ -28,6 +28,11 @@ use sha2::{Digest, Sha256};
 
 /// The first line of a signature file, and of the message that is signed.
 const SIGNATURE_HEADER: &str = "meridian-plugin-signature-v1";
+/// The same, for a signature over bytes that are not a file: a statement.
+/// It is a different name on purpose, so that a signature over a statement
+/// is never also a valid signature for a file holding the statement's text,
+/// and the other way round.
+const STATEMENT_HEADER: &str = "meridian-statement-signature-v1";
 /// The word a public key file starts with.
 const PUBLIC_KEY_HEADER: &str = "meridian-public-key-v1";
 /// The word a secret key file starts with.
@@ -253,7 +258,7 @@ impl SecretKey {
     /// Signs a binary and returns the text of its signature file.
     pub fn sign_file(&self, binary: &Path) -> Result<String, String> {
         let digest = digest_of(binary)?;
-        let signature = self.0.sign(message(&digest).as_bytes());
+        let signature = self.0.sign(message(SIGNATURE_HEADER, &digest).as_bytes());
         Ok(format!(
             "{SIGNATURE_HEADER}\nkey {}\nsha256 {digest}\nsig {}\n",
             self.public().id(),
@@ -264,24 +269,26 @@ impl SecretKey {
 
 impl SecretKey {
     /// Signs bytes that are not a file on disk, such as a statement about
-    /// something, and returns the text of the signature. It is the text
-    /// [`SecretKey::sign_file`] would write for a file holding these bytes.
+    /// something, and returns the text of the signature. It has the shape of
+    /// a file's signature under another first line, and neither passes for
+    /// the other: [`verify_file`] refuses it, and [`verify_bytes`] refuses
+    /// what [`SecretKey::sign_file`] writes.
     pub fn sign_bytes(&self, bytes: &[u8]) -> String {
         let digest = to_hex(&Sha256::digest(bytes));
-        let signature = self.0.sign(message(&digest).as_bytes());
+        let signature = self.0.sign(message(STATEMENT_HEADER, &digest).as_bytes());
         format!(
-            "{SIGNATURE_HEADER}\nkey {}\nsha256 {digest}\nsig {}\n",
+            "{STATEMENT_HEADER}\nkey {}\nsha256 {digest}\nsig {}\n",
             self.public().id(),
             to_hex(&signature.to_bytes())
         )
     }
 }
 
-/// What is signed: the format's name and the binary's digest. Naming the
-/// format in the message means a signature made for something else can never
-/// be presented as a plugin's.
-fn message(digest: &str) -> String {
-    format!("{SIGNATURE_HEADER}\n{digest}\n")
+/// What is signed: the format's name and the digest. Naming the format in
+/// the message means a signature made for something else can never be
+/// presented as a plugin's, and a statement's never as a file's.
+fn message(header: &str, digest: &str) -> String {
+    format!("{header}\n{digest}\n")
 }
 
 /// Checks the signature file beside a binary against a set of trusted keys.
@@ -295,7 +302,12 @@ pub fn verify_file(binary: &Path, trusted: &[PublicKey]) -> Signature {
         Ok(digest) => digest,
         Err(e) => return Signature::Invalid(e),
     };
-    match verify_text(&text, &digest, trusted, ("binary", "file")) {
+    match verify_text(
+        &text,
+        &digest,
+        trusted,
+        (SIGNATURE_HEADER, "binary", "file"),
+    ) {
         Ok(key_id) => Signature::Verified { key_id },
         Err(why) => Signature::Invalid(why),
     }
@@ -308,7 +320,7 @@ pub fn verify_file(binary: &Path, trusted: &[PublicKey]) -> Signature {
 /// caller's to know.
 pub fn verify_bytes(signature: &str, bytes: &[u8], trusted: &[PublicKey], what: &str) -> Signature {
     let digest = to_hex(&Sha256::digest(bytes));
-    match verify_text(signature, &digest, trusted, (what, what)) {
+    match verify_text(signature, &digest, trusted, (STATEMENT_HEADER, what, what)) {
         Ok(key_id) => Signature::Verified { key_id },
         Err(why) => Signature::Invalid(why),
     }
@@ -320,13 +332,11 @@ fn verify_text(
     text: &str,
     digest: &str,
     trusted: &[PublicKey],
-    (what, signed_as): (&str, &str),
+    (header, what, signed_as): (&str, &str, &str),
 ) -> Result<String, String> {
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
-    if lines.next() != Some(SIGNATURE_HEADER) {
-        return Err(format!(
-            "the signature file does not start with {SIGNATURE_HEADER}"
-        ));
+    if lines.next() != Some(header) {
+        return Err(format!("the signature file does not start with {header}"));
     }
     let (mut key_id, mut recorded, mut signature) = (None, None, None);
     for line in lines {
@@ -358,7 +368,7 @@ fn verify_text(
     }
     let signature = ed25519_dalek::Signature::from_bytes(&signature);
     key.0
-        .verify_strict(message(digest).as_bytes(), &signature)
+        .verify_strict(message(header, digest).as_bytes(), &signature)
         .map_err(|_| format!("the signature is not one key {key_id} made for this {what}"))?;
     Ok(key_id.to_owned())
 }
@@ -438,10 +448,39 @@ mod tests {
                 key.public().id()
             ))
         );
-        // The same text is what signing a file with these bytes writes.
+        // A statement's signature is not a file's, even for a file holding
+        // exactly the statement: each is refused where the other is wanted.
         let file = dir.join("statement");
         fs::write(&file, b"a statement").unwrap();
-        assert_eq!(key.sign_file(&file).unwrap(), text);
+        fs::write(signature_path(&file), &text).unwrap();
+        assert_eq!(
+            verify_file(&file, &trusted),
+            Signature::Invalid(
+                "the signature file does not start with meridian-plugin-signature-v1".into()
+            )
+        );
+        let as_file = key.sign_file(&file).unwrap();
+        assert_ne!(as_file, text);
+        assert_eq!(
+            verify_bytes(&as_file, b"a statement", &trusted, "module"),
+            Signature::Invalid(
+                "the signature file does not start with meridian-statement-signature-v1".into()
+            )
+        );
+        // Nor does renaming the first line help: the name is in what was
+        // signed.
+        let renamed = text.replace(
+            "meridian-statement-signature-v1",
+            "meridian-plugin-signature-v1",
+        );
+        fs::write(signature_path(&file), &renamed).unwrap();
+        assert_eq!(
+            verify_file(&file, &trusted),
+            Signature::Invalid(format!(
+                "the signature is not one key {} made for this binary",
+                key.public().id()
+            ))
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -548,8 +587,13 @@ mod tests {
                 "no signature of the right length",
             ),
         ] {
-            let err = verify_text(text, "00", std::slice::from_ref(&key), ("binary", "file"))
-                .unwrap_err();
+            let err = verify_text(
+                text,
+                "00",
+                std::slice::from_ref(&key),
+                (SIGNATURE_HEADER, "binary", "file"),
+            )
+            .unwrap_err();
             assert!(err.contains(want), "{text:?}: {err}");
         }
     }

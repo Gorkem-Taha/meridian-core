@@ -360,7 +360,9 @@ A `path` module is your own working copy and is never checked.
 module's name, its version and its [content hash](#integrity). So it vouches
 for exactly one content of one version of one module, and a signature lifted
 from another module, or from another version with the same files, does not
-pass. `meridian.sig` itself is the one file the content hash leaves out, which
+pass. Nor does a module's signature pass as a plugin's, or a plugin's as a
+module's, although the same key can make both: each names its own kind in what
+is signed. `meridian.sig` itself is the one file the content hash leaves out, which
 has two useful consequences: signing a module does not change what it is pinned
 as, and the signature travels with the module unchanged through git, a
 registry or a mirror.
