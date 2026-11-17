@@ -1,4 +1,4 @@
-# Packer plugin
+# Target: `packer`
 
 <img src="../branding/logos/meridian-packer.svg" width="96" alt="Meridian Packer plugin logo">
 

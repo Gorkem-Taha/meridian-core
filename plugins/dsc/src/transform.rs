@@ -1,0 +1,281 @@
+//! Stage one: each resource becomes a DSC resource instance, and every
+//! reference becomes the runner's own accessor.
+
+use std::collections::BTreeMap;
+
+use meridian_sdk::expr::{self, Part};
+use meridian_sdk::{CompileError, Resource, ResourceGraph, Value};
+
+use crate::{refuse, refuse_at, Configuration, Instance, Settings, NAME};
+
+const ENGINES: [&str; 3] = ["Auto", "DscV2", "DscV3"];
+const TARGETS: [&str; 3] = ["Local", "SSH", "WinRM"];
+
+/// Whether a type is shaped like a DSC resource: `Module/Resource`.
+fn is_dsc_type(t: &str) -> bool {
+    let part = |s: &str| {
+        s.starts_with(|c: char| c.is_ascii_alphabetic())
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-')
+    };
+    t.split_once('/')
+        .is_some_and(|(module, resource)| part(module) && part(resource))
+}
+
+pub(crate) fn transform(graph: &ResourceGraph) -> Result<Configuration, CompileError> {
+    let mut configuration = Configuration {
+        node: graph.name.clone(),
+        host: graph.host.clone(),
+        settings: Settings {
+            engine: "Auto".to_owned(),
+            ..Settings::default()
+        },
+        instances: Vec::new(),
+    };
+    let mut runner_seen = false;
+
+    let ids: Vec<&str> = graph
+        .resources
+        .iter()
+        .filter(|r| r.r#type != "runner")
+        .map(|r| r.id.as_str())
+        .collect();
+
+    for r in &graph.resources {
+        if r.r#type == "runner" {
+            if runner_seen {
+                return Err(refuse(
+                    r,
+                    "duplicate-runner",
+                    "a document is run one way; this one has two resources of type \"runner\""
+                        .to_owned(),
+                ));
+            }
+            runner_seen = true;
+            read_settings(r, &mut configuration.settings)?;
+            continue;
+        }
+        if !is_dsc_type(&r.r#type) {
+            return Err(refuse(
+                r,
+                "unsupported-resource-type",
+                format!(
+                    "{:?} is not a DSC resource. Write the module and the resource, such as \
+                     PSDscResources/Service or Microsoft.Windows/Registry, or \"runner\" for how \
+                     the configuration is run",
+                    r.r#type
+                ),
+            ));
+        }
+        if !r.state.is_empty() {
+            return Err(refuse(
+                r,
+                "unsupported-state",
+                format!(
+                    "state {:?} is not written on this target: a DSC resource carries its \
+                     desired state in its own properties, such as Ensure or _exist, so set it \
+                     in params",
+                    r.state
+                ),
+            ));
+        }
+
+        let mut reads = Vec::new();
+        let mut properties = BTreeMap::new();
+        for (key, value) in &r.params {
+            let rewritten = rewrite(value, &ids, &r.id, &mut reads)
+                .map_err(|msg| refuse(r, "invalid-reference", format!("param {key:?}: {msg}")))?;
+            properties.insert(key.clone(), rewritten);
+        }
+        reads.sort();
+        reads.dedup();
+        configuration.instances.push(Instance {
+            id: r.id.clone(),
+            r#type: r.r#type.clone(),
+            properties,
+            pre_condition: r.runtime_when.clone(),
+            reads,
+            depends_on: Vec::new(),
+            notify: Vec::new(),
+            pos: r.pos.clone(),
+        });
+    }
+
+    if let Some(output) = graph.outputs.first() {
+        return Err(refuse_at(
+            "",
+            &output.pos,
+            "unsupported-output",
+            format!(
+                "output {:?}: this target reports no outputs. DscPipelineRunner keeps what a \
+                 resource returns inside its own run",
+                output.name
+            ),
+        ));
+    }
+
+    // Running on another machine has to be asked for: the runner cannot
+    // guess between WinRM and SSH, and getting it wrong configures nothing.
+    let local = matches!(graph.host.as_str(), "" | "localhost" | "127.0.0.1" | "::1");
+    if configuration.settings.target.is_empty() {
+        if !local {
+            return Err(CompileError {
+                target: NAME.to_owned(),
+                rule: "missing-param".to_owned(),
+                msg: format!(
+                    "the document's host is {:?}, and nothing says how the runner reaches it. \
+                     Add a resource of type \"runner\" with target: WinRM or target: SSH, or \
+                     target: Local when Meridian runs on the host itself",
+                    graph.host
+                ),
+                ..CompileError::default()
+            });
+        }
+        configuration.settings.target = "Local".to_owned();
+    }
+    Ok(configuration)
+}
+
+fn read_settings(r: &Resource, settings: &mut Settings) -> Result<(), CompileError> {
+    for (name, value) in &r.params {
+        let Value::String(text) = value else {
+            return Err(refuse(
+                r,
+                "invalid-param",
+                format!("param {name:?} of the runner must be a string"),
+            ));
+        };
+        let one_of = |choices: &[&str]| -> Result<String, CompileError> {
+            choices
+                .iter()
+                .find(|c| c.eq_ignore_ascii_case(text))
+                .map(|c| (*c).to_owned())
+                .ok_or_else(|| {
+                    refuse(
+                        r,
+                        "invalid-param",
+                        format!(
+                            "param {name:?} of the runner cannot be {text:?} (accepted: {})",
+                            choices.join(", ")
+                        ),
+                    )
+                })
+        };
+        match name.as_str() {
+            "engine" => settings.engine = one_of(&ENGINES)?,
+            "target" => settings.target = one_of(&TARGETS)?,
+            "credential" => settings.credential = text.clone(),
+            _ => {
+                return Err(refuse(
+                    r,
+                    "unsupported-param",
+                    format!(
+                        "resource type \"runner\" does not accept param {name:?} on this target \
+                         (accepted: credential, engine, target)"
+                    ),
+                ))
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Replaces every reference in a value with the runner's accessor for it,
+/// and records which resources were read.
+fn rewrite(
+    value: &Value,
+    ids: &[&str],
+    own: &str,
+    reads: &mut Vec<String>,
+) -> Result<Value, String> {
+    Ok(match value {
+        Value::String(s) => Value::String(rewrite_string(s, ids, own, reads)?),
+        Value::List(items) => Value::List(
+            items
+                .iter()
+                .map(|item| rewrite(item, ids, own, reads))
+                .collect::<Result<_, _>>()?,
+        ),
+        Value::Map(map) => Value::Map(
+            map.iter()
+                .map(|(k, v)| Ok((k.clone(), rewrite(v, ids, own, reads)?)))
+                .collect::<Result<_, String>>()?,
+        ),
+        other => other.clone(),
+    })
+}
+
+/// Text the runner would otherwise expand: it treats every property as a
+/// PowerShell expandable string, where `$` starts a variable or an
+/// expression and a backtick escapes.
+fn literal(text: &str) -> String {
+    text.replace('`', "``").replace('$', "`$")
+}
+
+fn rewrite_string(
+    text: &str,
+    ids: &[&str],
+    own: &str,
+    reads: &mut Vec<String>,
+) -> Result<String, String> {
+    let mut out = String::with_capacity(text.len());
+    for part in expr::parse(text)? {
+        match part {
+            Part::Text(text) => out.push_str(&literal(&text)),
+            Part::Expr(expression) => {
+                let (name, path) = expr::head(&expression);
+                if !ids.contains(&name) {
+                    return Err(format!(
+                        "${{{expression}}} refers to {name:?}, which is not a resource in this document"
+                    ));
+                }
+                if name == own {
+                    return Err(format!(
+                        "${{{expression}}} reads the resource it is written in"
+                    ));
+                }
+                let plain = path.starts_with('.')
+                    && !path.ends_with('.')
+                    && !path.contains("..")
+                    && path
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "._[]".contains(c));
+                if !plain {
+                    return Err(format!(
+                        "${{{expression}}} must read a property of the resource, such as \
+                         ${{{name}.Id}}"
+                    ));
+                }
+                out.push_str(&format!("$((reference '{name}'){path})"));
+                reads.push(name.to_owned());
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_type_is_a_module_and_a_resource() {
+        for good in [
+            "PSDscResources/Service",
+            "Microsoft.Windows/Registry",
+            "Microsoft.DSC.Transitional/RunCommandOnSet",
+        ] {
+            assert!(is_dsc_type(good), "{good}");
+        }
+        for bad in ["Service", "package", "a/b/c", "/Service", "Module/"] {
+            assert!(!is_dsc_type(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn text_is_kept_from_powershell() {
+        assert_eq!(literal("C:\\Program Files"), "C:\\Program Files");
+        assert_eq!(literal("costs $5"), "costs `$5");
+        assert_eq!(literal("a `tick`"), "a ``tick``");
+    }
+}
